@@ -5,6 +5,7 @@
  * 1. El usuario sube un CSV y configura la búsqueda (CsvUploader + SearchConfig)
  * 2. Se crea el job y se muestra el progreso en tiempo real (JobProgress)
  * 3. Al completar, se habilita la descarga del ZIP de imágenes
+ * 4. Panel de historial de trabajos anteriores (JobHistory)
  *
  * @author BenjaminDTS | Carlos Vico
  */
@@ -12,13 +13,17 @@ import React, { useState } from 'react'
 import { CsvUploader } from '@/components/CsvUploader'
 import { SearchConfig } from '@/components/SearchConfig'
 import { JobProgress } from '@/components/JobProgress'
+import { JobHistory } from '@/components/JobHistory'
 import { apiClient } from '@/api/client'
 import type { SearchConfigValues } from '@/components/SearchConfig'
 
 /** Estados posibles de la pantalla principal */
 type AppState = 'idle' | 'configuring' | 'running' | 'done'
+/** Pestañas de navegación principal */
+type Tab = 'nuevo' | 'historial'
 
 const App: React.FC = () => {
+  const [tab, setTab] = useState<Tab>('nuevo')
   const [appState, setAppState] = useState<AppState>('idle')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [jobId, setJobId] = useState<string | null>(null)
@@ -71,11 +76,46 @@ const App: React.FC = () => {
     setError(null)
   }
 
+  /** Callback: desde el historial el usuario abre un job anterior */
+  const handleSelectJobFromHistory = (selectedJobId: string): void => {
+    setJobId(selectedJobId)
+    setAppState('done')
+    setTab('nuevo')
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-200 px-6 py-4">
-        <h1 className="text-2xl font-bold text-gray-900">Harvist</h1>
-        <p className="text-sm text-gray-500">Scraper masivo de imágenes de producto</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Harvist</h1>
+            <p className="text-sm text-gray-500">Scraper masivo de imágenes de producto</p>
+          </div>
+          {/* Navegación principal */}
+          <nav className="flex gap-1 bg-gray-100 p-1 rounded-lg">
+            <button
+              type="button"
+              onClick={() => setTab('nuevo')}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                tab === 'nuevo'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Nuevo trabajo
+            </button>
+            <button
+              onClick={() => setTab('historial')}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                tab === 'historial'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Historial
+            </button>
+          </nav>
+        </div>
       </header>
 
       <main className="max-w-3xl mx-auto px-4 py-10 space-y-8">
@@ -85,24 +125,32 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {appState === 'idle' && (
-          <CsvUploader onFileSelected={handleFileSelected} />
+        {tab === 'nuevo' && (
+          <>
+            {appState === 'idle' && (
+              <CsvUploader onFileSelected={handleFileSelected} />
+            )}
+
+            {appState === 'configuring' && selectedFile && (
+              <SearchConfig
+                fileName={selectedFile.name}
+                onLaunch={handleLaunchJob}
+                onBack={handleReset}
+              />
+            )}
+
+            {(appState === 'running' || appState === 'done') && jobId && (
+              <JobProgress
+                jobId={jobId}
+                onFinished={handleJobFinished}
+                onReset={handleReset}
+              />
+            )}
+          </>
         )}
 
-        {appState === 'configuring' && selectedFile && (
-          <SearchConfig
-            fileName={selectedFile.name}
-            onLaunch={handleLaunchJob}
-            onBack={handleReset}
-          />
-        )}
-
-        {(appState === 'running' || appState === 'done') && jobId && (
-          <JobProgress
-            jobId={jobId}
-            onFinished={handleJobFinished}
-            onReset={handleReset}
-          />
+        {tab === 'historial' && (
+          <JobHistory onSelectJob={handleSelectJobFromHistory} />
         )}
       </main>
     </div>
