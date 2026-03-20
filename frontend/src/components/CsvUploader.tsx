@@ -3,12 +3,12 @@
  *
  * Valida el tipo MIME y la extensión del archivo en el cliente antes de
  * propagarlo al componente padre mediante el callback `onFileSelected`.
- * No contiene lógica de negocio; solo gestión de estado visual y validación
- * superficial de formato.
+ * Además extrae y expone las cabeceras del CSV para que el paso siguiente
+ * pueda ofrecer un selector gráfico de columnas.
  *
  * @module CsvUploader
  * @author BenjaminDTS | Carlos Vico
- * @version 1.0.0
+ * @version 1.1.0
  */
 
 import React, { useCallback, useRef, useState } from "react";
@@ -19,8 +19,11 @@ import React, { useCallback, useRef, useState } from "react";
  * Props del componente CsvUploader.
  */
 interface CsvUploaderProps {
-  /** Callback invocado cuando el usuario selecciona un CSV válido. */
-  onFileSelected: (file: File) => void;
+  /**
+   * Callback invocado cuando el usuario selecciona un CSV válido.
+   * Recibe el archivo y la lista de cabeceras detectadas en la primera fila.
+   */
+  onFileSelected: (file: File, headers: string[]) => void;
 }
 
 /**
@@ -41,6 +44,48 @@ const ACCEPTED_MIME_TYPES: ReadonlySet<string> = new Set([
 const ACCEPTED_EXTENSION = ".csv";
 
 // ─── Utilidades ───────────────────────────────────────────────────────────────
+
+/**
+ * Lee la primera línea de un archivo CSV y devuelve sus cabeceras.
+ *
+ * Detecta el delimitador más probable (`,` `;` `\t` `|`) contando
+ * cuántas celdas produce cada candidato en la primera fila.
+ *
+ * Args:
+ *   file: Archivo CSV a leer.
+ *
+ * Returns:
+ *   Promesa que resuelve con el array de nombres de columna (strings limpios).
+ */
+function parseCsvHeaders(file: File): Promise<string[]> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = (e.target?.result as string) ?? "";
+      const firstLine = text.split(/\r?\n/)[0] ?? "";
+
+      const candidates = [",", ";", "\t", "|"] as const;
+      let delimiter: string = ",";
+      let maxCount = 0;
+      for (const d of candidates) {
+        const count = firstLine.split(d).length;
+        if (count > maxCount) {
+          maxCount = count;
+          delimiter = d;
+        }
+      }
+
+      const headers = firstLine
+        .split(delimiter)
+        .map((h) => h.trim().replace(/^["']|["']$/g, ""))
+        .filter(Boolean);
+
+      resolve(headers);
+    };
+    // Leer solo los primeros 8 KB — suficiente para la cabecera
+    reader.readAsText(file.slice(0, 8192));
+  });
+}
 
 /**
  * Formatea un tamaño en bytes a una cadena legible (KB / MB).
@@ -117,7 +162,7 @@ export const CsvUploader: React.FC<CsvUploaderProps> = ({ onFileSelected }) => {
    *   file: Archivo recibido del evento del DOM.
    */
   const handleFile = useCallback(
-    (file: File): void => {
+    async (file: File): Promise<void> => {
       const validationError = validateCsvFile(file);
 
       if (validationError !== null) {
@@ -127,10 +172,12 @@ export const CsvUploader: React.FC<CsvUploaderProps> = ({ onFileSelected }) => {
         return;
       }
 
+      const headers = await parseCsvHeaders(file);
+
       setUploaderState("selected");
       setErrorMessage("");
       setSelectedFile(file);
-      onFileSelected(file);
+      onFileSelected(file, headers);
     },
     [onFileSelected]
   );
