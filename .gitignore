@@ -95,6 +95,8 @@ docker-compose.override.yml
 .claude/
 .claudeai/
 .agents/
+claude.md
+CLAUDE.md
 
 
 # ==========================================
