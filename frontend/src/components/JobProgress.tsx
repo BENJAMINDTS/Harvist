@@ -9,7 +9,7 @@
  */
 import React, { useEffect, useRef } from 'react'
 import { useJobWebSocket } from '@/hooks/useJobWebSocket'
-import type { EstadoJob, JobProgressEvent } from '@/hooks/useJobWebSocket'
+import type { EstadoJob } from '@/hooks/useJobWebSocket'
 
 // ---------------------------------------------------------------------------
 // Types
