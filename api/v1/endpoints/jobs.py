@@ -33,6 +33,7 @@ from loguru import logger
 from api.core.config import get_settings
 from api.core.security import limiter
 from api.v1.schemas.job import (
+    ColumnMapping,
     EstadoJob,
     JobCreate,
     JobProgressEvent,
@@ -112,6 +113,22 @@ async def crear_job(
         bool,
         Form(description="Activar generación de descripciones con IA (Fase 5)."),
     ] = False,
+    columna_codigo: Annotated[
+        str,
+        Form(description="Columna del CSV que contiene el código único del producto."),
+    ] = "codigo",
+    columna_ean: Annotated[
+        str,
+        Form(description="Columna del CSV que contiene el EAN/código de barras."),
+    ] = "ean",
+    columna_nombre: Annotated[
+        str,
+        Form(description="Columna del CSV que contiene el nombre del producto."),
+    ] = "nombre",
+    columna_marca: Annotated[
+        str,
+        Form(description="Columna del CSV que contiene la marca del producto."),
+    ] = "marca",
 ) -> JSONResponse:
     """
     Recibe un CSV de inventario, encola el trabajo de scraping y devuelve el job_id.
@@ -125,6 +142,10 @@ async def crear_job(
         modo: modo de construcción de la query de búsqueda.
         imagenes_por_producto: número de imágenes a descargar por producto.
         generar_descripciones: activa el pipeline de IA de la Fase 5.
+        columna_codigo: columna del CSV que actúa como código único.
+        columna_ean: columna del CSV con el EAN del producto.
+        columna_nombre: columna del CSV con el nombre del producto.
+        columna_marca: columna del CSV con la marca del producto.
 
     Returns:
         JSONResponse 202 con job_id y URL de seguimiento.
@@ -150,6 +171,12 @@ async def crear_job(
         modo=modo,
         imagenes_por_producto=imagenes_por_producto,
         generar_descripciones=generar_descripciones,
+        column_mapping=ColumnMapping(
+            columna_codigo=columna_codigo,
+            columna_ean=columna_ean,
+            columna_nombre=columna_nombre,
+            columna_marca=columna_marca,
+        ),
     )
 
     # Crear estado inicial del job en Redis
