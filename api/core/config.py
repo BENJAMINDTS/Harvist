@@ -77,9 +77,31 @@ class Settings(BaseSettings):
     download_workers: int = Field(default=4, ge=1, le=32)
     download_timeout: int = Field(default=10, ge=1, le=60)
 
+    # ── Scraper — motor de búsqueda ───────────────────────────────────────────
+    search_engine: Literal["bing", "google", "duckduckgo"] = Field(
+        default="bing",
+        description="Motor de búsqueda de imágenes: bing | google | duckduckgo.",
+    )
+
     # ── Almacenamiento ────────────────────────────────────────────────────────
+    storage_backend: Literal["local", "s3", "azure"] = Field(
+        default="local",
+        description="Backend de almacenamiento: local | s3 | azure.",
+    )
     output_dir: str = Field(default="imagenes_descargadas")
     file_ttl_seconds: int = Field(default=86400, ge=60)
+
+    # ── AWS S3 (solo si storage_backend=s3) ──────────────────────────────────
+    aws_s3_bucket: str = Field(default="")
+    aws_s3_prefix: str = Field(default="harvist")
+    aws_region: str = Field(default="eu-west-1")
+    aws_access_key_id: str = Field(default="")
+    aws_secret_access_key: str = Field(default="")
+
+    # ── Azure Blob (solo si storage_backend=azure) ───────────────────────────
+    azure_container: str = Field(default="")
+    azure_blob_prefix: str = Field(default="harvist")
+    azure_connection_string: str = Field(default="")
 
     # ── Logging ───────────────────────────────────────────────────────────────
     log_level: Literal["ERROR", "WARN", "INFO", "DEBUG"] = Field(default="INFO")
