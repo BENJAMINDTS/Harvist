@@ -64,7 +64,12 @@ const App: React.FC = () => {
       setJobId(response.data.data.job_id)
       setAppState('running')
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al iniciar el trabajo.'
+      // El interceptor de apiClient rechaza con un objeto ApiError (no una instancia de Error),
+      // por lo que instanceof Error sería false. Se extrae .message de ambas formas posibles.
+      const msg =
+        err instanceof Error
+          ? err.message
+          : (err as { message?: string })?.message ?? 'Error al iniciar el trabajo.'
       setError(msg)
     }
   }
@@ -112,6 +117,7 @@ const App: React.FC = () => {
               Nuevo trabajo
             </button>
             <button
+              type="button"
               onClick={() => setTab('historial')}
               className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
                 tab === 'historial'
