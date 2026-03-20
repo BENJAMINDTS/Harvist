@@ -47,6 +47,35 @@ class ModosBusqueda(str, Enum):
 
 # ── Configuración de búsqueda ─────────────────────────────────────────────────
 
+class ColumnMapping(BaseModel):
+    """
+    Mapeo entre las columnas del CSV del usuario y los campos internos del parser.
+
+    Permite que el CSV tenga cualquier nombre de columna: el usuario indica
+    qué columna de su archivo corresponde a cada campo requerido, en lugar de
+    obligarle a renombrar las columnas antes de subir el archivo.
+
+    :author: BenjaminDTS
+    """
+
+    columna_codigo: str = Field(
+        default="codigo",
+        description="Columna del CSV que contiene el código único del producto.",
+    )
+    columna_ean: str = Field(
+        default="ean",
+        description="Columna del CSV que contiene el EAN/código de barras.",
+    )
+    columna_nombre: str = Field(
+        default="nombre",
+        description="Columna del CSV que contiene el nombre del producto.",
+    )
+    columna_marca: str = Field(
+        default="marca",
+        description="Columna del CSV que contiene la marca del producto.",
+    )
+
+
 class SearchConfig(BaseModel):
     """
     Parámetros que controlan el comportamiento del scraper para un job concreto.
@@ -73,6 +102,10 @@ class SearchConfig(BaseModel):
     generar_descripciones: bool = Field(
         default=False,
         description="Si True, genera descripciones con IA tras descargar las imágenes (Fase 5).",
+    )
+    column_mapping: ColumnMapping = Field(
+        default_factory=ColumnMapping,
+        description="Mapeo de columnas del CSV del usuario a los campos internos del parser.",
     )
 
 
