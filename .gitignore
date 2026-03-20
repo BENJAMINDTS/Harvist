@@ -95,7 +95,7 @@ docker-compose.override.yml
 .claude/
 .claudeai/
 .agents/
-CLAUDE.md
+
 
 # ==========================================
 # 8. SISTEMAS OPERATIVOS Y EDITORES (IDE)
