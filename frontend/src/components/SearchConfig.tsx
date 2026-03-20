@@ -1,0 +1,574 @@
+/**
+ * SearchConfig component — configuración de búsqueda antes de lanzar el scraping.
+ *
+ * Permite al usuario elegir el modo de búsqueda (EAN, Nombre+Marca o Personalizado),
+ * ajustar el número de imágenes por producto y activar la generación de descripciones
+ * con IA (Fase 5 — experimental). Muestra el nombre del CSV seleccionado como
+ * referencia y expone los botones "Volver" e "Iniciar scraping".
+ *
+ * @module SearchConfig
+ * @author BenjaminDTS | Carlos Vico
+ * @version 1.0.0
+ */
+
+import React, { useCallback, useState } from "react";
+
+// ─── Tipos ────────────────────────────────────────────────────────────────────
+
+/**
+ * Valores de configuración de búsqueda que se envían al padre al lanzar el job.
+ */
+export interface SearchConfigValues {
+  /** Modo de búsqueda seleccionado por el usuario. */
+  modo: "ean" | "nombre_marca" | "personalizado";
+  /** Número de imágenes a descargar por producto (1-20). */
+  imagenesPorProducto: number;
+  /** Indica si se debe generar descripción de producto con IA (Fase 5). */
+  generarDescripciones: boolean;
+  /**
+   * Plantilla de query con placeholders para el modo personalizado.
+   * Solo se usa cuando `modo === 'personalizado'`.
+   */
+  queryPersonalizada: string;
+}
+
+/**
+ * Props del componente SearchConfig.
+ */
+interface SearchConfigProps {
+  /** Nombre del archivo CSV seleccionado previamente. */
+  fileName: string;
+  /**
+   * Callback asíncrono invocado al pulsar "Iniciar scraping".
+   * Recibe los valores de configuración del formulario.
+   */
+  onLaunch: (config: SearchConfigValues) => Promise<void>;
+  /** Callback invocado al pulsar "Volver". */
+  onBack: () => void;
+}
+
+// ─── Constantes ───────────────────────────────────────────────────────────────
+
+/** Número mínimo de imágenes por producto. */
+const MIN_IMAGENES = 1;
+
+/** Número máximo de imágenes por producto. */
+const MAX_IMAGENES = 20;
+
+/** Número de imágenes por defecto. */
+const DEFAULT_IMAGENES = 5;
+
+/**
+ * Metadatos de cada modo de búsqueda para renderizar las radio cards.
+ */
+const MODOS_BUSQUEDA: ReadonlyArray<{
+  valor: SearchConfigValues["modo"];
+  titulo: string;
+  descripcion: string;
+}> = [
+  {
+    valor: "ean",
+    titulo: "EAN",
+    descripcion: "Busca por código de barras del producto.",
+  },
+  {
+    valor: "nombre_marca",
+    titulo: "Nombre + Marca",
+    descripcion: "Busca combinando el nombre y la marca del producto.",
+  },
+  {
+    valor: "personalizado",
+    titulo: "Personalizado",
+    descripcion:
+      "Define una plantilla con placeholders: {nombre}, {marca}, {ean}, {codigo}.",
+  },
+];
+
+// ─── Iconos SVG inline ────────────────────────────────────────────────────────
+// Se usan SVGs inline para evitar dependencias externas de iconos.
+
+interface IconProps {
+  className?: string;
+}
+
+const DocumentIcon: React.FC<IconProps> = ({ className }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth={1.5}
+    stroke="currentColor"
+    aria-hidden="true"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"
+    />
+  </svg>
+);
+
+const ArrowLeftIcon: React.FC<IconProps> = ({ className }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth={1.5}
+    stroke="currentColor"
+    aria-hidden="true"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18"
+    />
+  </svg>
+);
+
+const RocketIcon: React.FC<IconProps> = ({ className }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth={1.5}
+    stroke="currentColor"
+    aria-hidden="true"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M15.59 14.37a6 6 0 0 1-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 0 0 6.16-12.12A14.98 14.98 0 0 0 9.631 8.41m5.96 5.96a14.926 14.926 0 0 1-5.841 2.58m-.119-8.54a6 6 0 0 0-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 0 0-2.58 5.84m2.699 2.7c-.103.021-.207.041-.311.06a15.09 15.09 0 0 1-2.448-2.448 14.9 14.9 0 0 1 .06-.312m-2.24 2.39a4.493 4.493 0 0 0-1.757 4.306 4.493 4.493 0 0 0 4.306-1.758M16.5 9a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z"
+    />
+  </svg>
+);
+
+const SparklesIcon: React.FC<IconProps> = ({ className }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth={1.5}
+    stroke="currentColor"
+    aria-hidden="true"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z"
+    />
+  </svg>
+);
+
+// ─── Componente ───────────────────────────────────────────────────────────────
+
+/**
+ * Formulario de configuración previo al lanzamiento del job de scraping.
+ *
+ * Gestiona de forma local el estado de todos los controles del formulario y
+ * lo propaga al padre únicamente al confirmar con "Iniciar scraping".
+ * Mientras `onLaunch` está en progreso, bloquea el botón y muestra un spinner
+ * para evitar envíos duplicados.
+ *
+ * @author BenjaminDTS | Carlos Vico
+ * @param fileName - Nombre del archivo CSV seleccionado previamente.
+ * @param onLaunch - Callback asíncrono que recibe la configuración final.
+ * @param onBack   - Callback invocado al pulsar "Volver".
+ */
+export const SearchConfig: React.FC<SearchConfigProps> = ({
+  fileName,
+  onLaunch,
+  onBack,
+}) => {
+  // ── Estado del formulario ────────────────────────────────────────────────────
+  const [modo, setModo] = useState<SearchConfigValues["modo"]>("ean");
+  const [imagenesPorProducto, setImagenesPorProducto] =
+    useState<number>(DEFAULT_IMAGENES);
+  const [generarDescripciones, setGenerarDescripciones] =
+    useState<boolean>(false);
+  const [queryPersonalizada, setQueryPersonalizada] = useState<string>("");
+
+  /** Indica si `onLaunch` está en curso para bloquear el botón y mostrar spinner. */
+  const [launching, setLaunching] = useState<boolean>(false);
+
+  // ── Handlers ────────────────────────────────────────────────────────────────
+
+  /**
+   * Maneja el cambio del slider/input de imágenes por producto.
+   * Coerciona el valor al rango permitido [1, 20].
+   *
+   * Args:
+   *   raw: Valor numérico recibido del input.
+   */
+  const handleImagenesChange = useCallback((raw: number): void => {
+    const clamped = Math.max(MIN_IMAGENES, Math.min(MAX_IMAGENES, raw));
+    setImagenesPorProducto(Number.isNaN(clamped) ? DEFAULT_IMAGENES : clamped);
+  }, []);
+
+  /**
+   * Construye el objeto `SearchConfigValues` y llama a `onLaunch`.
+   * Bloquea el botón durante la operación asíncrona.
+   */
+  const handleSubmit = useCallback(async (): Promise<void> => {
+    if (launching) return;
+
+    setLaunching(true);
+    try {
+      await onLaunch({
+        modo,
+        imagenesPorProducto,
+        generarDescripciones,
+        queryPersonalizada,
+      });
+    } finally {
+      // Siempre desbloquear, incluso si onLaunch lanza una excepción.
+      setLaunching(false);
+    }
+  }, [
+    launching,
+    onLaunch,
+    modo,
+    imagenesPorProducto,
+    generarDescripciones,
+    queryPersonalizada,
+  ]);
+
+  // ── Render ───────────────────────────────────────────────────────────────────
+
+  return (
+    <section
+      aria-label="Configuración de búsqueda"
+      className="w-full max-w-2xl mx-auto flex flex-col gap-6 px-4 py-6 sm:px-0"
+    >
+      {/* ── Banner informativo del CSV ── */}
+      <div
+        className={
+          "flex items-center gap-3 px-4 py-3 rounded-lg " +
+          "bg-blue-50 border border-blue-200"
+        }
+        aria-label={`Archivo CSV seleccionado: ${fileName}`}
+      >
+        <DocumentIcon className="w-5 h-5 text-blue-500 shrink-0" />
+        <div className="flex flex-col min-w-0">
+          <span className="text-xs font-medium text-blue-500 uppercase tracking-wide">
+            Archivo seleccionado
+          </span>
+          <span
+            className="text-sm font-semibold text-blue-800 truncate"
+            title={fileName}
+          >
+            {fileName}
+          </span>
+        </div>
+      </div>
+
+      {/* ── Selector de modo de búsqueda ── */}
+      <fieldset>
+        <legend className="text-sm font-semibold text-gray-700 mb-3">
+          Modo de búsqueda
+        </legend>
+        <div className="flex flex-col gap-3 sm:flex-row">
+          {MODOS_BUSQUEDA.map(({ valor, titulo, descripcion }) => {
+            const isSelected = modo === valor;
+            return (
+              <label
+                key={valor}
+                className={
+                  "relative flex flex-1 cursor-pointer rounded-xl border-2 p-4 " +
+                  "transition-colors duration-150 select-none " +
+                  "focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500 " +
+                  (isSelected
+                    ? "border-blue-500 bg-blue-50"
+                    : "border-gray-200 bg-white hover:border-blue-300 hover:bg-blue-50/40")
+                }
+              >
+                <input
+                  type="radio"
+                  name="modo"
+                  value={valor}
+                  checked={isSelected}
+                  onChange={() => setModo(valor)}
+                  className="sr-only"
+                  aria-describedby={`modo-desc-${valor}`}
+                />
+                <div className="flex flex-col gap-1 w-full">
+                  <div className="flex items-center justify-between gap-2">
+                    <span
+                      className={
+                        "text-sm font-semibold " +
+                        (isSelected ? "text-blue-700" : "text-gray-800")
+                      }
+                    >
+                      {titulo}
+                    </span>
+                    {/* Indicador visual de selección */}
+                    <span
+                      aria-hidden="true"
+                      className={
+                        "w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center " +
+                        (isSelected
+                          ? "border-blue-500 bg-blue-500"
+                          : "border-gray-300 bg-white")
+                      }
+                    >
+                      {isSelected && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-white" />
+                      )}
+                    </span>
+                  </div>
+                  <p
+                    id={`modo-desc-${valor}`}
+                    className={
+                      "text-xs leading-snug " +
+                      (isSelected ? "text-blue-600" : "text-gray-500")
+                    }
+                  >
+                    {descripcion}
+                  </p>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+
+        {/* Campo de plantilla personalizada — solo visible en modo "personalizado" */}
+        {modo === "personalizado" && (
+          <div className="mt-4">
+            <label
+              htmlFor="query-personalizada"
+              className="block text-xs font-medium text-gray-600 mb-1.5"
+            >
+              Plantilla de query
+            </label>
+            <input
+              id="query-personalizada"
+              type="text"
+              value={queryPersonalizada}
+              onChange={(e) => setQueryPersonalizada(e.target.value)}
+              placeholder="{nombre} {marca} {ean}"
+              className={
+                "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 " +
+                "text-sm text-gray-800 placeholder-gray-400 " +
+                "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent " +
+                "transition-colors duration-150"
+              }
+              aria-describedby="query-personalizada-hint"
+            />
+            <p
+              id="query-personalizada-hint"
+              className="mt-1.5 text-xs text-gray-400"
+            >
+              Placeholders disponibles:{" "}
+              <code className="font-mono text-gray-600">{"{nombre}"}</code>,{" "}
+              <code className="font-mono text-gray-600">{"{marca}"}</code>,{" "}
+              <code className="font-mono text-gray-600">{"{ean}"}</code>,{" "}
+              <code className="font-mono text-gray-600">{"{codigo}"}</code>
+            </p>
+          </div>
+        )}
+      </fieldset>
+
+      {/* ── Imágenes por producto ── */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <label
+            htmlFor="imagenes-slider"
+            className="text-sm font-semibold text-gray-700"
+          >
+            Imágenes por producto
+          </label>
+          {/* Input numérico sincronizado con el slider */}
+          <input
+            type="number"
+            min={MIN_IMAGENES}
+            max={MAX_IMAGENES}
+            value={imagenesPorProducto}
+            onChange={(e) => handleImagenesChange(parseInt(e.target.value, 10))}
+            aria-label="Número exacto de imágenes por producto"
+            className={
+              "w-16 rounded-lg border border-gray-300 bg-white px-2 py-1 " +
+              "text-sm text-center text-gray-800 font-semibold " +
+              "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent " +
+              "transition-colors duration-150 [appearance:textfield] " +
+              "[&::-webkit-outer-spin-button]:appearance-none " +
+              "[&::-webkit-inner-spin-button]:appearance-none"
+            }
+          />
+        </div>
+
+        <input
+          id="imagenes-slider"
+          type="range"
+          min={MIN_IMAGENES}
+          max={MAX_IMAGENES}
+          step={1}
+          value={imagenesPorProducto}
+          onChange={(e) => handleImagenesChange(parseInt(e.target.value, 10))}
+          aria-valuemin={MIN_IMAGENES}
+          aria-valuemax={MAX_IMAGENES}
+          aria-valuenow={imagenesPorProducto}
+          aria-label={`Imágenes por producto: ${imagenesPorProducto}`}
+          className={
+            "w-full h-2 rounded-full appearance-none cursor-pointer " +
+            "bg-gray-200 accent-blue-500 " +
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+          }
+        />
+
+        {/* Etiquetas de rango */}
+        <div
+          className="flex justify-between mt-1"
+          aria-hidden="true"
+        >
+          <span className="text-xs text-gray-400">{MIN_IMAGENES}</span>
+          <span className="text-xs text-gray-400">{MAX_IMAGENES}</span>
+        </div>
+      </div>
+
+      {/* ── Toggle: Generar descripciones con IA ── */}
+      <div
+        className={
+          "flex items-start gap-4 rounded-xl border-2 p-4 " +
+          "transition-colors duration-150 " +
+          (generarDescripciones
+            ? "border-purple-400 bg-purple-50"
+            : "border-gray-200 bg-white")
+        }
+      >
+        <button
+          type="button"
+          role="switch"
+          aria-checked={generarDescripciones}
+          aria-label="Activar generación de descripciones con IA"
+          onClick={() => setGenerarDescripciones((prev) => !prev)}
+          className={
+            "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full " +
+            "border-2 border-transparent transition-colors duration-200 ease-in-out " +
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 " +
+            (generarDescripciones ? "bg-purple-500" : "bg-gray-300")
+          }
+        >
+          <span
+            aria-hidden="true"
+            className={
+              "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow " +
+              "transform transition duration-200 ease-in-out " +
+              (generarDescripciones ? "translate-x-5" : "translate-x-0")
+            }
+          />
+        </button>
+
+        <div className="flex flex-col gap-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <SparklesIcon
+              className={
+                "w-4 h-4 shrink-0 " +
+                (generarDescripciones ? "text-purple-600" : "text-gray-400")
+              }
+            />
+            <span
+              className={
+                "text-sm font-semibold " +
+                (generarDescripciones ? "text-purple-800" : "text-gray-700")
+              }
+            >
+              Generar descripciones con IA
+            </span>
+            <span
+              className={
+                "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium " +
+                "bg-amber-100 text-amber-700 border border-amber-200"
+              }
+            >
+              Fase 5 — experimental
+            </span>
+          </div>
+          <p
+            className={
+              "text-xs leading-snug " +
+              (generarDescripciones ? "text-purple-600" : "text-gray-500")
+            }
+          >
+            Usa la API de Grok para generar una descripción de catálogo por cada
+            producto descargado. El ZIP incluirá un archivo{" "}
+            <code className="font-mono">descripciones.csv</code>.
+          </p>
+        </div>
+      </div>
+
+      {/* ── Acciones ── */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
+        {/* Botón Volver */}
+        <button
+          type="button"
+          onClick={onBack}
+          disabled={launching}
+          className={
+            "inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg " +
+            "text-sm font-medium text-gray-700 bg-white border border-gray-300 " +
+            "hover:bg-gray-50 transition-colors duration-150 " +
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-gray-400 " +
+            "disabled:opacity-50 disabled:cursor-not-allowed"
+          }
+        >
+          <ArrowLeftIcon className="w-4 h-4" />
+          Volver
+        </button>
+
+        {/* Botón Iniciar scraping */}
+        <button
+          type="button"
+          onClick={handleSubmit}
+          disabled={launching}
+          aria-busy={launching}
+          className={
+            "inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg " +
+            "text-sm font-semibold text-white " +
+            "transition-colors duration-150 " +
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 " +
+            "disabled:opacity-60 disabled:cursor-not-allowed " +
+            (launching
+              ? "bg-blue-400"
+              : "bg-blue-600 hover:bg-blue-700 active:bg-blue-800")
+          }
+        >
+          {launching ? (
+            <>
+              {/* Spinner SVG animado */}
+              <svg
+                className="w-4 h-4 animate-spin"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4Z"
+                />
+              </svg>
+              Iniciando…
+            </>
+          ) : (
+            <>
+              <RocketIcon className="w-4 h-4" />
+              Iniciar scraping
+            </>
+          )}
+        </button>
+      </div>
+    </section>
+  );
+};
