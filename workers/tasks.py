@@ -27,6 +27,9 @@ from workers.celery_app import celery_app
 task_logger = get_task_logger(__name__)
 
 _JOB_KEY = "job:{job_id}"
+# Sorted set donde se registran todos los job_ids para el panel de historial.
+# Score = timestamp UTC en segundos (ZREVRANGE devuelve los más recientes primero).
+_HISTORY_KEY = "jobs:history"
 
 
 def _get_redis_client() -> sync_redis.Redis:
@@ -100,6 +103,9 @@ def ejecutar_scraping(
         mensaje="Iniciando pipeline de scraping...",
     )
     _actualizar_estado(redis_client, job_status)
+
+    # Registrar en el historial con score = timestamp UTC para ordenación cronológica
+    redis_client.zadd(_HISTORY_KEY, {job_id: datetime.utcnow().timestamp()})
 
     logger.info("Tarea Celery iniciada", extra={"job_id": job_id})
 
