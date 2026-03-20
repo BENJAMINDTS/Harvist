@@ -176,32 +176,43 @@ class CsvParser:
 
     def _validar_columnas(self, cabeceras: set[str]) -> None:
         """
-        Valida que el CSV contiene las columnas requeridas para el modo configurado.
+        Valida que el CSV contiene las columnas requeridas según el mapeo configurado.
+
+        Usa los nombres de columna del ColumnMapping en lugar de nombres fijos,
+        permitiendo que el CSV tenga cualquier estructura de cabeceras.
 
         Args:
             cabeceras: conjunto de nombres de columna en minúsculas.
 
         Raises:
-            CsvParserError: si faltan columnas obligatorias.
+            CsvParserError: si faltan columnas obligatorias según el mapeo activo.
         """
-        if not _COLUMNAS_COMUNES.issubset(cabeceras):
-            faltantes = _COLUMNAS_COMUNES - cabeceras
+        cm = self._config.column_mapping
+        col_codigo = cm.columna_codigo.strip().lower()
+        col_ean = cm.columna_ean.strip().lower()
+        col_nombre = cm.columna_nombre.strip().lower()
+        col_marca = cm.columna_marca.strip().lower()
+
+        if col_codigo not in cabeceras:
             raise CsvParserError(
-                f"Columna(s) obligatoria(s) no encontrada(s): {', '.join(faltantes)}. "
-                "El CSV debe incluir la columna 'codigo' en todos los modos."
+                f"Columna de código '{cm.columna_codigo}' no encontrada en el CSV. "
+                "La columna de código es obligatoria en todos los modos."
             )
 
         if self._config.modo == ModosBusqueda.EAN:
-            if not _COLUMNAS_EAN.issubset(cabeceras):
+            if col_ean not in cabeceras:
                 raise CsvParserError(
-                    "El modo EAN requiere la columna 'ean' en el CSV."
+                    f"El modo EAN requiere la columna '{cm.columna_ean}' en el CSV."
                 )
         elif self._config.modo == ModosBusqueda.NOMBRE_MARCA:
-            if not _COLUMNAS_NOMBRE_MARCA.issubset(cabeceras):
-                faltantes = _COLUMNAS_NOMBRE_MARCA - cabeceras
+            faltantes = []
+            if col_nombre not in cabeceras:
+                faltantes.append(cm.columna_nombre)
+            if col_marca not in cabeceras:
+                faltantes.append(cm.columna_marca)
+            if faltantes:
                 raise CsvParserError(
-                    f"El modo NOMBRE_MARCA requiere las columnas: "
-                    f"{', '.join(faltantes)}."
+                    f"El modo NOMBRE_MARCA requiere las columnas: {', '.join(faltantes)}."
                 )
 
     def _parsear_fila(
@@ -224,26 +235,37 @@ class CsvParser:
         Raises:
             ValueError: si la fila tiene datos inválidos o el código está vacío.
         """
-        def _obtener(columna: str, obligatorio: bool = False) -> str:
-            idx = col_map.get(columna)
+        cm = self._config.column_mapping
+
+        def _obtener(columna_original: str, obligatorio: bool = False) -> str:
+            # col_map tiene las cabeceras en minúsculas; normalizamos el nombre mapeado
+            clave = columna_original.strip().lower()
+            idx = col_map.get(clave)
             if idx is None or idx >= len(fila):
                 if obligatorio:
                     raise ValueError(
-                        f"Fila {num_fila}: columna '{columna}' no encontrada."
+                        f"Fila {num_fila}: columna '{columna_original}' no encontrada."
                     )
                 return ""
             return self._sanitizar(fila[idx])
 
-        codigo = _obtener("codigo", obligatorio=True)
+        codigo = _obtener(cm.columna_codigo, obligatorio=True)
         if not codigo:
-            raise ValueError(f"Fila {num_fila}: el campo 'codigo' no puede estar vacío.")
+            raise ValueError(
+                f"Fila {num_fila}: la columna '{cm.columna_codigo}' no puede estar vacía."
+            )
 
-        nombre = _obtener("nombre")
-        marca = _obtener("marca")
-        ean = _obtener("ean")
+        nombre = _obtener(cm.columna_nombre)
+        marca = _obtener(cm.columna_marca)
+        ean = _obtener(cm.columna_ean)
 
-        # Datos extra: cualquier columna no estándar se preserva para exportación
-        columnas_conocidas = {"codigo", "nombre", "marca", "ean"}
+        # Datos extra: columnas no mapeadas a campos estándar se preservan para exportación
+        columnas_conocidas = {
+            cm.columna_codigo.lower(),
+            cm.columna_nombre.lower(),
+            cm.columna_marca.lower(),
+            cm.columna_ean.lower(),
+        }
         datos_extra = {
             col: self._sanitizar(fila[idx])
             for col, idx in col_map.items()
