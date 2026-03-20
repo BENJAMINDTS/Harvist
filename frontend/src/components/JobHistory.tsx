@@ -1,0 +1,452 @@
+/**
+ * Componente de historial de trabajos de scraping.
+ *
+ * Muestra la lista paginada de todos los jobs registrados en el backend,
+ * con filtro por estado, paginación mediante botones Anterior/Siguiente,
+ * botón de recarga manual y skeleton de carga animado.
+ *
+ * @author BenjaminDTS | Carlos Vico
+ */
+import React, { useCallback, useEffect, useState } from 'react'
+import { apiClient } from '@/api/client'
+import type { ApiError } from '@/api/client'
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+type EstadoJob = 'pendiente' | 'en_proceso' | 'completado' | 'fallido' | 'cancelado'
+
+interface JobHistoryItem {
+  job_id: string
+  estado: EstadoJob
+  total_productos: number
+  imagenes_descargadas: number
+  porcentaje: number
+  creado_en: string
+  completado_en: string | null
+  mensaje: string
+}
+
+interface JobHistoryData {
+  items: JobHistoryItem[]
+  total: number
+  limit: number
+  offset: number
+}
+
+interface JobHistoryApiResponse {
+  success: boolean
+  data: JobHistoryData
+  message: string
+}
+
+export interface JobHistoryProps {
+  /** Callback invocado cuando el usuario selecciona un job de la lista */
+  onSelectJob: (jobId: string) => void
+}
+
+// ---------------------------------------------------------------------------
+// Constantes de presentación
+// ---------------------------------------------------------------------------
+
+const PAGE_SIZE = 20
+
+/** Etiqueta y clases Tailwind para cada badge de estado */
+const ESTADO_BADGE: Record<EstadoJob, { label: string; classes: string }> = {
+  pendiente: {
+    label: 'Pendiente',
+    classes: 'bg-gray-100 text-gray-600 border border-gray-300',
+  },
+  en_proceso: {
+    label: 'En proceso',
+    classes: 'bg-blue-100 text-blue-700 border border-blue-300',
+  },
+  completado: {
+    label: 'Completado',
+    classes: 'bg-green-100 text-green-700 border border-green-300',
+  },
+  fallido: {
+    label: 'Fallido',
+    classes: 'bg-red-100 text-red-700 border border-red-300',
+  },
+  cancelado: {
+    label: 'Cancelado',
+    classes: 'bg-yellow-100 text-yellow-700 border border-yellow-300',
+  },
+}
+
+/** Opciones del selector de filtro de estado */
+const ESTADO_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: '', label: 'Todos' },
+  { value: 'pendiente', label: 'Pendiente' },
+  { value: 'en_proceso', label: 'En proceso' },
+  { value: 'completado', label: 'Completado' },
+  { value: 'fallido', label: 'Fallido' },
+  { value: 'cancelado', label: 'Cancelado' },
+]
+
+// ---------------------------------------------------------------------------
+// Helpers de presentación
+// ---------------------------------------------------------------------------
+
+/**
+ * Formatea una cadena ISO 8601 en una fecha/hora legible en español.
+ *
+ * @param iso - Cadena de fecha en formato ISO 8601.
+ * @returns Fecha formateada como "DD/MM/YYYY HH:mm".
+ */
+function formatDate(iso: string): string {
+  const d = new Date(iso)
+  const day = String(d.getDate()).padStart(2, '0')
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const year = d.getFullYear()
+  const hours = String(d.getHours()).padStart(2, '0')
+  const minutes = String(d.getMinutes()).padStart(2, '0')
+  return `${day}/${month}/${year} ${hours}:${minutes}`
+}
+
+// ---------------------------------------------------------------------------
+// Sub-componentes internos
+// ---------------------------------------------------------------------------
+
+/** Fila esqueleto animada para el estado de carga */
+const SkeletonRow: React.FC = () => (
+  <tr className="animate-pulse" aria-hidden="true">
+    {Array.from({ length: 5 }).map((_, i) => (
+      <td key={i} className="px-4 py-3">
+        <div className="h-4 rounded bg-gray-200" />
+      </td>
+    ))}
+  </tr>
+)
+
+interface EstadoBadgeProps {
+  estado: EstadoJob
+}
+
+/** Badge de estado coloreado según el valor del job */
+const EstadoBadge: React.FC<EstadoBadgeProps> = ({ estado }) => {
+  const { label, classes } = ESTADO_BADGE[estado]
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${classes}`}
+    >
+      {label}
+    </span>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Componente principal
+// ---------------------------------------------------------------------------
+
+/**
+ * Lista paginada del historial de trabajos de scraping.
+ *
+ * Carga los jobs desde ``GET /api/v1/jobs``, aplica filtrado por estado
+ * en el servidor y gestiona la paginación con botones Anterior/Siguiente.
+ * Al hacer clic en una fila llama a ``onSelectJob`` con el job_id seleccionado.
+ *
+ * @param props - Ver ``JobHistoryProps``.
+ */
+export const JobHistory: React.FC<JobHistoryProps> = ({ onSelectJob }) => {
+  // ── Estado interno ─────────────────────────────────────────────────────────
+  const [items, setItems] = useState<JobHistoryItem[]>([])
+  const [total, setTotal] = useState(0)
+  const [offset, setOffset] = useState(0)
+  const [estadoFiltro, setEstadoFiltro] = useState<string>('')
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // ── Carga de datos ─────────────────────────────────────────────────────────
+
+  /**
+   * Solicita la página actual al backend aplicando los filtros activos.
+   * Resetea el error antes de cada intento.
+   */
+  const fetchHistorial = useCallback(async () => {
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const params: Record<string, string | number> = {
+        limit: PAGE_SIZE,
+        offset,
+      }
+      if (estadoFiltro !== '') {
+        params.estado = estadoFiltro
+      }
+
+      const response = await apiClient.get<JobHistoryApiResponse>('/jobs', { params })
+      const { data } = response.data
+
+      setItems(data.items)
+      setTotal(data.total)
+    } catch (err) {
+      const apiErr = err as ApiError
+      setError(apiErr.message ?? 'Error al cargar el historial.')
+      setItems([])
+      setTotal(0)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [offset, estadoFiltro])
+
+  // Recargar cuando cambia la página o el filtro
+  useEffect(() => {
+    void fetchHistorial()
+  }, [fetchHistorial])
+
+  // ── Handlers ───────────────────────────────────────────────────────────────
+
+  /** Cambia el filtro de estado y vuelve a la primera página */
+  const handleEstadoChange = (e: React.ChangeEvent<HTMLSelectElement>): void => {
+    setEstadoFiltro(e.target.value)
+    setOffset(0)
+  }
+
+  const handlePrev = (): void => {
+    setOffset((prev) => Math.max(0, prev - PAGE_SIZE))
+  }
+
+  const handleNext = (): void => {
+    setOffset((prev) => prev + PAGE_SIZE)
+  }
+
+  const handleRefresh = (): void => {
+    void fetchHistorial()
+  }
+
+  // ── Derivados de paginación ────────────────────────────────────────────────
+  const currentPage = Math.floor(offset / PAGE_SIZE) + 1
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const hasPrev = offset > 0
+  const hasNext = offset + PAGE_SIZE < total
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  return (
+    <section
+      className="w-full space-y-4"
+      aria-label="Historial de trabajos de scraping"
+    >
+      {/* Cabecera: título, filtro y botón de actualizar */}
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold text-gray-800">
+          Historial de trabajos
+        </h2>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Selector de filtro por estado */}
+          <label htmlFor="filtro-estado" className="sr-only">
+            Filtrar por estado
+          </label>
+          <select
+            id="filtro-estado"
+            value={estadoFiltro}
+            onChange={handleEstadoChange}
+            disabled={isLoading}
+            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+            aria-label="Filtrar por estado del trabajo"
+          >
+            {ESTADO_OPTIONS.map(({ value, label }) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+
+          {/* Botón de actualizar */}
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={isLoading}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
+            aria-label="Recargar historial"
+          >
+            {isLoading ? (
+              <span
+                className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-gray-400 border-t-blue-600"
+                aria-hidden="true"
+              />
+            ) : (
+              <span aria-hidden="true">↻</span>
+            )}
+            Actualizar
+          </button>
+        </div>
+      </header>
+
+      {/* Estado de error */}
+      {error !== null && (
+        <div
+          className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+          role="alert"
+          aria-live="assertive"
+        >
+          <span>{error}</span>
+          <button
+            type="button"
+            onClick={handleRefresh}
+            className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
+
+      {/* Tabla de resultados */}
+      <div className="overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
+        <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th
+                scope="col"
+                className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider"
+              >
+                Fecha
+              </th>
+              <th
+                scope="col"
+                className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider"
+              >
+                Estado
+              </th>
+              <th
+                scope="col"
+                className="px-4 py-3 text-right font-medium text-gray-500 uppercase tracking-wider"
+              >
+                Productos
+              </th>
+              <th
+                scope="col"
+                className="px-4 py-3 text-right font-medium text-gray-500 uppercase tracking-wider"
+              >
+                Imágenes
+              </th>
+              <th
+                scope="col"
+                className="px-4 py-3 text-right font-medium text-gray-500 uppercase tracking-wider"
+              >
+                Progreso
+              </th>
+            </tr>
+          </thead>
+
+          <tbody className="divide-y divide-gray-100 bg-white">
+            {/* Skeleton de carga: 5 filas animadas */}
+            {isLoading &&
+              Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)}
+
+            {/* Filas de datos */}
+            {!isLoading &&
+              items.map((item) => (
+                <tr
+                  key={item.job_id}
+                  onClick={() => onSelectJob(item.job_id)}
+                  className="cursor-pointer transition-colors hover:bg-blue-50 focus-within:bg-blue-50"
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`Seleccionar trabajo del ${formatDate(item.creado_en)}, estado: ${ESTADO_BADGE[item.estado].label}`}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      onSelectJob(item.job_id)
+                    }
+                  }}
+                >
+                  {/* Fecha de creación */}
+                  <td className="whitespace-nowrap px-4 py-3 text-gray-700">
+                    {formatDate(item.creado_en)}
+                  </td>
+
+                  {/* Badge de estado */}
+                  <td className="px-4 py-3">
+                    <EstadoBadge estado={item.estado} />
+                  </td>
+
+                  {/* Total de productos */}
+                  <td className="px-4 py-3 text-right tabular-nums text-gray-700">
+                    {item.total_productos}
+                  </td>
+
+                  {/* Imágenes descargadas */}
+                  <td className="px-4 py-3 text-right tabular-nums text-gray-700">
+                    {item.imagenes_descargadas}
+                  </td>
+
+                  {/* Barra de progreso + porcentaje */}
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-end gap-2">
+                      <div className="hidden w-20 overflow-hidden rounded-full bg-gray-200 sm:block">
+                        <div
+                          className={`h-2 rounded-full transition-all ${
+                            item.estado === 'completado'
+                              ? 'bg-green-500'
+                              : item.estado === 'fallido'
+                              ? 'bg-red-500'
+                              : item.estado === 'cancelado'
+                              ? 'bg-yellow-500'
+                              : item.estado === 'en_proceso'
+                              ? 'bg-blue-500'
+                              : 'bg-gray-400'
+                          }`}
+                          style={{ width: `${Math.min(100, Math.max(0, item.porcentaje))}%` }}
+                          role="presentation"
+                        />
+                      </div>
+                      <span className="tabular-nums text-gray-600">
+                        {item.porcentaje.toFixed(1)}%
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+
+            {/* Estado vacío */}
+            {!isLoading && error === null && items.length === 0 && (
+              <tr>
+                <td
+                  colSpan={5}
+                  className="px-4 py-10 text-center text-sm text-gray-500"
+                >
+                  No hay trabajos registrados aún.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Controles de paginación */}
+      {!isLoading && total > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-gray-600">
+          <span>
+            Página {currentPage} de {totalPages} — {total} trabajo(s) en total
+          </span>
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handlePrev}
+              disabled={!hasPrev}
+              className="rounded-lg border border-gray-300 bg-white px-4 py-2 font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="Página anterior"
+            >
+              Anterior
+            </button>
+            <button
+              type="button"
+              onClick={handleNext}
+              disabled={!hasNext}
+              className="rounded-lg border border-gray-300 bg-white px-4 py-2 font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="Página siguiente"
+            >
+              Siguiente
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
