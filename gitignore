@@ -1,0 +1,117 @@
+# @author BenjaminDTS & Carlitos6712
+# .gitignore — Proyecto Scraping: FastAPI + Celery + Redis + React/TypeScript + Vite
+# ==========================================
+# 1. SECRETOS Y CREDENCIALES (CRÍTICO)
+# ==========================================
+# Nunca incluyas credenciales ni claves en el repositorio.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets.yml
+
+# ==========================================
+# 2. PYTHON (FASTAPI / CELERY / PYDANTIC)
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Entornos virtuales
+venv/
+.venv/
+env/
+pip-log.txt
+
+# Empaquetado y distribución
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Testing y cobertura
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# mypy / ruff / linting
+.mypy_cache/
+.ruff_cache/
+
+# ==========================================
+# 3. OUTPUTS EN RUNTIME (SCRAPER)
+# ==========================================
+# Imágenes descargadas — pueden pesar varios GB
+imagenes_descargadas/
+
+# Logs rotativos de loguru
+logs/
+
+# Archivos de control del scraper
+registro_miniaturas.txt
+productos_sin_imagen.txt
+
+# ==========================================
+# 4. JAVASCRIPT / TYPESCRIPT (REACT + VITE)
+# ==========================================
+node_modules/
+/frontend/dist/
+/frontend/build/
+/frontend/.cache/
+/frontend/coverage/
+
+# Logs de gestores de paquetes
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Vite
+/frontend/.vite/
+
+# ==========================================
+# 5. CELERY / REDIS
+# ==========================================
+# Ficheros de persistencia de Redis en desarrollo local
+dump.rdb
+*.rdb
+
+# Celery beat schedule (generado en runtime)
+celerybeat-schedule
+celerybeat-schedule.db
+celerybeat.pid
+
+# ==========================================
+# 6. DOCKER
+# ==========================================
+# Sobreescrituras locales de compose (nunca en el repo)
+docker-compose.override.yml
+
+# ==========================================
+# 7. CLAUDE AI
+# ==========================================
+.claude/
+.claudeai/
+.agents/
+CLAUDE.md
+
+# ==========================================
+# 8. SISTEMAS OPERATIVOS Y EDITORES (IDE)
+# ==========================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+$RECYCLE.BIN/
+
+# Editores (VS Code, IntelliJ, etc.)
+.vscode/
+.idea/
+*.suo
+*.sw?
