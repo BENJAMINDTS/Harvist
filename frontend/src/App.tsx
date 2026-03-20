@@ -26,12 +26,14 @@ const App: React.FC = () => {
   const [tab, setTab] = useState<Tab>('nuevo')
   const [appState, setAppState] = useState<AppState>('idle')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [csvHeaders, setCsvHeaders] = useState<string[]>([])
   const [jobId, setJobId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  /** Callback: el usuario seleccionó un CSV válido */
-  const handleFileSelected = (file: File): void => {
+  /** Callback: el usuario seleccionó un CSV válido — recibe el archivo y sus cabeceras */
+  const handleFileSelected = (file: File, headers: string[]): void => {
     setSelectedFile(file)
+    setCsvHeaders(headers)
     setError(null)
     setAppState('configuring')
   }
@@ -48,6 +50,10 @@ const App: React.FC = () => {
       formData.append('modo', config.modo)
       formData.append('imagenes_por_producto', String(config.imagenesPorProducto))
       formData.append('generar_descripciones', String(config.generarDescripciones))
+      formData.append('columna_codigo', config.columnMapping.columnaCodigo)
+      formData.append('columna_ean', config.columnMapping.columnaEan)
+      formData.append('columna_nombre', config.columnMapping.columnaNombre)
+      formData.append('columna_marca', config.columnMapping.columnaMarca)
 
       const response = await apiClient.post<{
         success: boolean
@@ -72,6 +78,7 @@ const App: React.FC = () => {
   const handleReset = (): void => {
     setAppState('idle')
     setSelectedFile(null)
+    setCsvHeaders([])
     setJobId(null)
     setError(null)
   }
@@ -134,6 +141,7 @@ const App: React.FC = () => {
             {appState === 'configuring' && selectedFile && (
               <SearchConfig
                 fileName={selectedFile.name}
+                csvHeaders={csvHeaders}
                 onLaunch={handleLaunchJob}
                 onBack={handleReset}
               />
