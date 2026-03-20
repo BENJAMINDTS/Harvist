@@ -37,6 +37,10 @@ dependencies = [
     # --- Logging ---
     "loguru==0.7.2",
 
+    # --- Cloud storage (opcionales, solo si se usan los backends S3/Azure) ---
+    "boto3==1.34.131",
+    "azure-storage-blob==12.20.0",
+
     # --- Rate limiting ---
     "slowapi==0.1.9",
 
