@@ -1,0 +1,734 @@
+openapi: 3.1.0
+
+info:
+  title: Harvist — Scraper de Imágenes
+  version: 1.0.0
+  description: |
+    API REST para la descarga masiva y automatizada de imágenes de productos
+    a partir de un CSV de inventario. Busca imágenes en Bing Images mediante
+    un patrón Productor/Consumidor, las valida, redimensiona y las sirve al
+    usuario como archivo ZIP descargable.
+
+    ## Autores
+    - BenjaminDTS
+    - Carlos Vico
+
+    ## WebSocket
+    El endpoint `GET /api/v1/jobs/{job_id}/ws` se gestiona mediante protocolo
+    WebSocket (ws:// en desarrollo, wss:// en producción). OpenAPI 3.1 no
+    tiene soporte nativo de WebSocket; consulta la sección `x-websocket` de
+    cada operación para el contrato de mensajes.
+
+    ## Respuesta estándar
+    Todas las respuestas JSON siguen el contrato:
+    ```json
+    { "success": true, "data": {}, "message": "Descripción" }
+    ```
+  x-author: BenjaminDTS
+  contact:
+    name: BenjaminDTS
+  license:
+    name: Propietaria
+
+servers:
+  - url: http://localhost:8000
+    description: Entorno de desarrollo local
+  - url: https://staging.harvist.app
+    description: Entorno de staging
+  - url: https://harvist.app
+    description: Entorno de producción
+
+tags:
+  - name: jobs
+    description: Creación y consulta de trabajos de scraping
+  - name: files
+    description: Descarga y eliminación de archivos generados
+  - name: health
+    description: Comprobación de estado del servicio
+
+paths:
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # JOBS
+  # ──────────────────────────────────────────────────────────────────────────
+
+  /api/v1/jobs:
+    post:
+      tags:
+        - jobs
+      summary: Crear un nuevo trabajo de scraping
+      description: |
+        Recibe un archivo CSV con el inventario de productos y encola un
+        trabajo asíncrono en Celery. Devuelve el `job_id` y la URL del
+        WebSocket de progreso.
+
+        **Rate limit:** 10 peticiones/minuto por IP.
+      operationId: createJob
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Archivo CSV con columnas de inventario (text/csv).
+                modo:
+                  $ref: '#/components/schemas/ModosBusqueda'
+                imagenes_por_producto:
+                  type: integer
+                  minimum: 1
+                  maximum: 20
+                  default: 5
+                  description: Número máximo de imágenes a descargar por producto.
+                generar_descripciones:
+                  type: boolean
+                  default: false
+                  description: |
+                    Si es `true`, activa la generación automática de descripciones
+                    de producto mediante IA (requiere `ENABLE_AI_DESCRIPTIONS=true`
+                    en el entorno y una `GROK_API_KEY` válida).
+            examples:
+              minimal:
+                summary: Petición mínima
+                value:
+                  file: inventario.csv
+              full:
+                summary: Petición completa
+                value:
+                  file: inventario.csv
+                  modo: nombre_marca
+                  imagenes_por_producto: 3
+                  generar_descripciones: false
+      responses:
+        '202':
+          description: Trabajo encolado correctamente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobCreateResponse'
+              examples:
+                success:
+                  summary: Trabajo encolado
+                  value:
+                    success: true
+                    data:
+                      job_id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                      estado: pendiente
+                      ws_url: /api/v1/jobs/3fa85f64-5717-4562-b3fc-2c963f66afa6/ws
+                    message: Trabajo encolado correctamente.
+        '400':
+          description: CSV inválido (tipo MIME incorrecto o archivo vacío).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                mime_invalido:
+                  summary: MIME no permitido
+                  value:
+                    success: false
+                    data: null
+                    message: El archivo debe ser de tipo text/csv.
+                csv_vacio:
+                  summary: CSV sin filas
+                  value:
+                    success: false
+                    data: null
+                    message: El archivo CSV está vacío o no contiene filas válidas.
+        '503':
+          description: Redis o Celery no disponibles.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                redis_down:
+                  summary: Redis no disponible
+                  value:
+                    success: false
+                    data: null
+                    message: El servicio de cola no está disponible. Inténtelo más tarde.
+
+  /api/v1/jobs/{job_id}:
+    get:
+      tags:
+        - jobs
+      summary: Consultar el estado de un trabajo
+      description: |
+        Devuelve el estado actual del trabajo, incluyendo contadores de
+        progreso, imágenes descargadas, fallos y, si aplica, descripciones
+        generadas por IA.
+      operationId: getJobStatus
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Estado del trabajo obtenido correctamente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobStatusResponse'
+              examples:
+                en_proceso:
+                  summary: Trabajo en proceso
+                  value:
+                    success: true
+                    data:
+                      job_id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                      estado: en_proceso
+                      total_productos: 100
+                      productos_procesados: 42
+                      imagenes_descargadas: 38
+                      imagenes_fallidas: 4
+                      descripciones_generadas: 0
+                      mensaje: Procesando producto 42 de 100...
+                      error: null
+                      creado_en: '2026-03-20T10:00:00Z'
+                      actualizado_en: '2026-03-20T10:05:00Z'
+                      completado_en: null
+                    message: Trabajo en proceso.
+                completado:
+                  summary: Trabajo completado
+                  value:
+                    success: true
+                    data:
+                      job_id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                      estado: completado
+                      total_productos: 100
+                      productos_procesados: 100
+                      imagenes_descargadas: 94
+                      imagenes_fallidas: 6
+                      descripciones_generadas: 0
+                      mensaje: Trabajo completado.
+                      error: null
+                      creado_en: '2026-03-20T10:00:00Z'
+                      actualizado_en: '2026-03-20T10:12:00Z'
+                      completado_en: '2026-03-20T10:12:00Z'
+                    message: Trabajo completado.
+        '404':
+          description: El trabajo no existe.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                not_found:
+                  summary: Job no encontrado
+                  value:
+                    success: false
+                    data: null
+                    message: El trabajo con ID especificado no existe.
+
+  /api/v1/jobs/{job_id}/ws:
+    get:
+      tags:
+        - jobs
+      summary: Progreso en tiempo real vía WebSocket
+      description: |
+        **Protocolo WebSocket** — Este endpoint no sigue el protocolo HTTP
+        estándar. Una vez establecida la conexión (Upgrade: websocket), el
+        servidor emite un evento `JobProgressEvent` cada segundo hasta que
+        el trabajo finalice o la conexión se cierre.
+
+        **URI de conexión en desarrollo:**
+        `ws://localhost:8000/api/v1/jobs/{job_id}/ws`
+
+        **URI de conexión en producción:**
+        `wss://harvist.app/api/v1/jobs/{job_id}/ws`
+
+        ### Contrato de mensajes emitidos por el servidor
+
+        El servidor envía exclusivamente mensajes de texto JSON con la
+        siguiente estructura (`JobProgressEvent`):
+
+        ```json
+        {
+          "job_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+          "estado": "en_proceso",
+          "porcentaje": 42.0,
+          "productos_procesados": 42,
+          "total_productos": 100,
+          "imagenes_descargadas": 38,
+          "imagenes_fallidas": 4,
+          "descripciones_generadas": 0,
+          "mensaje": "Procesando producto 42 de 100...",
+          "error": null
+        }
+        ```
+
+        ### Cierre de conexión
+        El servidor cierra la conexión con código `1000` (Normal Closure)
+        cuando `estado` es `completado`, `fallido` o `cancelado`.
+      operationId: jobWebSocket
+      x-websocket: true
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '101':
+          description: |
+            Switching Protocols — conexión WebSocket establecida.
+            A partir de este momento el servidor emite mensajes `JobProgressEvent`.
+        '404':
+          description: El trabajo no existe.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # FILES
+  # ──────────────────────────────────────────────────────────────────────────
+
+  /api/v1/files/{job_id}:
+    get:
+      tags:
+        - files
+      summary: Descargar el ZIP de imágenes de un trabajo completado
+      description: |
+        Devuelve el archivo ZIP generado para el trabajo indicado.
+        Solo disponible cuando `estado` es `completado`.
+        Si `generar_descripciones` estuvo activo, el ZIP incluye también
+        `descripciones.csv` con los campos `codigo`, `nombre` y
+        `descripcion_generada`.
+      operationId: downloadJobZip
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Archivo ZIP del trabajo.
+          headers:
+            Content-Disposition:
+              description: 'attachment; filename="{job_id}.zip"'
+              schema:
+                type: string
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: El ZIP aún no existe o el trabajo no está completado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                not_found:
+                  summary: ZIP no disponible
+                  value:
+                    success: false
+                    data: null
+                    message: El archivo ZIP no está disponible todavía.
+
+    delete:
+      tags:
+        - files
+      summary: Eliminar los archivos generados de un trabajo
+      description: |
+        Elimina el directorio de imágenes y el archivo ZIP asociados al
+        trabajo. Útil para liberar espacio en disco tras la descarga.
+      operationId: deleteJobFiles
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Archivos eliminados correctamente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobDeleteResponse'
+              examples:
+                success:
+                  summary: Eliminación correcta
+                  value:
+                    success: true
+                    data:
+                      job_id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                    message: Archivos eliminados correctamente.
+        '404':
+          description: No existen archivos para el trabajo indicado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                not_found:
+                  summary: Archivos no encontrados
+                  value:
+                    success: false
+                    data: null
+                    message: No existen archivos para el trabajo especificado.
+        '500':
+          description: Error interno al intentar eliminar los archivos.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                internal_error:
+                  summary: Error de sistema de archivos
+                  value:
+                    success: false
+                    data: null
+                    message: No se pudieron eliminar los archivos. Consulte los logs del servidor.
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # HEALTH
+  # ──────────────────────────────────────────────────────────────────────────
+
+  /health:
+    get:
+      tags:
+        - health
+      summary: Comprobación de estado del servicio
+      description: |
+        Endpoint de health check sin prefijo de versión.
+        Devuelve el entorno activo y confirma que el proceso está en marcha.
+        No requiere autenticación.
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Servicio operativo.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              examples:
+                development:
+                  summary: Entorno de desarrollo
+                  value:
+                    status: ok
+                    env: development
+                production:
+                  summary: Entorno de producción
+                  value:
+                    status: ok
+                    env: production
+
+# ──────────────────────────────────────────────────────────────────────────
+# COMPONENTS
+# ──────────────────────────────────────────────────────────────────────────
+
+components:
+
+  parameters:
+    JobId:
+      name: job_id
+      in: path
+      required: true
+      description: Identificador único del trabajo (UUID v4).
+      schema:
+        type: string
+        format: uuid
+        example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+
+  schemas:
+
+    # ── Enums ──────────────────────────────────────────────────────────────
+
+    EstadoJob:
+      type: string
+      description: Estado del ciclo de vida de un trabajo de scraping.
+      enum:
+        - pendiente
+        - en_proceso
+        - completado
+        - fallido
+        - cancelado
+      example: en_proceso
+
+    ModosBusqueda:
+      type: string
+      description: |
+        Estrategia de construcción de la query de búsqueda de imágenes.
+        - `ean`: usa el código EAN/barras del producto.
+        - `nombre_marca`: combina nombre del producto y marca.
+        - `personalizado`: usa el campo de query personalizada del CSV.
+      enum:
+        - ean
+        - nombre_marca
+        - personalizado
+      default: nombre_marca
+      example: nombre_marca
+
+    # ── Datos del trabajo ──────────────────────────────────────────────────
+
+    JobStatusData:
+      type: object
+      description: Campos de estado y progreso de un trabajo de scraping.
+      required:
+        - job_id
+        - estado
+        - total_productos
+        - productos_procesados
+        - imagenes_descargadas
+        - imagenes_fallidas
+        - descripciones_generadas
+        - creado_en
+        - actualizado_en
+      properties:
+        job_id:
+          type: string
+          format: uuid
+          description: Identificador único del trabajo.
+          example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+        estado:
+          $ref: '#/components/schemas/EstadoJob'
+        total_productos:
+          type: integer
+          minimum: 0
+          description: Total de productos detectados en el CSV.
+          example: 100
+        productos_procesados:
+          type: integer
+          minimum: 0
+          description: Número de productos procesados hasta el momento.
+          example: 42
+        imagenes_descargadas:
+          type: integer
+          minimum: 0
+          description: Número de imágenes descargadas y validadas correctamente.
+          example: 38
+        imagenes_fallidas:
+          type: integer
+          minimum: 0
+          description: Número de imágenes que no pudieron descargarse o validarse.
+          example: 4
+        descripciones_generadas:
+          type: integer
+          minimum: 0
+          description: |
+            Número de descripciones de producto generadas por IA.
+            Siempre 0 si `generar_descripciones` era `false` al crear el trabajo.
+          example: 0
+        mensaje:
+          type:
+            - string
+            - 'null'
+          description: Mensaje informativo del estado actual.
+          example: Procesando producto 42 de 100...
+        error:
+          type:
+            - string
+            - 'null'
+          description: Detalle del error si `estado` es `fallido`, `null` en caso contrario.
+          example: null
+        creado_en:
+          type: string
+          format: date-time
+          description: Timestamp de creación del trabajo (UTC, ISO 8601).
+          example: '2026-03-20T10:00:00Z'
+        actualizado_en:
+          type: string
+          format: date-time
+          description: Timestamp de la última actualización de estado (UTC, ISO 8601).
+          example: '2026-03-20T10:05:00Z'
+        completado_en:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: Timestamp de finalización del trabajo (UTC, ISO 8601). `null` si no ha terminado.
+          example: null
+
+    JobCreateData:
+      type: object
+      description: Datos devueltos al crear un trabajo nuevo.
+      required:
+        - job_id
+        - estado
+        - ws_url
+      properties:
+        job_id:
+          type: string
+          format: uuid
+          description: Identificador único del trabajo recién creado.
+          example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+        estado:
+          $ref: '#/components/schemas/EstadoJob'
+        ws_url:
+          type: string
+          description: Ruta relativa del endpoint WebSocket de progreso.
+          example: /api/v1/jobs/3fa85f64-5717-4562-b3fc-2c963f66afa6/ws
+
+    JobDeleteData:
+      type: object
+      description: Datos devueltos al eliminar archivos de un trabajo.
+      required:
+        - job_id
+      properties:
+        job_id:
+          type: string
+          format: uuid
+          description: Identificador del trabajo cuyos archivos fueron eliminados.
+          example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+
+    # ── Eventos WebSocket ──────────────────────────────────────────────────
+
+    JobProgressEvent:
+      type: object
+      description: |
+        Mensaje JSON emitido por el servidor a través del WebSocket
+        `GET /api/v1/jobs/{job_id}/ws` aproximadamente cada segundo.
+      required:
+        - job_id
+        - estado
+        - porcentaje
+        - productos_procesados
+        - total_productos
+        - imagenes_descargadas
+        - imagenes_fallidas
+        - descripciones_generadas
+      properties:
+        job_id:
+          type: string
+          format: uuid
+          description: Identificador del trabajo.
+          example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+        estado:
+          $ref: '#/components/schemas/EstadoJob'
+        porcentaje:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 100.0
+          description: Porcentaje de completitud del trabajo (0–100).
+          example: 42.0
+        productos_procesados:
+          type: integer
+          minimum: 0
+          description: Número de productos procesados.
+          example: 42
+        total_productos:
+          type: integer
+          minimum: 0
+          description: Total de productos del CSV.
+          example: 100
+        imagenes_descargadas:
+          type: integer
+          minimum: 0
+          description: Imágenes descargadas y validadas hasta el momento.
+          example: 38
+        imagenes_fallidas:
+          type: integer
+          minimum: 0
+          description: Imágenes que fallaron hasta el momento.
+          example: 4
+        descripciones_generadas:
+          type: integer
+          minimum: 0
+          description: Descripciones generadas por IA hasta el momento.
+          example: 0
+        mensaje:
+          type:
+            - string
+            - 'null'
+          description: Mensaje informativo del estado actual.
+          example: Procesando producto 42 de 100...
+        error:
+          type:
+            - string
+            - 'null'
+          description: Detalle del error si el trabajo ha fallado.
+          example: null
+
+    # ── Respuestas envolventes ─────────────────────────────────────────────
+
+    JobCreateResponse:
+      type: object
+      description: Respuesta estándar para la creación de un trabajo.
+      required:
+        - success
+        - data
+        - message
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: '#/components/schemas/JobCreateData'
+        message:
+          type: string
+          example: Trabajo encolado correctamente.
+
+    JobStatusResponse:
+      type: object
+      description: Respuesta estándar para la consulta de estado de un trabajo.
+      required:
+        - success
+        - data
+        - message
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: '#/components/schemas/JobStatusData'
+        message:
+          type: string
+          example: Trabajo en proceso.
+
+    JobDeleteResponse:
+      type: object
+      description: Respuesta estándar para la eliminación de archivos de un trabajo.
+      required:
+        - success
+        - data
+        - message
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: '#/components/schemas/JobDeleteData'
+        message:
+          type: string
+          example: Archivos eliminados correctamente.
+
+    ErrorResponse:
+      type: object
+      description: Respuesta estándar para todos los errores de la API.
+      required:
+        - success
+        - data
+        - message
+      properties:
+        success:
+          type: boolean
+          example: false
+        data:
+          type:
+            - object
+            - 'null'
+          description: Siempre `null` en respuestas de error.
+          example: null
+        message:
+          type: string
+          description: Descripción legible del error. Nunca incluye stack traces en producción.
+          example: El recurso solicitado no existe.
+
+    HealthResponse:
+      type: object
+      description: Respuesta del endpoint de health check.
+      required:
+        - status
+        - env
+      properties:
+        status:
+          type: string
+          enum:
+            - ok
+          example: ok
+        env:
+          type: string
+          enum:
+            - development
+            - staging
+            - production
+          description: Entorno activo en el que está corriendo el servicio.
+          example: development
