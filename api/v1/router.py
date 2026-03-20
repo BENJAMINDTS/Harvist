@@ -11,9 +11,11 @@ Monta los sub-routers de jobs y files bajo el prefijo /api/v1
 from fastapi import APIRouter
 
 from api.v1.endpoints.files import router as files_router
+from api.v1.endpoints.history import router as history_router
 from api.v1.endpoints.jobs import router as jobs_router
 
 router = APIRouter()
 
 router.include_router(jobs_router)
 router.include_router(files_router)
+router.include_router(history_router)
