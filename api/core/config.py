@@ -1,0 +1,135 @@
+"""
+Configuración centralizada de la aplicación mediante Pydantic Settings v2.
+
+Todas las variables se leen exclusivamente desde variables de entorno o archivo .env.
+NUNCA hardcodear valores aquí — usar siempre get_settings().
+
+:author: BenjaminDTS
+:version: 1.0.0
+"""
+
+from functools import lru_cache
+from typing import Literal
+
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """
+    Configuración global de la aplicación.
+
+    Valida y expone todas las variables de entorno al arranque.
+    Si alguna variable obligatoria falta o tiene un valor inválido,
+    Pydantic lanzará un ValidationError antes de que la app sirva tráfico.
+
+    :author: BenjaminDTS
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env.development",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    # ── Entorno ──────────────────────────────────────────────────────────────
+    app_env: Literal["development", "staging", "production"] = Field(
+        default="development",
+        description="Entorno de ejecución de la aplicación.",
+    )
+    app_debug: bool = Field(default=False)
+    secret_key: str = Field(..., min_length=16)
+
+    # ── API ───────────────────────────────────────────────────────────────────
+    api_host: str = Field(default="0.0.0.0")
+    api_port: int = Field(default=8000, ge=1, le=65535)
+    api_prefix: str = Field(default="/api/v1")
+    allowed_origins: list[str] = Field(default=["http://localhost:5173"])
+
+    @field_validator("allowed_origins", mode="before")
+    @classmethod
+    def _split_origins(cls, value: str | list[str]) -> list[str]:
+        """Convierte un string CSV de orígenes en lista si viene del .env."""
+        if isinstance(value, str):
+            return [o.strip() for o in value.split(",") if o.strip()]
+        return value
+
+    # ── Redis / Celery ────────────────────────────────────────────────────────
+    redis_url: str = Field(default="redis://localhost:6379/0")
+    celery_broker_url: str = Field(default="redis://localhost:6379/0")
+    celery_result_backend: str = Field(default="redis://localhost:6379/1")
+
+    # ── Navegador ─────────────────────────────────────────────────────────────
+    browser_type: Literal["chrome", "opera", "edge", "brave", "chromium"] = Field(
+        default="chrome"
+    )
+    browser_binary_path: str = Field(...)
+    browser_headless: bool = Field(default=True)
+    browser_timeout: int = Field(default=15, ge=5, le=120)
+
+    # ── Scraper / Búsqueda ────────────────────────────────────────────────────
+    images_per_product: int = Field(default=5, ge=1, le=20)
+    image_min_width: int = Field(default=200, ge=1)
+    image_min_height: int = Field(default=200, ge=1)
+    image_resize_width: int = Field(default=800, ge=1)
+    image_resize_height: int = Field(default=800, ge=1)
+    download_workers: int = Field(default=4, ge=1, le=32)
+    download_timeout: int = Field(default=10, ge=1, le=60)
+
+    # ── Almacenamiento ────────────────────────────────────────────────────────
+    output_dir: str = Field(default="imagenes_descargadas")
+    file_ttl_seconds: int = Field(default=86400, ge=60)
+
+    # ── Logging ───────────────────────────────────────────────────────────────
+    log_level: Literal["ERROR", "WARN", "INFO", "DEBUG"] = Field(default="INFO")
+    log_dir: str = Field(default="logs")
+    log_rotation: str = Field(default="100 MB")
+    log_retention: str = Field(default="7 days")
+
+    # ── IA — Fase 5 (opcional) ────────────────────────────────────────────────
+    enable_ai_descriptions: bool = Field(default=False)
+    grok_api_key: str = Field(default="")
+    grok_api_base_url: str = Field(default="https://api.x.ai/v1")
+    grok_model: str = Field(default="grok-beta")
+    grok_timeout: int = Field(default=30, ge=5)
+    grok_max_retries: int = Field(default=3, ge=1)
+
+    @field_validator("grok_api_key", mode="after")
+    @classmethod
+    def _validate_grok_key(cls, value: str, info) -> str:
+        """Valida que la clave de Grok esté presente si la IA está habilitada."""
+        # info.data puede no tener enable_ai_descriptions si falla antes
+        enable = info.data.get("enable_ai_descriptions", False)
+        if enable and not value:
+            raise ValueError(
+                "GROK_API_KEY es obligatoria cuando ENABLE_AI_DESCRIPTIONS=true"
+            )
+        return value
+
+    @property
+    def is_production(self) -> bool:
+        """Devuelve True si el entorno es producción."""
+        return self.app_env == "production"
+
+    @property
+    def is_development(self) -> bool:
+        """Devuelve True si el entorno es desarrollo."""
+        return self.app_env == "development"
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    """
+    Devuelve la instancia singleton de Settings.
+
+    Usa lru_cache para que Pydantic no vuelva a leer el .env en cada llamada.
+    En tests, llama a get_settings.cache_clear() antes de sobreescribir vars.
+
+    Returns:
+        Settings: instancia validada con todas las variables de entorno.
+
+    Raises:
+        ValidationError: si alguna variable obligatoria falta o es inválida.
+    """
+    return Settings()
