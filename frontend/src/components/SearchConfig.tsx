@@ -16,6 +16,21 @@ import React, { useCallback, useState } from "react";
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
 /**
+ * Mapeo entre los campos internos del parser y las columnas reales del CSV.
+ * Permite que el CSV del usuario tenga cualquier nombre de cabecera.
+ */
+export interface ColumnMapping {
+  /** Columna del CSV que actúa como código único del producto. */
+  columnaCodigo: string;
+  /** Columna del CSV con el EAN/código de barras. */
+  columnaEan: string;
+  /** Columna del CSV con el nombre del producto. */
+  columnaNombre: string;
+  /** Columna del CSV con la marca del producto. */
+  columnaMarca: string;
+}
+
+/**
  * Valores de configuración de búsqueda que se envían al padre al lanzar el job.
  */
 export interface SearchConfigValues {
@@ -30,6 +45,8 @@ export interface SearchConfigValues {
    * Solo se usa cuando `modo === 'personalizado'`.
    */
   queryPersonalizada: string;
+  /** Mapeo de columnas del CSV a campos internos del parser. */
+  columnMapping: ColumnMapping;
 }
 
 /**
@@ -38,6 +55,11 @@ export interface SearchConfigValues {
 interface SearchConfigProps {
   /** Nombre del archivo CSV seleccionado previamente. */
   fileName: string;
+  /**
+   * Cabeceras detectadas en el CSV. Se usan para poblar los selectores
+   * de mapeo de columnas.
+   */
+  csvHeaders: string[];
   /**
    * Callback asíncrono invocado al pulsar "Iniciar scraping".
    * Recibe los valores de configuración del formulario.
@@ -178,8 +200,105 @@ const SparklesIcon: React.FC<IconProps> = ({ className }) => (
  * @param onLaunch - Callback asíncrono que recibe la configuración final.
  * @param onBack   - Callback invocado al pulsar "Volver".
  */
+// ─── Sub-componente: selector de columna CSV ──────────────────────────────────
+
+/**
+ * Props del sub-componente ColumnSelect.
+ */
+interface ColumnSelectProps {
+  /** id del elemento para asociar el label. */
+  id: string;
+  /** Etiqueta visible del campo. */
+  label: string;
+  /** Si true muestra un asterisco de requerido. */
+  required?: boolean;
+  /** Lista de cabeceras disponibles en el CSV. */
+  headers: string[];
+  /** Valor actualmente seleccionado. */
+  value: string;
+  /** Callback al cambiar la selección. */
+  onChange: (val: string) => void;
+  /** Texto de ayuda debajo del selector. */
+  hint?: string;
+}
+
+/**
+ * Selector de columna CSV con etiqueta, dropdown y texto de ayuda.
+ * Renderiza las cabeceras del CSV como opciones de un <select>.
+ *
+ * @author BenjaminDTS | Carlos Vico
+ * @param id       - id HTML del select.
+ * @param label    - Etiqueta visible.
+ * @param required - Indica si la columna es obligatoria.
+ * @param headers  - Cabeceras del CSV.
+ * @param value    - Valor seleccionado.
+ * @param onChange - Callback al cambiar.
+ * @param hint     - Texto de ayuda.
+ */
+const ColumnSelect: React.FC<ColumnSelectProps> = ({
+  id,
+  label,
+  required = false,
+  headers,
+  value,
+  onChange,
+  hint,
+}) => (
+  <div className="flex flex-col gap-1">
+    <label htmlFor={id} className="text-xs font-medium text-gray-700">
+      {label}
+      {required && <span className="text-red-500 ml-0.5">*</span>}
+    </label>
+    <select
+      id={id}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={
+        "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 " +
+        "text-sm text-gray-800 " +
+        "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent " +
+        "transition-colors duration-150"
+      }
+    >
+      {!required && (
+        <option value="">(ninguna)</option>
+      )}
+      {headers.map((h) => (
+        <option key={h} value={h}>
+          {h}
+        </option>
+      ))}
+    </select>
+    {hint && <p className="text-xs text-gray-400">{hint}</p>}
+  </div>
+);
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Busca en una lista de cabeceras del CSV el primer valor que coincida
+ * (insensible a mayúsculas) con los nombres candidatos dados.
+ * Si no hay coincidencia devuelve la primera cabecera disponible o "".
+ *
+ * Args:
+ *   headers: Cabeceras del CSV.
+ *   candidates: Nombres a buscar por orden de preferencia.
+ *
+ * Returns:
+ *   Cabecera encontrada o primera cabecera del array o "".
+ */
+function autoDetect(headers: string[], ...candidates: string[]): string {
+  const lower = headers.map((h) => h.toLowerCase());
+  for (const c of candidates) {
+    const idx = lower.indexOf(c.toLowerCase());
+    if (idx !== -1) return headers[idx];
+  }
+  return headers[0] ?? "";
+}
+
 export const SearchConfig: React.FC<SearchConfigProps> = ({
   fileName,
+  csvHeaders,
   onLaunch,
   onBack,
 }) => {
@@ -190,6 +309,20 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
   const [generarDescripciones, setGenerarDescripciones] =
     useState<boolean>(false);
   const [queryPersonalizada, setQueryPersonalizada] = useState<string>("");
+
+  // ── Estado del mapeo de columnas — se inicializa con auto-detección ──────────
+  const [columnaCodigo, setColumnaCodigo] = useState<string>(
+    () => autoDetect(csvHeaders, "codigo", "code", "id", "sku")
+  );
+  const [columnaEan, setColumnaEan] = useState<string>(
+    () => autoDetect(csvHeaders, "ean", "barcode", "gtin", "upc")
+  );
+  const [columnaNombre, setColumnaNombre] = useState<string>(
+    () => autoDetect(csvHeaders, "nombre", "name", "producto", "title")
+  );
+  const [columnaMarca, setColumnaMarca] = useState<string>(
+    () => autoDetect(csvHeaders, "marca", "brand", "fabricante", "manufacturer")
+  );
 
   /** Indica si `onLaunch` está en curso para bloquear el botón y mostrar spinner. */
   const [launching, setLaunching] = useState<boolean>(false);
@@ -222,6 +355,12 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
         imagenesPorProducto,
         generarDescripciones,
         queryPersonalizada,
+        columnMapping: {
+          columnaCodigo,
+          columnaEan,
+          columnaNombre,
+          columnaMarca,
+        },
       });
     } finally {
       // Siempre desbloquear, incluso si onLaunch lanza una excepción.
@@ -234,6 +373,10 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
     imagenesPorProducto,
     generarDescripciones,
     queryPersonalizada,
+    columnaCodigo,
+    columnaEan,
+    columnaNombre,
+    columnaMarca,
   ]);
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -370,6 +513,82 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
           </div>
         )}
       </fieldset>
+
+      {/* ── Mapeo de columnas ── */}
+      {csvHeaders.length > 0 && (
+        <fieldset className="rounded-xl border border-gray-200 bg-white p-4">
+          <legend className="text-sm font-semibold text-gray-700 px-1">
+            Mapeo de columnas
+          </legend>
+          <p className="text-xs text-gray-500 mt-1 mb-4">
+            Indica qué columna de tu CSV corresponde a cada campo.
+            La detección automática ya ha pre-seleccionado las más probables.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Columna Código — siempre requerida */}
+            <ColumnSelect
+              id="col-codigo"
+              label="Código del producto"
+              required
+              headers={csvHeaders}
+              value={columnaCodigo}
+              onChange={setColumnaCodigo}
+              hint="Identificador único — se usa para nombrar las imágenes."
+            />
+
+            {/* Columna EAN — requerida en modo EAN, opcional en otros */}
+            {(modo === "ean" || modo === "personalizado") && (
+              <ColumnSelect
+                id="col-ean"
+                label="EAN / Código de barras"
+                required={modo === "ean"}
+                headers={csvHeaders}
+                value={columnaEan}
+                onChange={setColumnaEan}
+                hint={
+                  modo === "ean"
+                    ? "Requerido en modo EAN."
+                    : "Opcional — disponible como {ean} en la plantilla."
+                }
+              />
+            )}
+
+            {/* Columna Nombre — requerida en modo NOMBRE_MARCA, opcional en PERSONALIZADO */}
+            {(modo === "nombre_marca" || modo === "personalizado") && (
+              <ColumnSelect
+                id="col-nombre"
+                label="Nombre del producto"
+                required={modo === "nombre_marca"}
+                headers={csvHeaders}
+                value={columnaNombre}
+                onChange={setColumnaNombre}
+                hint={
+                  modo === "nombre_marca"
+                    ? "Requerido en modo Nombre + Marca."
+                    : "Opcional — disponible como {nombre} en la plantilla."
+                }
+              />
+            )}
+
+            {/* Columna Marca — requerida en modo NOMBRE_MARCA, opcional en PERSONALIZADO */}
+            {(modo === "nombre_marca" || modo === "personalizado") && (
+              <ColumnSelect
+                id="col-marca"
+                label="Marca del producto"
+                required={modo === "nombre_marca"}
+                headers={csvHeaders}
+                value={columnaMarca}
+                onChange={setColumnaMarca}
+                hint={
+                  modo === "nombre_marca"
+                    ? "Requerido en modo Nombre + Marca."
+                    : "Opcional — disponible como {marca} en la plantilla."
+                }
+              />
+            )}
+          </div>
+        </fieldset>
+      )}
 
       {/* ── Imágenes por producto ── */}
       <div>
