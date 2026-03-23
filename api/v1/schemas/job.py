@@ -136,11 +136,10 @@ class SearchConfig(BaseModel):
         description="API key de Groq introducida por el usuario desde el formulario. "
                     "Si está rellena, tiene prioridad sobre la variable de entorno GROQ_API_KEY.",
     )
-    prompt_personalizado: str = Field(
+    store_type_usuario: str = Field(
         default="",
-        description="Plantilla de prompt personalizada introducida por el usuario. "
-                    "Debe contener {store_type} y {productos_json}. "
-                    "Si está vacía se usa el prompt SEO por defecto.",
+        description="Tipo de tienda introducido por el usuario (ej: 'tiendas de mascotas'). "
+                    "Si está relleno, tiene prioridad sobre CLAUDE_STORE_TYPE del .env.",
     )
     column_mapping: ColumnMapping = Field(
         default_factory=ColumnMapping,

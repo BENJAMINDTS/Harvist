@@ -123,11 +123,11 @@ class DescripcionPipeline:
             max_retries=settings.claude_max_retries,
             provider=settings.ai_provider,
         )
+        store_type = self._config.store_type_usuario or settings.claude_store_type
         generator = DescriptionGenerator(
             client=claude_client,
-            store_type=settings.claude_store_type,
+            store_type=store_type,
             prompt_file=settings.claude_prompt_file,
-            prompt_inline=self._config.prompt_personalizado,
         )
 
         # ── Paso 3: Generar descripciones en batches ──────────────────────────
