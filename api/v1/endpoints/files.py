@@ -2,7 +2,8 @@
 Endpoints para la gestión de archivos generados por los trabajos de scraping.
 
 Rutas expuestas:
-  GET    /api/v1/files/{job_id}        — Descargar el ZIP de imágenes
+  GET    /api/v1/files/{job_id}        — Descargar el ZIP de imágenes (job fotos)
+  GET    /api/v1/files/{job_id}/csv    — Descargar el CSV de descripciones (job descripciones)
   DELETE /api/v1/files/{job_id}        — Eliminar los archivos de un job
   GET    /api/v1/files/{job_id}/brands — (Fase 6) Descargar fichas de marca JSON
 
@@ -116,6 +117,45 @@ async def eliminar_archivos_job(job_id: str) -> JSONResponse:
             "data": {"job_id": job_id},
             "message": "Archivos eliminados correctamente.",
         }
+    )
+
+
+@router.get(
+    "/{job_id}/csv",
+    summary="Descargar el CSV de descripciones de un trabajo",
+    response_class=FileResponse,
+)
+async def descargar_csv(job_id: str) -> FileResponse:
+    """
+    Devuelve el archivo descripciones.csv generado por el pipeline de IA.
+
+    Args:
+        job_id: identificador UUID del trabajo.
+
+    Returns:
+        FileResponse con el CSV de descripciones como adjunto descargable.
+
+    Raises:
+        HTTPException 404: si el CSV no existe o el job no ha completado.
+    """
+    storage = get_storage_service()
+    csv_path = storage.get_job_dir(job_id) / "descripciones.csv"
+
+    if not csv_path.exists():
+        logger.warning(
+            "CSV de descripciones no encontrado",
+            extra={"job_id": job_id},
+        )
+        raise HTTPException(
+            status_code=404,
+            detail="El CSV no existe. El job puede no haber completado aún.",
+        )
+
+    return FileResponse(
+        path=str(csv_path),
+        media_type="text/csv",
+        filename=f"descripciones_{job_id}.csv",
+        headers={"Content-Disposition": f'attachment; filename="descripciones_{job_id}.csv"'},
     )
 
 
