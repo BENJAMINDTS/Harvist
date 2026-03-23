@@ -102,20 +102,35 @@ class DescriptionGenerator:
         client: ClaudeClient,
         store_type: str = "tiendas de mascotas",
         prompt_file: str = "",
+        prompt_inline: str = "",
     ) -> None:
         """
         Inicializa el generador con el cliente Claude y la configuración de prompt.
 
+        La prioridad de carga del template es:
+        1. prompt_inline (enviado por el usuario desde el formulario)
+        2. prompt_file (ruta a archivo .txt en el servidor)
+        3. _PROMPT_DEFAULT (prompt SEO por defecto)
+
         Args:
             client: instancia de ClaudeClient lista para usar.
-            store_type: tipo de tienda inyectado en el prompt (ej: 'tiendas de mascotas').
-            prompt_file: ruta a un archivo .txt con plantilla de prompt personalizada.
-                         Debe contener {store_type} y {productos_json}. Si está vacío
-                         se usa el prompt SEO por defecto.
+            store_type: tipo de tienda inyectado en el prompt.
+            prompt_file: ruta a un archivo .txt con plantilla personalizada.
+            prompt_inline: plantilla de prompt enviada directamente como string.
+                           Tiene prioridad sobre prompt_file y el prompt por defecto.
         """
         self._client = client
         self._store_type = store_type
-        self._prompt_template = self._cargar_template(prompt_file)
+
+        if prompt_inline and "{productos_json}" in prompt_inline:
+            self._prompt_template = prompt_inline
+            logger.info("Prompt cargado desde el formulario del usuario")
+        else:
+            if prompt_inline:
+                logger.warning(
+                    "El prompt del usuario no contiene {productos_json}, usando prompt por defecto"
+                )
+            self._prompt_template = self._cargar_template(prompt_file)
 
     def generar_batch(self, productos: list[Producto]) -> list[ResultadoDescripcion]:
         """
