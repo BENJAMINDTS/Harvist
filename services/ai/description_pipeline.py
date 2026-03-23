@@ -213,9 +213,6 @@ class DescripcionPipeline:
             "categoria",
             "corta",
             "larga",
-            "keywords_principales",
-            "keywords_secundarias",
-            "meta_description",
             "exitoso",
             "error",
         ]
@@ -231,9 +228,6 @@ class DescripcionPipeline:
                 "categoria": r.categoria,
                 "corta": r.corta,
                 "larga": r.larga,
-                "keywords_principales": " | ".join(r.keywords_principales),
-                "keywords_secundarias": " | ".join(r.keywords_secundarias),
-                "meta_description": r.meta_description,
                 "exitoso": r.exitoso,
                 "error": r.error,
             })
