@@ -150,6 +150,27 @@ class Settings(BaseSettings):
     )
     claude_timeout: int = Field(default=30, ge=5)
     claude_max_retries: int = Field(default=3, ge=1)
+    claude_store_type: str = Field(
+        default="tiendas de mascotas",
+        description=(
+            "Tipo de tienda inyectado en el prompt de descripciones. "
+            "Ejemplos: 'tiendas de mascotas', 'tiendas de ropa deportiva', 'ferreterías'."
+        ),
+    )
+    claude_batch_size: int = Field(
+        default=10,
+        ge=1,
+        le=50,
+        description="Número de productos enviados a Claude por llamada (procesamiento en batch).",
+    )
+    claude_prompt_file: str = Field(
+        default="",
+        description=(
+            "Ruta a un archivo .txt con una plantilla de prompt personalizada. "
+            "Debe contener los placeholders {store_type} y {productos_json}. "
+            "Si está vacío se usa el prompt SEO por defecto."
+        ),
+    )
 
     @field_validator("claude_api_key", mode="after")
     @classmethod
