@@ -27,6 +27,10 @@ from workers.celery_app import celery_app
 task_logger = get_task_logger(__name__)
 
 _JOB_KEY = "job:{job_id}"
+
+
+class JobCancelledError(Exception):
+    """Se lanza cuando el job ha sido cancelado externamente vía Redis."""
 # Sorted set donde se registran todos los job_ids para el panel de historial.
 # Score = timestamp UTC en segundos (ZREVRANGE devuelve los más recientes primero).
 _HISTORY_KEY = "jobs:history"
@@ -119,13 +123,26 @@ def ejecutar_scraping(
         """
         Actualiza el estado del job en Redis tras procesar cada producto.
 
+        Comprueba antes de escribir si el job fue cancelado externamente.
+        Si es así, lanza JobCancelledError para detener el pipeline.
+
         Args:
             jid: job_id.
             procesados: productos procesados hasta ahora.
             total: total de productos del CSV.
             img_ok: imágenes descargadas exitosamente.
             img_fail: imágenes que fallaron.
+
+        Raises:
+            JobCancelledError: si el job fue cancelado desde la API.
         """
+        # Verificar cancelación antes de continuar con el siguiente producto
+        raw = redis_client.get(_JOB_KEY.format(job_id=jid))
+        if raw:
+            current = JobStatus.model_validate_json(raw)
+            if current.estado == EstadoJob.CANCELADO:
+                raise JobCancelledError(f"Job {jid} cancelado por el usuario.")
+
         job_status.total_productos = total
         job_status.productos_procesados = procesados
         job_status.imagenes_descargadas = img_ok
@@ -162,6 +179,11 @@ def ejecutar_scraping(
             extra={"job_id": job_id, **{k: v for k, v in resumen.items() if k != "errores_csv"}},
         )
         return resumen
+
+    except JobCancelledError:
+        # El job fue cancelado externamente — no reintenta, no es un error
+        logger.info("Tarea cancelada por el usuario", extra={"job_id": job_id})
+        return {"cancelado": True}
 
     except CsvParserError as exc:
         # Error irrecuperable — no reintenta
