@@ -43,6 +43,7 @@ from api.v1.schemas.job import (
     JobStatus,
     ModosBusqueda,
     SearchConfig,
+    TipoJob,
 )
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
@@ -111,10 +112,10 @@ async def crear_job(
         int,
         Form(ge=1, le=20, description="Imágenes a descargar por producto."),
     ] = 5,
-    generar_descripciones: Annotated[
-        bool,
-        Form(description="Activar generación de descripciones con IA (Fase 5)."),
-    ] = False,
+    tipo_job: Annotated[
+        TipoJob,
+        Form(description="Tipo de trabajo: 'fotos' (scraping) o 'descripciones' (Claude API). Mutuamente excluyentes."),
+    ] = TipoJob.FOTOS,
     columna_codigo: Annotated[
         str,
         Form(description="Columna del CSV que contiene el código único del producto."),
@@ -193,9 +194,9 @@ async def crear_job(
     job_id = str(uuid.uuid4())
 
     config = SearchConfig(
+        tipo_job=tipo_job,
         modo=modo,
         imagenes_por_producto=imagenes_por_producto,
-        generar_descripciones=generar_descripciones,
         query_personalizada=query_personalizada or None,
         column_mapping=ColumnMapping(
             columna_codigo=columna_codigo,
@@ -232,7 +233,7 @@ async def crear_job(
         logger.error("Error al encolar el job en Celery", exc_info=exc, extra={"job_id": job_id})
         raise HTTPException(status_code=503, detail="No se pudo encolar el trabajo.") from exc
 
-    logger.info("Job encolado", extra={"job_id": job_id, "modo": modo.value})
+    logger.info("Job encolado", extra={"job_id": job_id, "tipo_job": tipo_job.value, "modo": modo.value})
 
     return JSONResponse(
         status_code=202,
