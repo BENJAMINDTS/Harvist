@@ -600,15 +600,17 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
               />
             )}
 
-            {/* Columna Categoría — siempre opcional, disponible como {categoria} */}
-            <ColumnSelect
-              id="col-categoria"
-              label="Categoría del producto"
-              headers={csvHeaders}
-              value={columnaCategoria}
-              onChange={setColumnaCategoria}
-              hint="Opcional — disponible como {categoria} en la plantilla personalizada."
-            />
+            {/* Columna Categoría — solo en modo personalizado, como {categoria} */}
+            {modo === "personalizado" && (
+              <ColumnSelect
+                id="col-categoria"
+                label="Categoría del producto"
+                headers={csvHeaders}
+                value={columnaCategoria}
+                onChange={setColumnaCategoria}
+                hint="Opcional — disponible como {categoria} en la plantilla personalizada."
+              />
+            )}
           </div>
         </fieldset>
       )}
