@@ -476,14 +476,14 @@ def _crear_driver(settings) -> WebDriver:
         return uc.Chrome(options=options)
 
     if browser_type == "opera":
-        from selenium import webdriver
-        from selenium.webdriver.chrome.options import Options
-        options = Options()
+        # Opera es Chromium-based — usar uc.Chrome para gestión automática del driver
+        import undetected_chromedriver as uc
+        options = uc.ChromeOptions()
         options.binary_location = binary_path
         if headless:
             options.add_argument("--headless=new")
-        options.add_experimental_option("w3c", True)
-        return webdriver.Chrome(options=options)
+        options.add_argument("--no-sandbox")
+        return uc.Chrome(options=options)
 
     raise ValueError(
         f"BROWSER_TYPE '{browser_type}' no soportado. "
