@@ -204,7 +204,7 @@ async def crear_job(
     try:
         from workers.tasks import ejecutar_scraping
         ejecutar_scraping.apply_async(
-            args=[job_id, contenido.decode("utf-8", errors="replace"), config.model_dump()],
+            args=[job_id, contenido.decode("utf-8-sig", errors="replace"), config.model_dump()],
             task_id=job_id,
         )
     except Exception as exc:
