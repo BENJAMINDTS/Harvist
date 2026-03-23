@@ -1,16 +1,21 @@
 """
-Servicio de generación de descripciones de producto usando Claude API.
+Servicio de generación de descripciones SEO de producto usando Claude API.
 
-Recibe los datos normalizados de un producto (nombre, marca, EAN, categoría)
-y devuelve una descripción de catálogo lista para exportar.
+Procesa los productos en batch (varios por llamada) para reducir latencia y coste.
+La respuesta de Claude es JSON estructurado con: corta, larga, keywords y meta_description.
+
+El prompt es configurable por tipo de tienda (CLAUDE_STORE_TYPE) o mediante un archivo
+de plantilla externo (CLAUDE_PROMPT_FILE) con los placeholders {store_type} y {productos_json}.
 
 :author: Carlitos6712
-:version: 1.0.0
+:version: 2.0.0
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+from dataclasses import dataclass, field
+from pathlib import Path
 
 from loguru import logger
 
@@ -18,25 +23,48 @@ from services.ai.claude_client import ClaudeClient
 from services.csv_parser import Producto
 
 
-_PROMPT_TEMPLATE = """\
-Eres un redactor especializado en catálogos de e-commerce en español.
+# ---------------------------------------------------------------------------
+# Prompt por defecto (configurable vía CLAUDE_STORE_TYPE o CLAUDE_PROMPT_FILE)
+# ---------------------------------------------------------------------------
 
-Genera una descripción comercial breve (máximo 120 palabras) para el siguiente producto.
-La descripción debe ser atractiva, clara e informativa para un comprador online.
-Responde ÚNICAMENTE con la descripción, sin título, sin encabezado ni explicaciones adicionales.
+_PROMPT_DEFAULT = (
+    "Actúa como un copywriter experto en SEO y {store_type}. "
+    "Genera descripciones optimizadas para buscadores (SEO) para los siguientes productos, "
+    "teniendo muy en cuenta su 'categoria' (perros, gatos, pájaros, etc.):\n\n"
+    "{productos_json}\n\n"
+    "REGLAS POR PRODUCTO:\n"
+    "1. Corta: Gancho comercial con la keyword principal integrada de forma natural (máx 10 palabras).\n"
+    "2. Larga: Texto persuasivo (+60 palabras) que incluya de forma natural entre 2 y 3 keywords secundarias. "
+    "   Debe explicar beneficios reales del producto, resolver una necesidad del dueño de la mascota "
+    "   e incluir una llamada a la acción implícita al final.\n"
+    "3. keywords_principales: Lista de 1 a 2 términos de búsqueda de alto volumen y alta intención de compra "
+    "   directamente relacionados con el producto (ej: 'pienso para perros adultos', 'arena aglomerante gatos').\n"
+    "4. keywords_secundarias: Lista de 3 a 5 términos long-tail o complementarios que refuercen el posicionamiento "
+    "   (ej: 'mejor pienso sin cereales para perros', 'arena para gatos sin polvo', 'comida natural para mascotas').\n"
+    "5. meta_description: Texto de entre 140 y 160 caracteres, en tono persuasivo, que incluya la keyword "
+    "   principal y esté optimizado para aparecer en los resultados de búsqueda de Google.\n"
+    "6. Si la categoría es '- Sin Departamento -', deduce el animal por el nombre o descripción del producto.\n\n"
+    "RESPONDE EXCLUSIVAMENTE EN JSON con esta estructura exacta, sin texto adicional:\n"
+    "{\"productos\": [{"
+    "\"id_interno\": \"...\", "
+    "\"corta\": \"...\", "
+    "\"larga\": \"...\", "
+    "\"keywords_principales\": [\"...\", \"...\"], "
+    "\"keywords_secundarias\": [\"...\", \"...\", \"...\"], "
+    "\"meta_description\": \"...\""
+    "}]}"
+)
 
-Datos del producto:
-- Nombre: {nombre}
-- Marca: {marca}
-- EAN: {ean}
-- Categoría: {categoria}
-"""
+
+# ---------------------------------------------------------------------------
+# Modelos de datos
+# ---------------------------------------------------------------------------
 
 
 @dataclass
 class ResultadoDescripcion:
     """
-    Resultado de generar la descripción de un producto.
+    Resultado de la generación SEO para un producto.
 
     :author: Carlitos6712
     """
@@ -44,73 +72,217 @@ class ResultadoDescripcion:
     codigo: str
     nombre: str
     marca: str
-    descripcion: str
-    exitoso: bool
+    categoria: str
+    corta: str = ""
+    larga: str = ""
+    keywords_principales: list[str] = field(default_factory=list)
+    keywords_secundarias: list[str] = field(default_factory=list)
+    meta_description: str = ""
+    exitoso: bool = True
     error: str = ""
+
+
+# ---------------------------------------------------------------------------
+# Generador
+# ---------------------------------------------------------------------------
 
 
 class DescriptionGenerator:
     """
-    Genera descripciones de producto usando la API de Claude.
+    Genera descripciones SEO de producto en batch usando la API de Claude.
 
-    Usa un ClaudeClient inyectado para enviar el prompt y recibir el texto.
-    Los errores de API se capturan producto a producto para no interrumpir
-    el pipeline completo.
+    Envía varios productos por llamada para reducir latencia y coste de API.
+    Parsea la respuesta JSON y mapea cada resultado a su producto por id_interno.
 
     :author: Carlitos6712
     """
 
-    def __init__(self, client: ClaudeClient) -> None:
+    def __init__(
+        self,
+        client: ClaudeClient,
+        store_type: str = "tiendas de mascotas",
+        prompt_file: str = "",
+    ) -> None:
         """
-        Inicializa el generador con un cliente Claude ya configurado.
+        Inicializa el generador con el cliente Claude y la configuración de prompt.
 
         Args:
             client: instancia de ClaudeClient lista para usar.
+            store_type: tipo de tienda inyectado en el prompt (ej: 'tiendas de mascotas').
+            prompt_file: ruta a un archivo .txt con plantilla de prompt personalizada.
+                         Debe contener {store_type} y {productos_json}. Si está vacío
+                         se usa el prompt SEO por defecto.
         """
         self._client = client
+        self._store_type = store_type
+        self._prompt_template = self._cargar_template(prompt_file)
 
-    def generar(self, producto: Producto) -> ResultadoDescripcion:
+    def generar_batch(self, productos: list[Producto]) -> list[ResultadoDescripcion]:
         """
-        Genera la descripción de catálogo para un producto.
+        Genera descripciones SEO para un lote de productos en una sola llamada a Claude.
 
         Args:
-            producto: producto con sus datos ya normalizados.
+            productos: lista de productos a procesar en este batch.
 
         Returns:
-            ResultadoDescripcion con la descripción generada o el error ocurrido.
+            Lista de ResultadoDescripcion en el mismo orden que los productos de entrada.
+            Los productos para los que Claude no devuelva resultado se marcan con error.
         """
-        prompt = _PROMPT_TEMPLATE.format(
-            nombre=producto.nombre or producto.codigo,
-            marca=producto.marca or "—",
-            ean=producto.ean or "—",
-            categoria=producto.categoria or "—",
+        if not productos:
+            return []
+
+        productos_input = [
+            {
+                "id_interno": p.codigo,
+                "nombre": p.nombre or p.codigo,
+                "marca": p.marca or "—",
+                "categoria": p.categoria or "- Sin Departamento -",
+            }
+            for p in productos
+        ]
+
+        prompt = self._prompt_template.format(
+            store_type=self._store_type,
+            productos_json=json.dumps(productos_input, ensure_ascii=False, indent=2),
         )
 
         try:
-            descripcion = self._client.completar(prompt)
-            logger.info(
-                "Descripción generada",
-                extra={"codigo": producto.codigo, "chars": len(descripcion)},
-            )
-            return ResultadoDescripcion(
-                codigo=producto.codigo,
-                nombre=producto.nombre,
-                marca=producto.marca,
-                descripcion=descripcion,
-                exitoso=True,
-            )
-
+            respuesta_raw = self._client.completar(prompt)
+            resultados_claude = self._parsear_respuesta(respuesta_raw)
         except Exception as exc:
             logger.error(
-                "Error al generar descripción para producto",
+                "Error en llamada batch a Claude",
                 exc_info=exc,
-                extra={"codigo": producto.codigo},
+                extra={"batch_size": len(productos)},
             )
-            return ResultadoDescripcion(
-                codigo=producto.codigo,
-                nombre=producto.nombre,
-                marca=producto.marca,
-                descripcion="",
-                exitoso=False,
-                error=str(exc),
+            return [
+                ResultadoDescripcion(
+                    codigo=p.codigo,
+                    nombre=p.nombre,
+                    marca=p.marca,
+                    categoria=p.categoria,
+                    exitoso=False,
+                    error=str(exc),
+                )
+                for p in productos
+            ]
+
+        # Mapear resultados por id_interno para preservar orden y detectar ausentes
+        mapa: dict[str, dict] = {r["id_interno"]: r for r in resultados_claude}
+
+        resultados: list[ResultadoDescripcion] = []
+        for producto in productos:
+            datos = mapa.get(producto.codigo)
+            if datos is None:
+                logger.warning(
+                    "Claude no devolvió resultado para el producto",
+                    extra={"codigo": producto.codigo},
+                )
+                resultados.append(
+                    ResultadoDescripcion(
+                        codigo=producto.codigo,
+                        nombre=producto.nombre,
+                        marca=producto.marca,
+                        categoria=producto.categoria,
+                        exitoso=False,
+                        error="Sin resultado en la respuesta de Claude.",
+                    )
+                )
+            else:
+                resultados.append(
+                    ResultadoDescripcion(
+                        codigo=producto.codigo,
+                        nombre=producto.nombre,
+                        marca=producto.marca,
+                        categoria=producto.categoria,
+                        corta=datos.get("corta", ""),
+                        larga=datos.get("larga", ""),
+                        keywords_principales=datos.get("keywords_principales", []),
+                        keywords_secundarias=datos.get("keywords_secundarias", []),
+                        meta_description=datos.get("meta_description", ""),
+                        exitoso=True,
+                    )
+                )
+
+        logger.info(
+            "Batch de descripciones generado",
+            extra={
+                "batch_size": len(productos),
+                "exitosos": sum(1 for r in resultados if r.exitoso),
+            },
+        )
+        return resultados
+
+    # ------------------------------------------------------------------
+    # Helpers privados
+    # ------------------------------------------------------------------
+
+    def _cargar_template(self, prompt_file: str) -> str:
+        """
+        Carga el template de prompt desde archivo o devuelve el template por defecto.
+
+        Args:
+            prompt_file: ruta al archivo de template. Vacío = usar el por defecto.
+
+        Returns:
+            String del template con placeholders {store_type} y {productos_json}.
+        """
+        if not prompt_file:
+            return _PROMPT_DEFAULT
+
+        ruta = Path(prompt_file)
+        if not ruta.exists():
+            logger.warning(
+                "CLAUDE_PROMPT_FILE no existe, usando prompt por defecto",
+                extra={"path": prompt_file},
             )
+            return _PROMPT_DEFAULT
+
+        template = ruta.read_text(encoding="utf-8")
+        if "{productos_json}" not in template:
+            logger.warning(
+                "El prompt file no contiene el placeholder {productos_json}, usando por defecto",
+                extra={"path": prompt_file},
+            )
+            return _PROMPT_DEFAULT
+
+        logger.info("Prompt cargado desde archivo", extra={"path": prompt_file})
+        return template
+
+    def _parsear_respuesta(self, respuesta_raw: str) -> list[dict]:
+        """
+        Parsea la respuesta JSON de Claude y extrae la lista de productos.
+
+        Maneja el caso en que Claude envuelva el JSON en bloques de código markdown.
+
+        Args:
+            respuesta_raw: string de respuesta de Claude.
+
+        Returns:
+            Lista de dicts con los campos SEO por producto.
+
+        Raises:
+            ValueError: si la respuesta no es JSON válido o no tiene la estructura esperada.
+        """
+        texto = respuesta_raw.strip()
+
+        # Limpiar bloques de código markdown si Claude los incluye
+        if texto.startswith("```"):
+            lineas = texto.splitlines()
+            texto = "\n".join(
+                l for l in lineas if not l.startswith("```")
+            ).strip()
+
+        try:
+            datos = json.loads(texto)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Respuesta de Claude no es JSON válido: {exc}") from exc
+
+        productos = datos.get("productos")
+        if not isinstance(productos, list):
+            raise ValueError(
+                f"La respuesta JSON no contiene la clave 'productos' como lista. "
+                f"Claves encontradas: {list(datos.keys())}"
+            )
+
+        return productos
