@@ -435,57 +435,45 @@ def _crear_driver(settings) -> WebDriver:
     browser_type = settings.browser_type
     binary_path = settings.browser_binary_path
     headless = settings.browser_headless
+    version_main = settings.browser_version_main  # None si no está configurado
 
-    if browser_type == "chrome":
+    # ── Navegadores Chromium-based (undetected_chromedriver) ──────────────────
+    # Chrome y Chromium: uc auto-detecta la versión si version_main es None.
+    # Brave y Opera: requieren version_main porque su versión de app ≠ versión
+    # interna de Chromium. Configurar BROWSER_VERSION_MAIN en .env con el número
+    # que aparece en "Acerca de" → "Versión de Chromium".
+    if browser_type in ("chrome", "chromium", "brave", "opera"):
         import undetected_chromedriver as uc
+
         options = uc.ChromeOptions()
         options.binary_location = binary_path
-        if headless:
-            options.add_argument("--headless=new")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-blink-features=AutomationControlled")
-        return uc.Chrome(options=options)
 
-    if browser_type == "chromium":
-        import undetected_chromedriver as uc
-        options = uc.ChromeOptions()
-        options.binary_location = binary_path
-        if headless:
+        # Opera y Brave en modo headless no funcionan correctamente con uc;
+        # para Chrome/Chromium headless sí está soportado.
+        if headless and browser_type in ("chrome", "chromium"):
             options.add_argument("--headless=new")
-        options.add_argument("--no-sandbox")
-        return uc.Chrome(options=options)
 
+        return uc.Chrome(options=options, version_main=version_main)
+
+    # ── Microsoft Edge ────────────────────────────────────────────────────────
+    # Usa selenium-manager (incluido en Selenium 4.6+) para descargar
+    # msedgedriver automáticamente — no requiere instalación manual del driver.
     if browser_type == "edge":
         from selenium import webdriver
-        from selenium.webdriver.edge.options import Options
-        options = Options()
-        options.binary_location = binary_path
-        if headless:
-            options.add_argument("--headless=new")
-        options.add_argument("--no-sandbox")
-        return webdriver.Edge(options=options)
+        from selenium.webdriver.edge.options import Options as EdgeOptions
+        from selenium.webdriver.edge.service import Service as EdgeService
 
-    if browser_type == "brave":
-        import undetected_chromedriver as uc
-        options = uc.ChromeOptions()
-        options.binary_location = binary_path
-        if headless:
-            options.add_argument("--headless=new")
-        options.add_argument("--no-sandbox")
-        return uc.Chrome(options=options)
-
-    if browser_type == "opera":
-        # Opera GX es Chromium-based. Se necesita version_main para que uc descargue
-        # el chromedriver correcto. Se lee de BROWSER_VERSION_MAIN (opcional).
-        import undetected_chromedriver as uc
-        options = uc.ChromeOptions()
+        options = EdgeOptions()
         options.binary_location = binary_path
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
-        # headless no funciona bien con Opera GX — forzar modo visible
-        version_main = getattr(settings, "browser_version_main", None)
-        return uc.Chrome(options=options, version_main=version_main)
+        if headless:
+            options.add_argument("--headless=new")
+        # Service sin executable_path → selenium-manager descarga msedgedriver
+        return webdriver.Edge(options=options, service=EdgeService())
 
     raise ValueError(
         f"BROWSER_TYPE '{browser_type}' no soportado. "
