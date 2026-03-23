@@ -7,9 +7,10 @@
  *
  * @author BenjaminDTS | Carlos Vico
  */
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useJobWebSocket } from '@/hooks/useJobWebSocket'
 import type { EstadoJob } from '@/hooks/useJobWebSocket'
+import { apiClient } from '@/api/client'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -164,6 +165,7 @@ export const JobProgress: React.FC<JobProgressProps> = ({
   onReset,
 }) => {
   const { progress, wsStatus, isFinished } = useJobWebSocket(jobId)
+  const [cancelling, setCancelling] = useState(false)
 
   // Notificar al padre una sola vez cuando el job llega a estado terminal.
   // Se usa ref para evitar llamadas duplicadas en re-renders.
@@ -173,13 +175,25 @@ export const JobProgress: React.FC<JobProgressProps> = ({
     if (
       isFinished &&
       progress !== null &&
-      (progress.estado === 'completado' || progress.estado === 'fallido') &&
+      (progress.estado === 'completado' || progress.estado === 'fallido' || progress.estado === 'cancelado') &&
       !finishedNotifiedRef.current
     ) {
       finishedNotifiedRef.current = true
       onFinished()
     }
   }, [isFinished, progress, onFinished])
+
+  /** Envía la solicitud de cancelación al backend */
+  const handleCancel = async (): Promise<void> => {
+    setCancelling(true)
+    try {
+      await apiClient.post(`/jobs/${jobId}/cancel`)
+    } catch {
+      // El WS actualizará el estado igualmente; silenciamos el error de UI
+    } finally {
+      setCancelling(false)
+    }
+  }
 
   // ── Skeleton mientras no hay datos ──────────────────────────────────────
   if (progress === null) {
@@ -214,18 +228,31 @@ export const JobProgress: React.FC<JobProgressProps> = ({
       className="w-full max-w-2xl mx-auto p-4 sm:p-6 space-y-5"
       aria-label="Progreso del trabajo de scraping"
     >
-      {/* Cabecera: título + badge de estado */}
+      {/* Cabecera: título + badge de estado + botón detener */}
       <header className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-lg font-semibold text-gray-800">
           Trabajo en curso
         </h2>
-        <span
-          className={`inline-flex items-center rounded-full px-3 py-1 text-sm font-medium ${badge.classes}`}
-          role="status"
-          aria-label={`Estado del trabajo: ${badge.label}`}
-        >
-          {badge.label}
-        </span>
+        <div className="flex items-center gap-2">
+          <span
+            className={`inline-flex items-center rounded-full px-3 py-1 text-sm font-medium ${badge.classes}`}
+            role="status"
+            aria-label={`Estado del trabajo: ${badge.label}`}
+          >
+            {badge.label}
+          </span>
+          {(estado === 'pendiente' || estado === 'en_proceso') && (
+            <button
+              type="button"
+              onClick={() => void handleCancel()}
+              disabled={cancelling}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-red-300 bg-white px-3 py-1 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2 disabled:opacity-50"
+              aria-label="Detener este trabajo"
+            >
+              {cancelling ? 'Deteniendo…' : 'Detener'}
+            </button>
+          )}
+        </div>
       </header>
 
       {/* Indicador de conexión WebSocket */}
