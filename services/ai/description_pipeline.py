@@ -6,12 +6,12 @@ el CSV de productos y acceso a la API de Claude; no usa Selenium ni descarga im�
 
 Flujo:
   1. CsvParser → lista de productos validados
-  2. DescriptionGenerator → descripción por producto
+  2. DescriptionGenerator.generar_batch() → descripciones en lotes
   3. Exportar descripciones.csv al storage del job
   4. Comprimir en ZIP
 
 :author: Carlitos6712
-:version: 1.0.0
+:version: 2.0.0
 """
 
 from __future__ import annotations
@@ -38,6 +38,7 @@ class DescripcionPipeline:
     Orquestador del proceso de generación de descripciones con IA para un job.
 
     Independiente del ScrapingPipeline: no realiza scraping ni descarga imágenes.
+    Procesa los productos en batches para reducir llamadas a la API de Claude.
     El resultado es un ZIP con un único archivo ``descripciones.csv``.
 
     :author: Carlitos6712
@@ -71,7 +72,7 @@ class DescripcionPipeline:
 
         Args:
             contenido_csv: contenido del CSV como string (ya decodificado).
-            callback: función de progreso invocada tras procesar cada producto.
+            callback: función de progreso invocada tras procesar cada batch.
                       Firma: (job_id, procesados, total, descripciones_ok)
 
         Returns:
@@ -113,32 +114,42 @@ class DescripcionPipeline:
             timeout=settings.claude_timeout,
             max_retries=settings.claude_max_retries,
         )
-        generator = DescriptionGenerator(claude_client)
+        generator = DescriptionGenerator(
+            client=claude_client,
+            store_type=settings.claude_store_type,
+            prompt_file=settings.claude_prompt_file,
+        )
 
-        # ── Paso 3: Generar descripción por producto ──────────────────────────
+        # ── Paso 3: Generar descripciones en batches ──────────────────────────
         descripciones: list[ResultadoDescripcion] = []
         descripciones_ok = 0
         descripciones_fail = 0
+        batch_size = settings.claude_batch_size
+        procesados = 0
 
-        for idx, producto in enumerate(productos, start=1):
-            resultado = generator.generar(producto)
-            descripciones.append(resultado)
+        for batch_inicio in range(0, total, batch_size):
+            batch = productos[batch_inicio:batch_inicio + batch_size]
+            resultados_batch = generator.generar_batch(batch)
 
-            if resultado.exitoso:
-                descripciones_ok += 1
-            else:
-                descripciones_fail += 1
+            for resultado in resultados_batch:
+                descripciones.append(resultado)
+                procesados += 1
+
+                if resultado.exitoso:
+                    descripciones_ok += 1
+                else:
+                    descripciones_fail += 1
 
             if callback:
-                callback(self._job_id, idx, total, descripciones_ok)
+                callback(self._job_id, procesados, total, descripciones_ok)
 
             logger.debug(
-                "Descripción procesada",
+                "Batch de descripciones procesado",
                 extra={
                     "job_id": self._job_id,
-                    "codigo": producto.codigo,
-                    "exitoso": resultado.exitoso,
-                    "progreso": f"{idx}/{total}",
+                    "batch_inicio": batch_inicio,
+                    "batch_size": len(batch),
+                    "progreso": f"{procesados}/{total}",
                 },
             )
 
@@ -180,22 +191,41 @@ class DescripcionPipeline:
         """
         Serializa las descripciones a CSV y las guarda en el storage del job.
 
+        Los campos de keywords se serializan como listas separadas por ' | '.
+
         Args:
             descripciones: lista de resultados del generador de descripciones.
         """
+        fieldnames = [
+            "codigo",
+            "nombre",
+            "marca",
+            "categoria",
+            "corta",
+            "larga",
+            "keywords_principales",
+            "keywords_secundarias",
+            "meta_description",
+            "exitoso",
+            "error",
+        ]
         buffer = io.StringIO()
-        writer = csv.DictWriter(
-            buffer,
-            fieldnames=["codigo", "nombre", "marca", "descripcion"],
-            extrasaction="ignore",
-        )
+        writer = csv.DictWriter(buffer, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
+
         for r in descripciones:
             writer.writerow({
                 "codigo": r.codigo,
                 "nombre": r.nombre,
                 "marca": r.marca,
-                "descripcion": r.descripcion,
+                "categoria": r.categoria,
+                "corta": r.corta,
+                "larga": r.larga,
+                "keywords_principales": " | ".join(r.keywords_principales),
+                "keywords_secundarias": " | ".join(r.keywords_secundarias),
+                "meta_description": r.meta_description,
+                "exitoso": r.exitoso,
+                "error": r.error,
             })
 
         try:
