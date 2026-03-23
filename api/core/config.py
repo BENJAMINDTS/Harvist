@@ -132,6 +132,24 @@ class Settings(BaseSettings):
     log_rotation: str = Field(default="100 MB")
     log_retention: str = Field(default="7 days")
 
+    # ── IA — Fase 5 — Proveedor ──────────────────────────────────────────────
+    ai_provider: Literal["anthropic", "groq"] = Field(
+        default="anthropic",
+        description=(
+            "Proveedor de IA para generar descripciones: "
+            "'anthropic' (Claude API, requiere créditos) | "
+            "'groq' (gratuito, modelos Llama/Mixtral)."
+        ),
+    )
+    groq_api_key: str = Field(
+        default="",
+        description="API key de Groq. Obligatoria si AI_PROVIDER=groq. Obtener en console.groq.com.",
+    )
+    groq_model: str = Field(
+        default="llama-3.3-70b-versatile",
+        description="Modelo Groq a usar. Opciones: llama-3.3-70b-versatile, llama-3.1-8b-instant.",
+    )
+
     # ── IA — Fase 5 (Claude API) ──────────────────────────────────────────────
     enable_ai_descriptions: bool = Field(default=False)
     claude_api_key: str = Field(

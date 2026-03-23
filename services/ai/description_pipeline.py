@@ -107,12 +107,20 @@ class DescripcionPipeline:
 
         # ── Paso 2: Inicializar cliente Claude ────────────────────────────────
         settings = get_settings()
+        if settings.ai_provider == "groq":
+            ai_api_key = settings.groq_api_key
+            ai_model = settings.groq_model
+        else:
+            ai_api_key = settings.claude_api_key
+            ai_model = settings.claude_model
+
         claude_client = ClaudeClient(
-            api_key=settings.claude_api_key,
-            model=settings.claude_model,
+            api_key=ai_api_key,
+            model=ai_model,
             max_tokens=settings.claude_max_tokens,
             timeout=settings.claude_timeout,
             max_retries=settings.claude_max_retries,
+            provider=settings.ai_provider,
         )
         generator = DescriptionGenerator(
             client=claude_client,

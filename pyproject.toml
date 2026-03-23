@@ -43,6 +43,8 @@ dependencies = [
 
     # --- IA — Claude API (Fase 5) ---
     "anthropic==0.49.0",
+    # --- IA — proveedor alternativo gratuito (Groq) ---
+    "openai>=1.30.0",
 
     # --- Rate limiting ---
     "slowapi==0.1.9",
