@@ -228,7 +228,9 @@ export const JobProgress: React.FC<JobProgressProps> = ({
   const progressBarColor = PROGRESS_BAR_COLOR[estado]
   const wsConfig = WS_STATUS_CONFIG[wsStatus]
   const pct = Math.min(100, Math.max(0, Math.round(porcentaje)))
-  const downloadUrl = `/api/v1/files/${jobId}`
+  const downloadUrl = tipoJob === 'descripciones'
+    ? `/api/v1/files/${jobId}/csv`
+    : `/api/v1/files/${jobId}`
 
   // ── Render principal ─────────────────────────────────────────────────────
   return (
