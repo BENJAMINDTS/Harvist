@@ -595,81 +595,124 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
               headers={csvHeaders}
               value={columnaCodigo}
               onChange={setColumnaCodigo}
-              hint="Identificador único — se usa para nombrar las imágenes."
+              hint={
+                tipoJob === "descripciones"
+                  ? "Identificador único del producto."
+                  : "Identificador único — se usa para nombrar las imágenes."
+              }
             />
 
-            {/* Columna EAN — requerida en modo EAN, opcional en otros */}
-            {(modo === "ean" || modo === "personalizado") && (
-              <ColumnSelect
-                id="col-ean"
-                label="EAN / Código de barras"
-                required={modo === "ean"}
-                headers={csvHeaders}
-                value={columnaEan}
-                onChange={setColumnaEan}
-                hint={
-                  modo === "ean"
-                    ? "Requerido en modo EAN."
-                    : "Opcional — disponible como {ean} en la plantilla."
-                }
-              />
+            {/* ── Columnas específicas de fotos ── */}
+            {tipoJob === "fotos" && (
+              <>
+                {/* Columna EAN — requerida en modo EAN, opcional en PERSONALIZADO */}
+                {(modo === "ean" || modo === "personalizado") && (
+                  <ColumnSelect
+                    id="col-ean"
+                    label="EAN / Código de barras"
+                    required={modo === "ean"}
+                    headers={csvHeaders}
+                    value={columnaEan}
+                    onChange={setColumnaEan}
+                    hint={
+                      modo === "ean"
+                        ? "Requerido en modo EAN."
+                        : "Opcional — disponible como {ean} en la plantilla."
+                    }
+                  />
+                )}
+
+                {/* Columna Nombre — requerida en NOMBRE_MARCA, opcional en PERSONALIZADO */}
+                {(modo === "nombre_marca" || modo === "personalizado") && (
+                  <ColumnSelect
+                    id="col-nombre"
+                    label="Nombre del producto"
+                    required={modo === "nombre_marca"}
+                    headers={csvHeaders}
+                    value={columnaNombre}
+                    onChange={setColumnaNombre}
+                    hint={
+                      modo === "nombre_marca"
+                        ? "Requerido en modo Nombre + Marca."
+                        : "Opcional — disponible como {nombre} en la plantilla."
+                    }
+                  />
+                )}
+
+                {/* Columna Marca — requerida en NOMBRE_MARCA, opcional en PERSONALIZADO */}
+                {(modo === "nombre_marca" || modo === "personalizado") && (
+                  <ColumnSelect
+                    id="col-marca"
+                    label="Marca del producto"
+                    required={modo === "nombre_marca"}
+                    headers={csvHeaders}
+                    value={columnaMarca}
+                    onChange={setColumnaMarca}
+                    hint={
+                      modo === "nombre_marca"
+                        ? "Requerido en modo Nombre + Marca."
+                        : "Opcional — disponible como {marca} en la plantilla."
+                    }
+                  />
+                )}
+
+                {/* Columna Categoría — solo en modo personalizado */}
+                {modo === "personalizado" && (
+                  <ColumnSelect
+                    id="col-categoria"
+                    label="Categoría del producto"
+                    headers={csvHeaders}
+                    value={columnaCategoria}
+                    onChange={setColumnaCategoria}
+                    hint="Opcional — disponible como {categoria} en la plantilla personalizada."
+                  />
+                )}
+
+                {/* Columna para nombrar las fotos */}
+                <ColumnSelect
+                  id="col-nombre-foto"
+                  label="Nombre de las fotos"
+                  headers={csvHeaders}
+                  value={columnaNombreFoto}
+                  onChange={setColumnaNombreFoto}
+                  hint="Columna cuyo valor se usa para nombrar los archivos de imagen. Sin selección = usa el código."
+                />
+              </>
             )}
 
-            {/* Columna Nombre — requerida en modo NOMBRE_MARCA, opcional en PERSONALIZADO */}
-            {(modo === "nombre_marca" || modo === "personalizado") && (
-              <ColumnSelect
-                id="col-nombre"
-                label="Nombre del producto"
-                required={modo === "nombre_marca"}
-                headers={csvHeaders}
-                value={columnaNombre}
-                onChange={setColumnaNombre}
-                hint={
-                  modo === "nombre_marca"
-                    ? "Requerido en modo Nombre + Marca."
-                    : "Opcional — disponible como {nombre} en la plantilla."
-                }
-              />
-            )}
+            {/* ── Columnas específicas de descripciones ── */}
+            {tipoJob === "descripciones" && (
+              <>
+                <ColumnSelect
+                  id="col-nombre"
+                  label="Nombre del producto"
+                  required
+                  headers={csvHeaders}
+                  value={columnaNombre}
+                  onChange={setColumnaNombre}
+                  hint="Requerido — se envía al modelo de IA para generar la descripción."
+                />
 
-            {/* Columna Marca — requerida en modo NOMBRE_MARCA, opcional en PERSONALIZADO */}
-            {(modo === "nombre_marca" || modo === "personalizado") && (
-              <ColumnSelect
-                id="col-marca"
-                label="Marca del producto"
-                required={modo === "nombre_marca"}
-                headers={csvHeaders}
-                value={columnaMarca}
-                onChange={setColumnaMarca}
-                hint={
-                  modo === "nombre_marca"
-                    ? "Requerido en modo Nombre + Marca."
-                    : "Opcional — disponible como {marca} en la plantilla."
-                }
-              />
-            )}
+                <ColumnSelect
+                  id="col-marca"
+                  label="Marca del producto"
+                  required
+                  headers={csvHeaders}
+                  value={columnaMarca}
+                  onChange={setColumnaMarca}
+                  hint="Requerido — se incluye en el contexto del prompt."
+                />
 
-            {/* Columna Categoría — solo en modo personalizado, como {categoria} */}
-            {modo === "personalizado" && (
-              <ColumnSelect
-                id="col-categoria"
-                label="Categoría del producto"
-                headers={csvHeaders}
-                value={columnaCategoria}
-                onChange={setColumnaCategoria}
-                hint="Opcional — disponible como {categoria} en la plantilla personalizada."
-              />
+                <ColumnSelect
+                  id="col-categoria"
+                  label="Categoría del producto"
+                  headers={csvHeaders}
+                  value={columnaCategoria}
+                  onChange={setColumnaCategoria}
+                  hint="Opcional — ayuda al modelo a adaptar la descripción al tipo de producto."
+                />
+              </>
             )}
-
-            {/* Columna para nombrar las fotos — siempre visible */}
-            <ColumnSelect
-              id="col-nombre-foto"
-              label="Nombre de las fotos"
-              headers={csvHeaders}
-              value={columnaNombreFoto}
-              onChange={setColumnaNombreFoto}
-              hint="Columna cuyo valor se usa para nombrar los archivos de imagen. Sin selección = usa el código."
-            />
           </div>
         </fieldset>
       )}
