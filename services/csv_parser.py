@@ -109,6 +109,9 @@ class CsvParser:
         if not contenido or not contenido.strip():
             raise CsvParserError("El archivo CSV está vacío.")
 
+        # Eliminar BOM (Byte Order Mark) que Excel añade al guardar CSV en UTF-8
+        contenido = contenido.lstrip('\ufeff')
+
         reader = self._crear_reader(contenido)
 
         # Leer cabeceras
