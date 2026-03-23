@@ -113,7 +113,7 @@ function formatDate(iso: string): string {
 /** Fila esqueleto animada para el estado de carga */
 const SkeletonRow: React.FC = () => (
   <tr className="animate-pulse" aria-hidden="true">
-    {Array.from({ length: 5 }).map((_, i) => (
+    {Array.from({ length: 6 }).map((_, i) => (
       <td key={i} className="px-4 py-3">
         <div className="h-4 rounded bg-gray-200" />
       </td>
@@ -158,6 +158,7 @@ export const JobHistory: React.FC<JobHistoryProps> = ({ onSelectJob }) => {
   const [estadoFiltro, setEstadoFiltro] = useState<string>('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set())
 
   // ── Carga de datos ─────────────────────────────────────────────────────────
 
@@ -216,6 +217,29 @@ export const JobHistory: React.FC<JobHistoryProps> = ({ onSelectJob }) => {
 
   const handleRefresh = (): void => {
     void fetchHistorial()
+  }
+
+  /**
+   * Cancela un job activo y recarga el historial al confirmar.
+   *
+   * @param e - Evento del click (necesario para detener la propagación a la fila).
+   * @param jobId - Identificador del job a cancelar.
+   */
+  const handleCancel = async (e: React.MouseEvent, jobId: string): Promise<void> => {
+    e.stopPropagation()
+    setCancellingIds((prev) => new Set(prev).add(jobId))
+    try {
+      await apiClient.post(`/jobs/${jobId}/cancel`)
+      void fetchHistorial()
+    } catch {
+      // Silenciar error de UI — el historial se actualizará en el siguiente refresco
+    } finally {
+      setCancellingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(jobId)
+        return next
+      })
+    }
   }
 
   // ── Derivados de paginación ────────────────────────────────────────────────
@@ -330,6 +354,12 @@ export const JobHistory: React.FC<JobHistoryProps> = ({ onSelectJob }) => {
               >
                 Progreso
               </th>
+              <th
+                scope="col"
+                className="px-4 py-3 text-center font-medium text-gray-500 uppercase tracking-wider"
+              >
+                Acciones
+              </th>
             </tr>
           </thead>
 
@@ -400,6 +430,21 @@ export const JobHistory: React.FC<JobHistoryProps> = ({ onSelectJob }) => {
                       </span>
                     </div>
                   </td>
+
+                  {/* Botón de cancelación para jobs activos */}
+                  <td className="px-4 py-3 text-center">
+                    {(item.estado === 'pendiente' || item.estado === 'en_proceso') && (
+                      <button
+                        type="button"
+                        onClick={(e) => void handleCancel(e, item.job_id)}
+                        disabled={cancellingIds.has(item.job_id)}
+                        className="rounded border border-red-300 bg-white px-2.5 py-1 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1 disabled:opacity-50"
+                        aria-label={`Detener trabajo del ${formatDate(item.creado_en)}`}
+                      >
+                        {cancellingIds.has(item.job_id) ? 'Deteniendo…' : 'Detener'}
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
 
@@ -407,7 +452,7 @@ export const JobHistory: React.FC<JobHistoryProps> = ({ onSelectJob }) => {
             {!isLoading && error === null && items.length === 0 && (
               <tr>
                 <td
-                  colSpan={5}
+                  colSpan={6}
                   className="px-4 py-10 text-center text-sm text-gray-500"
                 >
                   No hay trabajos registrados aún.
