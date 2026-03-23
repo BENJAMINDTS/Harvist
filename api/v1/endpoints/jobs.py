@@ -149,6 +149,14 @@ async def crear_job(
         str,
         Form(description="Plantilla de query para el modo personalizado (con {nombre}, {marca}, etc.)."),
     ] = "",
+    groq_api_key_usuario: Annotated[
+        str,
+        Form(description="API key de Groq del usuario. Tiene prioridad sobre GROQ_API_KEY del .env."),
+    ] = "",
+    prompt_personalizado: Annotated[
+        str,
+        Form(description="Plantilla de prompt personalizada. Debe contener {store_type} y {productos_json}."),
+    ] = "",
 ) -> JSONResponse:
     """
     Recibe un CSV de inventario, encola el trabajo de scraping y devuelve el job_id.
@@ -198,6 +206,8 @@ async def crear_job(
         modo=modo,
         imagenes_por_producto=imagenes_por_producto,
         query_personalizada=query_personalizada or None,
+        groq_api_key_usuario=groq_api_key_usuario,
+        prompt_personalizado=prompt_personalizado,
         column_mapping=ColumnMapping(
             columna_codigo=columna_codigo,
             columna_ean=columna_ean,

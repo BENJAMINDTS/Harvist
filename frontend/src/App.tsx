@@ -15,7 +15,7 @@ import { SearchConfig } from '@/components/SearchConfig'
 import { JobProgress } from '@/components/JobProgress'
 import { JobHistory } from '@/components/JobHistory'
 import { apiClient } from '@/api/client'
-import type { SearchConfigValues } from '@/components/SearchConfig'
+import type { SearchConfigValues, TipoJob } from '@/components/SearchConfig'
 
 /** Estados posibles de la pantalla principal */
 type AppState = 'idle' | 'configuring' | 'running' | 'done'
@@ -28,6 +28,7 @@ const App: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [csvHeaders, setCsvHeaders] = useState<string[]>([])
   const [jobId, setJobId] = useState<string | null>(null)
+  const [tipoJob, setTipoJob] = useState<TipoJob>('fotos')
   const [error, setError] = useState<string | null>(null)
 
   /** Callback: el usuario seleccionó un CSV válido — recibe el archivo y sus cabeceras */
@@ -57,6 +58,8 @@ const App: React.FC = () => {
       formData.append('columna_marca', config.columnMapping.columnaMarca)
       formData.append('columna_categoria', config.columnMapping.columnaCategoria)
       formData.append('columna_nombre_foto', config.columnMapping.columnaNombreFoto)
+      formData.append('groq_api_key_usuario', config.groqApiKey)
+      formData.append('prompt_personalizado', config.promptPersonalizado)
 
       const response = await apiClient.post<{
         success: boolean
@@ -65,6 +68,7 @@ const App: React.FC = () => {
       }>('/jobs', formData)
 
       setJobId(response.data.data.job_id)
+      setTipoJob(config.tipoJob)
       setAppState('running')
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error al iniciar el trabajo.'
@@ -83,6 +87,7 @@ const App: React.FC = () => {
     setSelectedFile(null)
     setCsvHeaders([])
     setJobId(null)
+    setTipoJob('fotos')
     setError(null)
   }
 
@@ -153,6 +158,7 @@ const App: React.FC = () => {
             {(appState === 'running' || appState === 'done') && jobId && (
               <JobProgress
                 jobId={jobId}
+                tipoJob={tipoJob}
                 onFinished={handleJobFinished}
                 onReset={handleReset}
               />

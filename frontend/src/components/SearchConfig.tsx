@@ -54,6 +54,10 @@ export interface SearchConfigValues {
   queryPersonalizada: string;
   /** Mapeo de columnas del CSV a campos internos del parser. */
   columnMapping: ColumnMapping;
+  /** API key de Groq del usuario (opcional, tiene prioridad sobre la del .env). */
+  groqApiKey: string;
+  /** Plantilla de prompt personalizada para generación de descripciones. */
+  promptPersonalizado: string;
 }
 
 /**
@@ -320,6 +324,8 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
     }
   );
   const [columnaNombreFoto, setColumnaNombreFoto] = useState<string>("");
+  const [groqApiKey, setGroqApiKey] = useState<string>("");
+  const [promptPersonalizado, setPromptPersonalizado] = useState<string>("");
 
   /** Indica si `onLaunch` está en curso para bloquear el botón y mostrar spinner. */
   const [launching, setLaunching] = useState<boolean>(false);
@@ -360,6 +366,8 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
           columnaCategoria,
           columnaNombreFoto,
         },
+        groqApiKey,
+        promptPersonalizado,
       });
     } finally {
       // Siempre desbloquear, incluso si onLaunch lanza una excepción.
@@ -378,6 +386,8 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
     columnaMarca,
     columnaCategoria,
     columnaNombreFoto,
+    groqApiKey,
+    promptPersonalizado,
   ]);
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -595,81 +605,192 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
               headers={csvHeaders}
               value={columnaCodigo}
               onChange={setColumnaCodigo}
-              hint="Identificador único — se usa para nombrar las imágenes."
+              hint={
+                tipoJob === "descripciones"
+                  ? "Identificador único del producto."
+                  : "Identificador único — se usa para nombrar las imágenes."
+              }
             />
 
-            {/* Columna EAN — requerida en modo EAN, opcional en otros */}
-            {(modo === "ean" || modo === "personalizado") && (
-              <ColumnSelect
-                id="col-ean"
-                label="EAN / Código de barras"
-                required={modo === "ean"}
-                headers={csvHeaders}
-                value={columnaEan}
-                onChange={setColumnaEan}
-                hint={
-                  modo === "ean"
-                    ? "Requerido en modo EAN."
-                    : "Opcional — disponible como {ean} en la plantilla."
-                }
-              />
+            {/* ── Columnas específicas de fotos ── */}
+            {tipoJob === "fotos" && (
+              <>
+                {/* Columna EAN — requerida en modo EAN, opcional en PERSONALIZADO */}
+                {(modo === "ean" || modo === "personalizado") && (
+                  <ColumnSelect
+                    id="col-ean"
+                    label="EAN / Código de barras"
+                    required={modo === "ean"}
+                    headers={csvHeaders}
+                    value={columnaEan}
+                    onChange={setColumnaEan}
+                    hint={
+                      modo === "ean"
+                        ? "Requerido en modo EAN."
+                        : "Opcional — disponible como {ean} en la plantilla."
+                    }
+                  />
+                )}
+
+                {/* Columna Nombre — requerida en NOMBRE_MARCA, opcional en PERSONALIZADO */}
+                {(modo === "nombre_marca" || modo === "personalizado") && (
+                  <ColumnSelect
+                    id="col-nombre"
+                    label="Nombre del producto"
+                    required={modo === "nombre_marca"}
+                    headers={csvHeaders}
+                    value={columnaNombre}
+                    onChange={setColumnaNombre}
+                    hint={
+                      modo === "nombre_marca"
+                        ? "Requerido en modo Nombre + Marca."
+                        : "Opcional — disponible como {nombre} en la plantilla."
+                    }
+                  />
+                )}
+
+                {/* Columna Marca — requerida en NOMBRE_MARCA, opcional en PERSONALIZADO */}
+                {(modo === "nombre_marca" || modo === "personalizado") && (
+                  <ColumnSelect
+                    id="col-marca"
+                    label="Marca del producto"
+                    required={modo === "nombre_marca"}
+                    headers={csvHeaders}
+                    value={columnaMarca}
+                    onChange={setColumnaMarca}
+                    hint={
+                      modo === "nombre_marca"
+                        ? "Requerido en modo Nombre + Marca."
+                        : "Opcional — disponible como {marca} en la plantilla."
+                    }
+                  />
+                )}
+
+                {/* Columna Categoría — solo en modo personalizado */}
+                {modo === "personalizado" && (
+                  <ColumnSelect
+                    id="col-categoria"
+                    label="Categoría del producto"
+                    headers={csvHeaders}
+                    value={columnaCategoria}
+                    onChange={setColumnaCategoria}
+                    hint="Opcional — disponible como {categoria} en la plantilla personalizada."
+                  />
+                )}
+
+                {/* Columna para nombrar las fotos */}
+                <ColumnSelect
+                  id="col-nombre-foto"
+                  label="Nombre de las fotos"
+                  headers={csvHeaders}
+                  value={columnaNombreFoto}
+                  onChange={setColumnaNombreFoto}
+                  hint="Columna cuyo valor se usa para nombrar los archivos de imagen. Sin selección = usa el código."
+                />
+              </>
             )}
 
-            {/* Columna Nombre — requerida en modo NOMBRE_MARCA, opcional en PERSONALIZADO */}
-            {(modo === "nombre_marca" || modo === "personalizado") && (
-              <ColumnSelect
-                id="col-nombre"
-                label="Nombre del producto"
-                required={modo === "nombre_marca"}
-                headers={csvHeaders}
-                value={columnaNombre}
-                onChange={setColumnaNombre}
-                hint={
-                  modo === "nombre_marca"
-                    ? "Requerido en modo Nombre + Marca."
-                    : "Opcional — disponible como {nombre} en la plantilla."
-                }
-              />
-            )}
+            {/* ── Columnas específicas de descripciones ── */}
+            {tipoJob === "descripciones" && (
+              <>
+                <ColumnSelect
+                  id="col-nombre"
+                  label="Nombre del producto"
+                  required
+                  headers={csvHeaders}
+                  value={columnaNombre}
+                  onChange={setColumnaNombre}
+                  hint="Requerido — se envía al modelo de IA para generar la descripción."
+                />
 
-            {/* Columna Marca — requerida en modo NOMBRE_MARCA, opcional en PERSONALIZADO */}
-            {(modo === "nombre_marca" || modo === "personalizado") && (
-              <ColumnSelect
-                id="col-marca"
-                label="Marca del producto"
-                required={modo === "nombre_marca"}
-                headers={csvHeaders}
-                value={columnaMarca}
-                onChange={setColumnaMarca}
-                hint={
-                  modo === "nombre_marca"
-                    ? "Requerido en modo Nombre + Marca."
-                    : "Opcional — disponible como {marca} en la plantilla."
-                }
-              />
-            )}
+                <ColumnSelect
+                  id="col-marca"
+                  label="Marca del producto"
+                  required
+                  headers={csvHeaders}
+                  value={columnaMarca}
+                  onChange={setColumnaMarca}
+                  hint="Requerido — se incluye en el contexto del prompt."
+                />
 
-            {/* Columna Categoría — solo en modo personalizado, como {categoria} */}
-            {modo === "personalizado" && (
-              <ColumnSelect
-                id="col-categoria"
-                label="Categoría del producto"
-                headers={csvHeaders}
-                value={columnaCategoria}
-                onChange={setColumnaCategoria}
-                hint="Opcional — disponible como {categoria} en la plantilla personalizada."
-              />
+                <ColumnSelect
+                  id="col-categoria"
+                  label="Categoría del producto"
+                  headers={csvHeaders}
+                  value={columnaCategoria}
+                  onChange={setColumnaCategoria}
+                  hint="Opcional — ayuda al modelo a adaptar la descripción al tipo de producto."
+                />
+              </>
             )}
+          </div>
+        </fieldset>
+      )}
 
-            {/* Columna para nombrar las fotos — siempre visible */}
-            <ColumnSelect
-              id="col-nombre-foto"
-              label="Nombre de las fotos"
-              headers={csvHeaders}
-              value={columnaNombreFoto}
-              onChange={setColumnaNombreFoto}
-              hint="Columna cuyo valor se usa para nombrar los archivos de imagen. Sin selección = usa el código."
+      {/* ── Configuración IA (solo descripciones) ── */}
+      {tipoJob === "descripciones" && (
+        <fieldset className="rounded-xl border border-gray-200 bg-white p-4 flex flex-col gap-4">
+          <legend className="text-sm font-semibold text-gray-700 px-1">
+            Configuración de IA
+          </legend>
+
+          {/* API Key de Groq */}
+          <div className="flex flex-col gap-1">
+            <label
+              htmlFor="groq-api-key"
+              className="text-xs font-medium text-gray-700"
+            >
+              API Key de Groq
+            </label>
+            <input
+              id="groq-api-key"
+              type="password"
+              value={groqApiKey}
+              onChange={(e) => setGroqApiKey(e.target.value)}
+              placeholder="gsk_..."
+              className={
+                "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 " +
+                "text-sm text-gray-800 placeholder-gray-400 font-mono " +
+                "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent " +
+                "transition-colors duration-150"
+              }
+              aria-describedby="groq-api-key-hint"
             />
+            <p id="groq-api-key-hint" className="text-xs text-gray-400">
+              Opcional — si no la introduces se usa la configurada en el servidor.
+              Obtenla en{" "}
+              <span className="font-mono text-gray-500">console.groq.com</span>
+            </p>
+          </div>
+
+          {/* Prompt personalizado */}
+          <div className="flex flex-col gap-1">
+            <label
+              htmlFor="prompt-personalizado"
+              className="text-xs font-medium text-gray-700"
+            >
+              Prompt personalizado
+            </label>
+            <textarea
+              id="prompt-personalizado"
+              value={promptPersonalizado}
+              onChange={(e) => setPromptPersonalizado(e.target.value)}
+              rows={6}
+              placeholder="Deja vacío para usar el prompt SEO por defecto. Debe contener {productos_json}."
+              className={
+                "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 " +
+                "text-sm text-gray-800 placeholder-gray-400 font-mono resize-y " +
+                "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent " +
+                "transition-colors duration-150"
+              }
+              aria-describedby="prompt-personalizado-hint"
+            />
+            <p id="prompt-personalizado-hint" className="text-xs text-gray-400">
+              Debe contener{" "}
+              <code className="font-mono text-gray-600">{"{productos_json}"}</code>{" "}
+              y opcionalmente{" "}
+              <code className="font-mono text-gray-600">{"{store_type}"}</code>.
+            </p>
           </div>
         </fieldset>
       )}

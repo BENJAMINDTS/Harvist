@@ -131,6 +131,17 @@ class SearchConfig(BaseModel):
                     "Usa {nombre}, {marca}, {ean} como placeholders.",
         examples=["{nombre} {marca} imagen fondo blanco"],
     )
+    groq_api_key_usuario: str = Field(
+        default="",
+        description="API key de Groq introducida por el usuario desde el formulario. "
+                    "Si está rellena, tiene prioridad sobre la variable de entorno GROQ_API_KEY.",
+    )
+    prompt_personalizado: str = Field(
+        default="",
+        description="Plantilla de prompt personalizada introducida por el usuario. "
+                    "Debe contener {store_type} y {productos_json}. "
+                    "Si está vacía se usa el prompt SEO por defecto.",
+    )
     column_mapping: ColumnMapping = Field(
         default_factory=ColumnMapping,
         description="Mapeo de columnas del CSV del usuario a los campos internos del parser.",
