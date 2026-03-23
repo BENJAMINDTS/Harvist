@@ -45,6 +45,19 @@ class ModosBusqueda(str, Enum):
     PERSONALIZADO = "personalizado"     # Query personalizada definida por el usuario
 
 
+class TipoJob(str, Enum):
+    """
+    Tipo de trabajo a ejecutar: descarga de fotos o generación de descripciones con IA.
+
+    Son mutuamente excluyentes: un job solo puede hacer uno de los dos.
+
+    :author: Carlitos6712
+    """
+
+    FOTOS = "fotos"                         # Scraping y descarga de imágenes
+    DESCRIPCIONES = "descripciones"         # Generación de descripciones con Claude API
+
+
 # ── Configuración de búsqueda ─────────────────────────────────────────────────
 
 class ColumnMapping(BaseModel):
@@ -104,15 +117,19 @@ class SearchConfig(BaseModel):
         le=20,
         description="Número de imágenes a intentar descargar por producto.",
     )
+    tipo_job: TipoJob = Field(
+        default=TipoJob.FOTOS,
+        description=(
+            "Tipo de trabajo: 'fotos' ejecuta el scraping de imágenes, "
+            "'descripciones' genera descripciones de catálogo con Claude API. "
+            "Ambos modos son mutuamente excluyentes."
+        ),
+    )
     query_personalizada: str | None = Field(
         default=None,
         description="Plantilla de query cuando modo=PERSONALIZADO. "
                     "Usa {nombre}, {marca}, {ean} como placeholders.",
         examples=["{nombre} {marca} imagen fondo blanco"],
-    )
-    generar_descripciones: bool = Field(
-        default=False,
-        description="Si True, genera descripciones con IA tras descargar las imágenes (Fase 5).",
     )
     column_mapping: ColumnMapping = Field(
         default_factory=ColumnMapping,
