@@ -4,7 +4,7 @@
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "harvist-scraper"
@@ -58,6 +58,9 @@ dev = [
     "ruff==0.4.4",
     "pip-audit==2.7.3",
 ]
+
+[tool.setuptools.packages.find]
+include = ["api*", "services*", "workers*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
