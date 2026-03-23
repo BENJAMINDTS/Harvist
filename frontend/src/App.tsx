@@ -56,6 +56,7 @@ const App: React.FC = () => {
       formData.append('columna_nombre', config.columnMapping.columnaNombre)
       formData.append('columna_marca', config.columnMapping.columnaMarca)
       formData.append('columna_categoria', config.columnMapping.columnaCategoria)
+      formData.append('columna_nombre_foto', config.columnMapping.columnaNombreFoto)
 
       const response = await apiClient.post<{
         success: boolean
