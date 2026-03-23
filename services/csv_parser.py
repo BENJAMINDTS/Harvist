@@ -48,6 +48,7 @@ class Producto:
     nombre: str = ""
     marca: str = ""
     ean: str = ""
+    categoria: str = ""
     query: str = ""          # Calculado por CsvParser según el modo
     fila_original: int = 0   # Número de fila del CSV (para trazabilidad de errores)
     datos_extra: dict[str, str] = field(default_factory=dict)
@@ -270,6 +271,7 @@ class CsvParser:
         nombre = _obtener(cm.columna_nombre)
         marca = _obtener(cm.columna_marca)
         ean = _obtener(cm.columna_ean)
+        categoria = _obtener(cm.columna_categoria)
 
         # Datos extra: columnas no mapeadas a campos estándar se preservan para exportación
         columnas_conocidas = {
@@ -277,6 +279,7 @@ class CsvParser:
             cm.columna_nombre.lower(),
             cm.columna_marca.lower(),
             cm.columna_ean.lower(),
+            cm.columna_categoria.lower(),
         }
         datos_extra = {
             col: self._sanitizar(fila[idx])
@@ -289,6 +292,7 @@ class CsvParser:
             nombre=nombre,
             marca=marca,
             ean=ean,
+            categoria=categoria,
             fila_original=num_fila,
             datos_extra=datos_extra,
         )
@@ -332,6 +336,7 @@ class CsvParser:
                 marca=producto.marca,
                 ean=producto.ean,
                 codigo=producto.codigo,
+                categoria=producto.categoria,
             )
 
         # Caso imposible si ModosBusqueda está bien definido, pero lo manejamos
