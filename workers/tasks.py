@@ -18,7 +18,7 @@ from celery.utils.log import get_task_logger
 from loguru import logger
 
 from api.core.config import get_settings
-from api.v1.schemas.job import EstadoJob, JobStatus, SearchConfig
+from api.v1.schemas.job import EstadoJob, JobStatus, SearchConfig, TipoJob
 from services.csv_parser import CsvParserError
 from services.scraper.pipeline import ScrapingPipeline
 from workers.celery_app import celery_app
@@ -113,19 +113,15 @@ def ejecutar_scraping(
 
     logger.info("Tarea Celery iniciada", extra={"job_id": job_id})
 
-    def _callback_progreso(
+    def _callback_fotos(
         jid: str,
         procesados: int,
         total: int,
         img_ok: int,
         img_fail: int,
-        descripciones_ok: int = 0,
     ) -> None:
         """
-        Actualiza el estado del job en Redis tras procesar cada producto.
-
-        Comprueba antes de escribir si el job fue cancelado externamente.
-        Si es así, lanza JobCancelledError para detener el pipeline.
+        Actualiza el estado del job de fotos en Redis tras procesar cada producto.
 
         Args:
             jid: job_id.
@@ -133,12 +129,10 @@ def ejecutar_scraping(
             total: total de productos del CSV.
             img_ok: imágenes descargadas exitosamente.
             img_fail: imágenes que fallaron.
-            descripciones_ok: descripciones generadas con IA hasta ahora.
 
         Raises:
             JobCancelledError: si el job fue cancelado desde la API.
         """
-        # Verificar cancelación antes de continuar con el siguiente producto
         raw = redis_client.get(_JOB_KEY.format(job_id=jid))
         if raw:
             current = JobStatus.model_validate_json(raw)
@@ -149,7 +143,6 @@ def ejecutar_scraping(
         job_status.productos_procesados = procesados
         job_status.imagenes_descargadas = img_ok
         job_status.imagenes_fallidas = img_fail
-        job_status.descripciones_generadas = descripciones_ok
         job_status.actualizado_en = datetime.utcnow()
         job_status.mensaje = (
             f"Procesando producto {procesados}/{total} — "
@@ -157,18 +150,60 @@ def ejecutar_scraping(
         )
         _actualizar_estado(redis_client, job_status)
 
-    try:
-        pipeline = ScrapingPipeline(job_id=job_id, config=config)
-        resumen = pipeline.ejecutar(
-            contenido_csv=contenido_csv,
-            callback=_callback_progreso,
+    def _callback_descripciones(
+        jid: str,
+        procesados: int,
+        total: int,
+        descripciones_ok: int,
+    ) -> None:
+        """
+        Actualiza el estado del job de descripciones en Redis tras cada producto.
+
+        Args:
+            jid: job_id.
+            procesados: productos procesados hasta ahora.
+            total: total de productos del CSV.
+            descripciones_ok: descripciones generadas exitosamente.
+
+        Raises:
+            JobCancelledError: si el job fue cancelado desde la API.
+        """
+        raw = redis_client.get(_JOB_KEY.format(job_id=jid))
+        if raw:
+            current = JobStatus.model_validate_json(raw)
+            if current.estado == EstadoJob.CANCELADO:
+                raise JobCancelledError(f"Job {jid} cancelado por el usuario.")
+
+        job_status.total_productos = total
+        job_status.productos_procesados = procesados
+        job_status.descripciones_generadas = descripciones_ok
+        job_status.actualizado_en = datetime.utcnow()
+        job_status.mensaje = (
+            f"Generando descripción {procesados}/{total} — "
+            f"{descripciones_ok} completadas."
         )
+        _actualizar_estado(redis_client, job_status)
+
+    try:
+        if config.tipo_job == TipoJob.DESCRIPCIONES:
+            from services.ai.description_pipeline import DescripcionPipeline  # noqa: PLC0415
+            pipeline_desc = DescripcionPipeline(job_id=job_id, config=config)
+            resumen = pipeline_desc.ejecutar(
+                contenido_csv=contenido_csv,
+                callback=_callback_descripciones,
+            )
+        else:
+            pipeline_fotos = ScrapingPipeline(job_id=job_id, config=config)
+            resumen = pipeline_fotos.ejecutar(
+                contenido_csv=contenido_csv,
+                callback=_callback_fotos,
+            )
 
         # Actualizar estado final: COMPLETADO
         job_status.estado = EstadoJob.COMPLETADO
         job_status.total_productos = resumen["total_productos"]
-        job_status.imagenes_descargadas = resumen["imagenes_descargadas"]
-        job_status.imagenes_fallidas = resumen["imagenes_fallidas"]
+        job_status.imagenes_descargadas = resumen.get("imagenes_descargadas", 0)
+        job_status.imagenes_fallidas = resumen.get("imagenes_fallidas", 0)
         job_status.descripciones_generadas = resumen.get("descripciones_generadas", 0)
         job_status.completado_en = datetime.utcnow()
         job_status.actualizado_en = datetime.utcnow()

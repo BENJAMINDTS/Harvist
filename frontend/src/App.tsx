@@ -47,9 +47,9 @@ const App: React.FC = () => {
     try {
       const formData = new FormData()
       formData.append('file', selectedFile)
+      formData.append('tipo_job', config.tipoJob)
       formData.append('modo', config.modo)
       formData.append('imagenes_por_producto', String(config.imagenesPorProducto))
-      formData.append('generar_descripciones', String(config.generarDescripciones))
       formData.append('query_personalizada', config.queryPersonalizada)
       formData.append('columna_codigo', config.columnMapping.columnaCodigo)
       formData.append('columna_ean', config.columnMapping.columnaEan)

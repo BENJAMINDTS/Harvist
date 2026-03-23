@@ -17,24 +17,19 @@ nada de api/ ni de workers/ — es lógica de negocio pura.
 
 from __future__ import annotations
 
-import csv
-import io
 from typing import Callable
 
 from loguru import logger
 
-from api.core.config import get_settings
 from api.v1.schemas.job import SearchConfig
-from services.ai.claude_client import ClaudeClient
-from services.ai.description_generator import DescriptionGenerator, ResultadoDescripcion
 from services.csv_parser import CsvParser, CsvParserError, Producto
 from services.scraper.consumer import descargar_imagenes_producto
 from services.scraper.producer import buscar_urls_imagenes
 from services.storage_service import StorageService, get_storage_service
 
 # Tipo del callback de progreso que recibe el pipeline del worker
-# Firma: (job_id, productos_procesados, total, imagenes_ok, imagenes_fail, descripciones_ok) -> None
-ProgressCallback = Callable[[str, int, int, int, int, int], None]
+# Firma: (job_id, productos_procesados, total, imagenes_ok, imagenes_fail) -> None
+ProgressCallback = Callable[[str, int, int, int, int], None]
 
 
 class ScrapingPipeline:
@@ -108,42 +103,17 @@ class ScrapingPipeline:
             },
         )
 
-        # ── Paso 2: Preparar generador de descripciones (si está activo) ────────
-        generator: DescriptionGenerator | None = None
-        if self._config.generar_descripciones:
-            settings = get_settings()
-            claude_client = ClaudeClient(
-                api_key=settings.claude_api_key,
-                model=settings.claude_model,
-                max_tokens=settings.claude_max_tokens,
-                timeout=settings.claude_timeout,
-                max_retries=settings.claude_max_retries,
-            )
-            generator = DescriptionGenerator(claude_client)
-            logger.info(
-                "Generación de descripciones activada",
-                extra={"job_id": self._job_id, "model": settings.claude_model},
-            )
-
-        # ── Paso 3: Procesar cada producto (Productor → Consumidor → IA) ──────
+        # ── Paso 2: Procesar cada producto (Productor → Consumidor) ───────────
         imagenes_ok = 0
         imagenes_fail = 0
-        descripciones: list[ResultadoDescripcion] = []
-        descripciones_ok = 0
 
         for idx, producto in enumerate(productos, start=1):
             producto_ok, producto_fail = self._procesar_producto(producto)
             imagenes_ok += producto_ok
             imagenes_fail += producto_fail
 
-            if generator is not None:
-                resultado_desc = generator.generar(producto)
-                descripciones.append(resultado_desc)
-                if resultado_desc.exitoso:
-                    descripciones_ok += 1
-
             if callback:
-                callback(self._job_id, idx, total, imagenes_ok, imagenes_fail, descripciones_ok)
+                callback(self._job_id, idx, total, imagenes_ok, imagenes_fail)
 
             logger.debug(
                 "Producto procesado",
@@ -156,11 +126,7 @@ class ScrapingPipeline:
                 },
             )
 
-        # ── Paso 4: Exportar descripciones.csv si se generaron ────────────────
-        if descripciones:
-            self._guardar_descripciones_csv(descripciones)
-
-        # ── Paso 5: Comprimir en ZIP ───────────────────────────────────────────
+        # ── Paso 3: Comprimir en ZIP ───────────────────────────────────────────
         try:
             zip_path = self._storage.create_zip(self._job_id)
             ruta_zip = str(zip_path)
@@ -176,7 +142,6 @@ class ScrapingPipeline:
             "total_productos": total,
             "imagenes_descargadas": imagenes_ok,
             "imagenes_fallidas": imagenes_fail,
-            "descripciones_generadas": descripciones_ok,
             "errores_csv": resultado_csv.errores,
             "ruta_zip": ruta_zip,
         }
@@ -186,51 +151,6 @@ class ScrapingPipeline:
             extra={"job_id": self._job_id, **{k: v for k, v in resumen.items() if k != "errores_csv"}},
         )
         return resumen
-
-    def _guardar_descripciones_csv(
-        self, descripciones: list[ResultadoDescripcion]
-    ) -> None:
-        """
-        Serializa las descripciones generadas a CSV y las guarda en el storage del job.
-
-        El archivo se llama ``descripciones.csv`` y se incluirá automáticamente
-        en el ZIP al finalizar el pipeline. Las descripciones con error se
-        incluyen con la columna ``descripcion`` vacía para trazabilidad.
-
-        Args:
-            descripciones: lista de ResultadoDescripcion del pipeline de IA.
-        """
-        buffer = io.StringIO()
-        writer = csv.DictWriter(
-            buffer,
-            fieldnames=["codigo", "nombre", "marca", "descripcion"],
-            extrasaction="ignore",
-        )
-        writer.writeheader()
-        for r in descripciones:
-            writer.writerow({
-                "codigo": r.codigo,
-                "nombre": r.nombre,
-                "marca": r.marca,
-                "descripcion": r.descripcion,
-            })
-
-        try:
-            self._storage.save_image(
-                self._job_id,
-                "descripciones.csv",
-                buffer.getvalue().encode("utf-8"),
-            )
-            logger.info(
-                "descripciones.csv guardado en storage",
-                extra={"job_id": self._job_id, "filas": len(descripciones)},
-            )
-        except Exception as exc:
-            logger.error(
-                "Error al guardar descripciones.csv",
-                exc_info=exc,
-                extra={"job_id": self._job_id},
-            )
 
     def _procesar_producto(self, producto: Producto) -> tuple[int, int]:
         """

@@ -34,16 +34,19 @@ export interface ColumnMapping {
   columnaNombreFoto: string;
 }
 
+/** Tipo de trabajo: descarga de fotos o generación de descripciones. Mutuamente excluyentes. */
+export type TipoJob = "fotos" | "descripciones";
+
 /**
  * Valores de configuración de búsqueda que se envían al padre al lanzar el job.
  */
 export interface SearchConfigValues {
-  /** Modo de búsqueda seleccionado por el usuario. */
+  /** Tipo de trabajo: 'fotos' o 'descripciones'. */
+  tipoJob: TipoJob;
+  /** Modo de búsqueda seleccionado por el usuario (solo aplica en tipoJob='fotos'). */
   modo: "ean" | "nombre_marca" | "personalizado";
-  /** Número de imágenes a descargar por producto (1-20). */
+  /** Número de imágenes a descargar por producto (1-20, solo aplica en tipoJob='fotos'). */
   imagenesPorProducto: number;
-  /** Indica si se debe generar descripción de producto con IA (Fase 5). */
-  generarDescripciones: boolean;
   /**
    * Plantilla de query con placeholders para el modo personalizado.
    * Solo se usa cuando `modo === 'personalizado'`.
@@ -171,24 +174,6 @@ const RocketIcon: React.FC<IconProps> = ({ className }) => (
   </svg>
 );
 
-const SparklesIcon: React.FC<IconProps> = ({ className }) => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    className={className}
-    fill="none"
-    viewBox="0 0 24 24"
-    strokeWidth={1.5}
-    stroke="currentColor"
-    aria-hidden="true"
-  >
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z"
-    />
-  </svg>
-);
-
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 /**
@@ -307,11 +292,10 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
   onBack,
 }) => {
   // ── Estado del formulario ────────────────────────────────────────────────────
+  const [tipoJob, setTipoJob] = useState<TipoJob>("fotos");
   const [modo, setModo] = useState<SearchConfigValues["modo"]>("ean");
   const [imagenesPorProducto, setImagenesPorProducto] =
     useState<number>(DEFAULT_IMAGENES);
-  const [generarDescripciones, setGenerarDescripciones] =
-    useState<boolean>(false);
   const [queryPersonalizada, setQueryPersonalizada] = useState<string>("");
 
   // ── Estado del mapeo de columnas — se inicializa con auto-detección ──────────
@@ -364,9 +348,9 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
     setLaunching(true);
     try {
       await onLaunch({
+        tipoJob,
         modo,
         imagenesPorProducto,
-        generarDescripciones,
         queryPersonalizada,
         columnMapping: {
           columnaCodigo,
@@ -384,9 +368,9 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
   }, [
     launching,
     onLaunch,
+    tipoJob,
     modo,
     imagenesPorProducto,
-    generarDescripciones,
     queryPersonalizada,
     columnaCodigo,
     columnaEan,
@@ -425,8 +409,66 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
         </div>
       </div>
 
-      {/* ── Selector de modo de búsqueda ── */}
+      {/* ── Selector de tipo de trabajo ── */}
       <fieldset>
+        <legend className="text-sm font-semibold text-gray-700 mb-3">
+          Tipo de trabajo
+        </legend>
+        <div className="flex flex-col gap-3 sm:flex-row">
+          {(
+            [
+              { valor: "fotos", titulo: "Descargar fotos", descripcion: "Busca y descarga imágenes de producto mediante scraping." },
+              { valor: "descripciones", titulo: "Generar descripciones", descripcion: "Genera descripciones de catálogo con IA (Claude API)." },
+            ] as { valor: TipoJob; titulo: string; descripcion: string }[]
+          ).map(({ valor, titulo, descripcion }) => {
+            const isSelected = tipoJob === valor;
+            return (
+              <label
+                key={valor}
+                className={
+                  "relative flex flex-1 cursor-pointer rounded-xl border-2 p-4 " +
+                  "transition-colors duration-150 select-none " +
+                  "focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500 " +
+                  (isSelected
+                    ? "border-blue-500 bg-blue-50"
+                    : "border-gray-200 bg-white hover:border-blue-300 hover:bg-blue-50/40")
+                }
+              >
+                <input
+                  type="radio"
+                  name="tipoJob"
+                  value={valor}
+                  checked={isSelected}
+                  onChange={() => setTipoJob(valor)}
+                  className="sr-only"
+                />
+                <div className="flex flex-col gap-1 w-full">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={"text-sm font-semibold " + (isSelected ? "text-blue-700" : "text-gray-800")}>
+                      {titulo}
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className={
+                        "w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center " +
+                        (isSelected ? "border-blue-500 bg-blue-500" : "border-gray-300 bg-white")
+                      }
+                    >
+                      {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                    </span>
+                  </div>
+                  <p className={"text-xs leading-snug " + (isSelected ? "text-blue-600" : "text-gray-500")}>
+                    {descripcion}
+                  </p>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
+
+      {/* ── Selector de modo de búsqueda (solo fotos) ── */}
+      {tipoJob === "fotos" && <fieldset>
         <legend className="text-sm font-semibold text-gray-700 mb-3">
           Modo de búsqueda
         </legend>
@@ -532,6 +574,8 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
         )}
       </fieldset>
 
+      }
+
       {/* ── Mapeo de columnas ── */}
       {csvHeaders.length > 0 && (
         <fieldset className="rounded-xl border border-gray-200 bg-white p-4">
@@ -630,8 +674,8 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
         </fieldset>
       )}
 
-      {/* ── Imágenes por producto ── */}
-      <div>
+      {/* ── Imágenes por producto (solo fotos) ── */}
+      {tipoJob === "fotos" && <div>
         <div className="flex items-center justify-between mb-3">
           <label
             htmlFor="imagenes-slider"
@@ -685,78 +729,7 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
           <span className="text-xs text-gray-400">{MIN_IMAGENES}</span>
           <span className="text-xs text-gray-400">{MAX_IMAGENES}</span>
         </div>
-      </div>
-
-      {/* ── Toggle: Generar descripciones con IA ── */}
-      <div
-        className={
-          "flex items-start gap-4 rounded-xl border-2 p-4 " +
-          "transition-colors duration-150 " +
-          (generarDescripciones
-            ? "border-purple-400 bg-purple-50"
-            : "border-gray-200 bg-white")
-        }
-      >
-        <button
-          type="button"
-          role="switch"
-          aria-checked={generarDescripciones}
-          aria-label="Activar generación de descripciones con IA"
-          onClick={() => setGenerarDescripciones((prev) => !prev)}
-          className={
-            "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full " +
-            "border-2 border-transparent transition-colors duration-200 ease-in-out " +
-            "focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 " +
-            (generarDescripciones ? "bg-purple-500" : "bg-gray-300")
-          }
-        >
-          <span
-            aria-hidden="true"
-            className={
-              "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow " +
-              "transform transition duration-200 ease-in-out " +
-              (generarDescripciones ? "translate-x-5" : "translate-x-0")
-            }
-          />
-        </button>
-
-        <div className="flex flex-col gap-1 min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <SparklesIcon
-              className={
-                "w-4 h-4 shrink-0 " +
-                (generarDescripciones ? "text-purple-600" : "text-gray-400")
-              }
-            />
-            <span
-              className={
-                "text-sm font-semibold " +
-                (generarDescripciones ? "text-purple-800" : "text-gray-700")
-              }
-            >
-              Generar descripciones con IA
-            </span>
-            <span
-              className={
-                "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium " +
-                "bg-amber-100 text-amber-700 border border-amber-200"
-              }
-            >
-              Fase 5 — experimental
-            </span>
-          </div>
-          <p
-            className={
-              "text-xs leading-snug " +
-              (generarDescripciones ? "text-purple-600" : "text-gray-500")
-            }
-          >
-            Usa la API de Grok para generar una descripción de catálogo por cada
-            producto descargado. El ZIP incluirá un archivo{" "}
-            <code className="font-mono">descripciones.csv</code>.
-          </p>
-        </div>
-      </div>
+      </div>}
 
       {/* ── Acciones ── */}
       <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
