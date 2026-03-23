@@ -63,8 +63,8 @@ async def descargar_zip(job_id: str) -> FileResponse:
     return FileResponse(
         path=str(zip_path),
         media_type="application/zip",
-        filename=f"imagenes_{job_id}.zip",
-        headers={"Content-Disposition": f'attachment; filename="imagenes_{job_id}.zip"'},
+        filename=f"harvist_{job_id}.zip",
+        headers={"Content-Disposition": f'attachment; filename="harvist_{job_id}.zip"'},
     )
 
 
