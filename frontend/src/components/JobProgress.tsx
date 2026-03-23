@@ -166,6 +166,7 @@ export const JobProgress: React.FC<JobProgressProps> = ({
 }) => {
   const { progress, wsStatus, isFinished } = useJobWebSocket(jobId)
   const [cancelling, setCancelling] = useState(false)
+  const [cancelError, setCancelError] = useState<string | null>(null)
 
   // Notificar al padre una sola vez cuando el job llega a estado terminal.
   // Se usa ref para evitar llamadas duplicadas en re-renders.
@@ -186,10 +187,12 @@ export const JobProgress: React.FC<JobProgressProps> = ({
   /** Envía la solicitud de cancelación al backend */
   const handleCancel = async (): Promise<void> => {
     setCancelling(true)
+    setCancelError(null)
     try {
       await apiClient.post(`/jobs/${jobId}/cancel`)
-    } catch {
-      // El WS actualizará el estado igualmente; silenciamos el error de UI
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'No se pudo cancelar el trabajo.'
+      setCancelError(msg)
     } finally {
       setCancelling(false)
     }
@@ -273,14 +276,15 @@ export const JobProgress: React.FC<JobProgressProps> = ({
           <span>Progreso</span>
           <span>{pct}%</span>
         </div>
-        <div
-          className="h-3 w-full overflow-hidden rounded-full bg-gray-200"
-          role="progressbar"
-          aria-valuenow={pct}
-          aria-valuemin={0}
-          aria-valuemax={100}
+        {/* progress nativo: semánticamente correcto, oculto visualmente */}
+        <progress
+          className="sr-only"
+          value={pct}
+          max={100}
           aria-label={`Progreso del trabajo: ${pct}%`}
-        >
+        />
+        {/* Barra decorativa */}
+        <div className="h-3 w-full overflow-hidden rounded-full bg-gray-200" aria-hidden="true">
           <div
             className={`h-full rounded-full transition-all duration-500 ease-out ${progressBarColor}`}
             style={{ width: `${pct}%` }}
@@ -317,6 +321,13 @@ export const JobProgress: React.FC<JobProgressProps> = ({
           colorClass="text-red-500"
         />
       </div>
+
+      {/* Error al intentar cancelar */}
+      {cancelError !== null && (
+        <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+          {cancelError}
+        </div>
+      )}
 
       {/* Mensaje de error cuando el job falla */}
       {estado === 'fallido' && error !== null && (
