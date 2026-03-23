@@ -54,6 +54,10 @@ export interface SearchConfigValues {
   queryPersonalizada: string;
   /** Mapeo de columnas del CSV a campos internos del parser. */
   columnMapping: ColumnMapping;
+  /** API key de Groq del usuario (opcional, tiene prioridad sobre la del .env). */
+  groqApiKey: string;
+  /** Plantilla de prompt personalizada para generación de descripciones. */
+  promptPersonalizado: string;
 }
 
 /**
@@ -320,6 +324,8 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
     }
   );
   const [columnaNombreFoto, setColumnaNombreFoto] = useState<string>("");
+  const [groqApiKey, setGroqApiKey] = useState<string>("");
+  const [promptPersonalizado, setPromptPersonalizado] = useState<string>("");
 
   /** Indica si `onLaunch` está en curso para bloquear el botón y mostrar spinner. */
   const [launching, setLaunching] = useState<boolean>(false);
@@ -360,6 +366,8 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
           columnaCategoria,
           columnaNombreFoto,
         },
+        groqApiKey,
+        promptPersonalizado,
       });
     } finally {
       // Siempre desbloquear, incluso si onLaunch lanza una excepción.
@@ -378,6 +386,8 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
     columnaMarca,
     columnaCategoria,
     columnaNombreFoto,
+    groqApiKey,
+    promptPersonalizado,
   ]);
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -713,6 +723,74 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
                 />
               </>
             )}
+          </div>
+        </fieldset>
+      )}
+
+      {/* ── Configuración IA (solo descripciones) ── */}
+      {tipoJob === "descripciones" && (
+        <fieldset className="rounded-xl border border-gray-200 bg-white p-4 flex flex-col gap-4">
+          <legend className="text-sm font-semibold text-gray-700 px-1">
+            Configuración de IA
+          </legend>
+
+          {/* API Key de Groq */}
+          <div className="flex flex-col gap-1">
+            <label
+              htmlFor="groq-api-key"
+              className="text-xs font-medium text-gray-700"
+            >
+              API Key de Groq
+            </label>
+            <input
+              id="groq-api-key"
+              type="password"
+              value={groqApiKey}
+              onChange={(e) => setGroqApiKey(e.target.value)}
+              placeholder="gsk_..."
+              className={
+                "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 " +
+                "text-sm text-gray-800 placeholder-gray-400 font-mono " +
+                "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent " +
+                "transition-colors duration-150"
+              }
+              aria-describedby="groq-api-key-hint"
+            />
+            <p id="groq-api-key-hint" className="text-xs text-gray-400">
+              Opcional — si no la introduces se usa la configurada en el servidor.
+              Obtenla en{" "}
+              <span className="font-mono text-gray-500">console.groq.com</span>
+            </p>
+          </div>
+
+          {/* Prompt personalizado */}
+          <div className="flex flex-col gap-1">
+            <label
+              htmlFor="prompt-personalizado"
+              className="text-xs font-medium text-gray-700"
+            >
+              Prompt personalizado
+            </label>
+            <textarea
+              id="prompt-personalizado"
+              value={promptPersonalizado}
+              onChange={(e) => setPromptPersonalizado(e.target.value)}
+              rows={6}
+              placeholder="Deja vacío para usar el prompt SEO por defecto. Debe contener {productos_json}."
+              className={
+                "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 " +
+                "text-sm text-gray-800 placeholder-gray-400 font-mono resize-y " +
+                "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent " +
+                "transition-colors duration-150"
+              }
+              aria-describedby="prompt-personalizado-hint"
+            />
+            <p id="prompt-personalizado-hint" className="text-xs text-gray-400">
+              Debe contener{" "}
+              <code className="font-mono text-gray-600">{"{productos_json}"}</code>{" "}
+              y opcionalmente{" "}
+              <code className="font-mono text-gray-600">{"{store_type}"}</code>.
+            </p>
           </div>
         </fieldset>
       )}
