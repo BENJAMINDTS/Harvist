@@ -48,6 +48,7 @@ class Producto:
     nombre: str = ""
     marca: str = ""
     ean: str = ""
+    categoria: str = ""
     query: str = ""          # Calculado por CsvParser según el modo
     fila_original: int = 0   # Número de fila del CSV (para trazabilidad de errores)
     datos_extra: dict[str, str] = field(default_factory=dict)
@@ -109,6 +110,9 @@ class CsvParser:
         if not contenido or not contenido.strip():
             raise CsvParserError("El archivo CSV está vacío.")
 
+        # Eliminar BOM (Byte Order Mark) que Excel añade al guardar CSV en UTF-8
+        contenido = contenido.lstrip('\ufeff')
+
         reader = self._crear_reader(contenido)
 
         # Leer cabeceras
@@ -157,22 +161,31 @@ class CsvParser:
         """
         Crea un csv.reader detectando automáticamente el delimitador.
 
+        Usa el mismo algoritmo que el frontend: cuenta las ocurrencias de
+        cada candidato en la primera línea y elige el que produce más celdas.
+        Esto es más robusto que csv.Sniffer, que puede fallar con BOM o
+        con archivos cortos.
+
         Args:
-            contenido: string con el CSV completo.
+            contenido: string con el CSV completo (ya sin BOM).
 
         Returns:
             Iterator de filas como listas de strings.
-
-        Raises:
-            CsvParserError: si el formato no puede detectarse.
         """
-        try:
-            dialect = csv.Sniffer().sniff(contenido[:4096], delimiters=",;\t|")
-        except csv.Error:
-            # Si el sniffer falla, asumir coma como delimitador estándar
-            dialect = csv.excel
+        primera_linea = contenido.split("\n")[0] if "\n" in contenido else contenido[:4096]
+        candidatos = [",", ";", "\t", "|"]
+        delimitador = max(candidatos, key=lambda d: primera_linea.count(d))
 
-        return csv.reader(io.StringIO(contenido), dialect=dialect)
+        # Si ningún candidato aparece, usar coma como fallback
+        if primera_linea.count(delimitador) == 0:
+            delimitador = ","
+
+        logger.debug(
+            "Delimitador CSV detectado",
+            extra={"delimitador": repr(delimitador), "primera_linea": primera_linea[:120]},
+        )
+
+        return csv.reader(io.StringIO(contenido), delimiter=delimitador)
 
     def _validar_columnas(self, cabeceras: set[str]) -> None:
         """
@@ -258,6 +271,7 @@ class CsvParser:
         nombre = _obtener(cm.columna_nombre)
         marca = _obtener(cm.columna_marca)
         ean = _obtener(cm.columna_ean)
+        categoria = _obtener(cm.columna_categoria)
 
         # Datos extra: columnas no mapeadas a campos estándar se preservan para exportación
         columnas_conocidas = {
@@ -265,6 +279,7 @@ class CsvParser:
             cm.columna_nombre.lower(),
             cm.columna_marca.lower(),
             cm.columna_ean.lower(),
+            cm.columna_categoria.lower(),
         }
         datos_extra = {
             col: self._sanitizar(fila[idx])
@@ -277,6 +292,7 @@ class CsvParser:
             nombre=nombre,
             marca=marca,
             ean=ean,
+            categoria=categoria,
             fila_original=num_fila,
             datos_extra=datos_extra,
         )
@@ -320,6 +336,7 @@ class CsvParser:
                 marca=producto.marca,
                 ean=producto.ean,
                 codigo=producto.codigo,
+                categoria=producto.categoria,
             )
 
         # Caso imposible si ModosBusqueda está bien definido, pero lo manejamos

@@ -50,10 +50,12 @@ const App: React.FC = () => {
       formData.append('modo', config.modo)
       formData.append('imagenes_por_producto', String(config.imagenesPorProducto))
       formData.append('generar_descripciones', String(config.generarDescripciones))
+      formData.append('query_personalizada', config.queryPersonalizada)
       formData.append('columna_codigo', config.columnMapping.columnaCodigo)
       formData.append('columna_ean', config.columnMapping.columnaEan)
       formData.append('columna_nombre', config.columnMapping.columnaNombre)
       formData.append('columna_marca', config.columnMapping.columnaMarca)
+      formData.append('columna_categoria', config.columnMapping.columnaCategoria)
 
       const response = await apiClient.post<{
         success: boolean

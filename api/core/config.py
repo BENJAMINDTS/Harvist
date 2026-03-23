@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     )
     browser_binary_path: str = Field(...)
     browser_headless: bool = Field(default=True)
+    browser_version_main: int | None = Field(
+        default=None,
+        description="Versión principal de Chromium del navegador (requerida para Opera/Brave).",
+    )
     browser_timeout: int = Field(default=15, ge=5, le=120)
 
     # ── Scraper / Búsqueda ────────────────────────────────────────────────────

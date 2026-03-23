@@ -28,6 +28,8 @@ export interface ColumnMapping {
   columnaNombre: string;
   /** Columna del CSV con la marca del producto. */
   columnaMarca: string;
+  /** Columna del CSV con la categoría del producto (opcional). */
+  columnaCategoria: string;
 }
 
 /**
@@ -102,7 +104,7 @@ const MODOS_BUSQUEDA: ReadonlyArray<{
     valor: "personalizado",
     titulo: "Personalizado",
     descripcion:
-      "Define una plantilla con placeholders: {nombre}, {marca}, {ean}, {codigo}.",
+      "Define una plantilla con placeholders: {nombre}, {marca}, {ean}, {codigo}, {categoria}.",
   },
 ];
 
@@ -323,6 +325,14 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
   const [columnaMarca, setColumnaMarca] = useState<string>(
     () => autoDetect(csvHeaders, "marca", "brand", "fabricante", "manufacturer")
   );
+  const [columnaCategoria, setColumnaCategoria] = useState<string>(
+    () => {
+      const found = csvHeaders.find((h) =>
+        ["categoria", "category", "tipo", "type", "familia", "family"].includes(h.toLowerCase())
+      );
+      return found ?? "";
+    }
+  );
 
   /** Indica si `onLaunch` está en curso para bloquear el botón y mostrar spinner. */
   const [launching, setLaunching] = useState<boolean>(false);
@@ -360,6 +370,7 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
           columnaEan,
           columnaNombre,
           columnaMarca,
+          columnaCategoria,
         },
       });
     } finally {
@@ -377,6 +388,7 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
     columnaEan,
     columnaNombre,
     columnaMarca,
+    columnaCategoria,
   ]);
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -508,7 +520,8 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
               <code className="font-mono text-gray-600">{"{nombre}"}</code>,{" "}
               <code className="font-mono text-gray-600">{"{marca}"}</code>,{" "}
               <code className="font-mono text-gray-600">{"{ean}"}</code>,{" "}
-              <code className="font-mono text-gray-600">{"{codigo}"}</code>
+              <code className="font-mono text-gray-600">{"{codigo}"}</code>,{" "}
+              <code className="font-mono text-gray-600">{"{categoria}"}</code>
             </p>
           </div>
         )}
@@ -586,6 +599,16 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
                 }
               />
             )}
+
+            {/* Columna Categoría — siempre opcional, disponible como {categoria} */}
+            <ColumnSelect
+              id="col-categoria"
+              label="Categoría del producto"
+              headers={csvHeaders}
+              value={columnaCategoria}
+              onChange={setColumnaCategoria}
+              hint="Opcional — disponible como {categoria} en la plantilla personalizada."
+            />
           </div>
         </fieldset>
       )}

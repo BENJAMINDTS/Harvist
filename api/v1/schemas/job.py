@@ -74,6 +74,10 @@ class ColumnMapping(BaseModel):
         default="marca",
         description="Columna del CSV que contiene la marca del producto.",
     )
+    columna_categoria: str = Field(
+        default="categoria",
+        description="Columna del CSV que contiene la categoría del producto (opcional).",
+    )
 
 
 class SearchConfig(BaseModel):

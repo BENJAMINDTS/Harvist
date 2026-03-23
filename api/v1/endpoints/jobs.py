@@ -15,6 +15,7 @@ Ninguna lógica de negocio vive aquí.
 
 import json
 import uuid
+from datetime import datetime
 from typing import Annotated
 
 import redis.asyncio as aioredis
@@ -130,6 +131,14 @@ async def crear_job(
         str,
         Form(description="Columna del CSV que contiene la marca del producto."),
     ] = "marca",
+    columna_categoria: Annotated[
+        str,
+        Form(description="Columna del CSV que contiene la categoría del producto (opcional)."),
+    ] = "categoria",
+    query_personalizada: Annotated[
+        str,
+        Form(description="Plantilla de query para el modo personalizado (con {nombre}, {marca}, etc.)."),
+    ] = "",
 ) -> JSONResponse:
     """
     Recibe un CSV de inventario, encola el trabajo de scraping y devuelve el job_id.
@@ -178,11 +187,13 @@ async def crear_job(
         modo=modo,
         imagenes_por_producto=imagenes_por_producto,
         generar_descripciones=generar_descripciones,
+        query_personalizada=query_personalizada or None,
         column_mapping=ColumnMapping(
             columna_codigo=columna_codigo,
             columna_ean=columna_ean,
             columna_nombre=columna_nombre,
             columna_marca=columna_marca,
+            columna_categoria=columna_categoria,
         ),
     )
 
@@ -204,7 +215,7 @@ async def crear_job(
     try:
         from workers.tasks import ejecutar_scraping
         ejecutar_scraping.apply_async(
-            args=[job_id, contenido.decode("utf-8", errors="replace"), config.model_dump()],
+            args=[job_id, contenido.decode("utf-8-sig", errors="replace"), config.model_dump()],
             task_id=job_id,
         )
     except Exception as exc:
@@ -257,6 +268,62 @@ async def obtener_estado_job(job_id: str) -> JSONResponse:
             "data": json.loads(status.model_dump_json()),
             "message": status.mensaje,
         }
+    )
+
+
+@router.post(
+    "/{job_id}/cancel",
+    response_model=JobResponse,
+    status_code=200,
+    summary="Cancelar un trabajo en curso",
+)
+async def cancelar_job(job_id: str) -> JSONResponse:
+    """
+    Cancela un trabajo que esté en estado PENDIENTE o EN_PROCESO.
+
+    Actualiza el estado a CANCELADO en Redis. El worker detectará el cambio
+    en su siguiente iteración y detendrá el pipeline limpiamente.
+
+    Args:
+        job_id: identificador UUID del trabajo a cancelar.
+
+    Returns:
+        JSONResponse 200 confirmando la cancelación.
+
+    Raises:
+        HTTPException 404: si el job no existe.
+        HTTPException 409: si el job ya terminó (no se puede cancelar).
+    """
+    redis = await _get_redis()
+    try:
+        status = await _get_job_status(redis, job_id)
+
+        if status.estado not in (EstadoJob.PENDIENTE, EstadoJob.EN_PROCESO):
+            raise HTTPException(
+                status_code=409,
+                detail=f"El trabajo ya terminó con estado '{status.estado.value}' y no puede cancelarse.",
+            )
+
+        status.estado = EstadoJob.CANCELADO
+        status.mensaje = "Trabajo cancelado por el usuario."
+        status.actualizado_en = datetime.utcnow()
+        await redis.set(
+            _JOB_KEY.format(job_id=job_id),
+            status.model_dump_json(),
+            ex=_KEY_TTL,
+        )
+    finally:
+        await redis.aclose()
+
+    logger.info("Job cancelado por el usuario", extra={"job_id": job_id})
+
+    return JSONResponse(
+        status_code=200,
+        content={
+            "success": True,
+            "data": {"job_id": job_id, "estado": EstadoJob.CANCELADO.value},
+            "message": "Trabajo cancelado correctamente.",
+        },
     )
 
 
