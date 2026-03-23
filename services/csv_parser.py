@@ -160,22 +160,31 @@ class CsvParser:
         """
         Crea un csv.reader detectando automáticamente el delimitador.
 
+        Usa el mismo algoritmo que el frontend: cuenta las ocurrencias de
+        cada candidato en la primera línea y elige el que produce más celdas.
+        Esto es más robusto que csv.Sniffer, que puede fallar con BOM o
+        con archivos cortos.
+
         Args:
-            contenido: string con el CSV completo.
+            contenido: string con el CSV completo (ya sin BOM).
 
         Returns:
             Iterator de filas como listas de strings.
-
-        Raises:
-            CsvParserError: si el formato no puede detectarse.
         """
-        try:
-            dialect = csv.Sniffer().sniff(contenido[:4096], delimiters=",;\t|")
-        except csv.Error:
-            # Si el sniffer falla, asumir coma como delimitador estándar
-            dialect = csv.excel
+        primera_linea = contenido.split("\n")[0] if "\n" in contenido else contenido[:4096]
+        candidatos = [",", ";", "\t", "|"]
+        delimitador = max(candidatos, key=lambda d: primera_linea.count(d))
 
-        return csv.reader(io.StringIO(contenido), dialect=dialect)
+        # Si ningún candidato aparece, usar coma como fallback
+        if primera_linea.count(delimitador) == 0:
+            delimitador = ","
+
+        logger.debug(
+            "Delimitador CSV detectado",
+            extra={"delimitador": repr(delimitador), "primera_linea": primera_linea[:120]},
+        )
+
+        return csv.reader(io.StringIO(contenido), delimiter=delimitador)
 
     def _validar_columnas(self, cabeceras: set[str]) -> None:
         """
