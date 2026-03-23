@@ -166,24 +166,11 @@ class DescripcionPipeline:
         # ── Paso 4: Guardar descripciones.csv ────────────────────────────────
         self._guardar_csv(descripciones)
 
-        # ── Paso 5: Comprimir en ZIP ──────────────────────────────────────────
-        ruta_zip = ""
-        try:
-            zip_path = self._storage.create_zip(self._job_id)
-            ruta_zip = str(zip_path)
-        except Exception as exc:
-            logger.error(
-                "Error al crear el ZIP de descripciones",
-                exc_info=exc,
-                extra={"job_id": self._job_id},
-            )
-
         resumen = {
             "total_productos": total,
             "descripciones_generadas": descripciones_ok,
             "descripciones_fallidas": descripciones_fail,
             "errores_csv": resultado_csv.errores,
-            "ruta_zip": ruta_zip,
         }
 
         logger.info(
