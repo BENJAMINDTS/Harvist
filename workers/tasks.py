@@ -119,6 +119,7 @@ def ejecutar_scraping(
         total: int,
         img_ok: int,
         img_fail: int,
+        descripciones_ok: int = 0,
     ) -> None:
         """
         Actualiza el estado del job en Redis tras procesar cada producto.
@@ -132,6 +133,7 @@ def ejecutar_scraping(
             total: total de productos del CSV.
             img_ok: imágenes descargadas exitosamente.
             img_fail: imágenes que fallaron.
+            descripciones_ok: descripciones generadas con IA hasta ahora.
 
         Raises:
             JobCancelledError: si el job fue cancelado desde la API.
@@ -147,6 +149,7 @@ def ejecutar_scraping(
         job_status.productos_procesados = procesados
         job_status.imagenes_descargadas = img_ok
         job_status.imagenes_fallidas = img_fail
+        job_status.descripciones_generadas = descripciones_ok
         job_status.actualizado_en = datetime.utcnow()
         job_status.mensaje = (
             f"Procesando producto {procesados}/{total} — "
@@ -166,6 +169,7 @@ def ejecutar_scraping(
         job_status.total_productos = resumen["total_productos"]
         job_status.imagenes_descargadas = resumen["imagenes_descargadas"]
         job_status.imagenes_fallidas = resumen["imagenes_fallidas"]
+        job_status.descripciones_generadas = resumen.get("descripciones_generadas", 0)
         job_status.completado_en = datetime.utcnow()
         job_status.actualizado_en = datetime.utcnow()
         job_status.mensaje = (
