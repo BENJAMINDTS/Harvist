@@ -23,6 +23,7 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Request,
     UploadFile,
     WebSocket,
     WebSocketDisconnect,
@@ -99,7 +100,7 @@ async def _get_job_status(redis: aioredis.Redis, job_id: str) -> JobStatus:
 )
 @limiter.limit("10/minute")
 async def crear_job(
-    request,  # requerido por slowapi para extraer la IP
+    request: Request,  # requerido por slowapi para extraer la IP
     file: Annotated[UploadFile, File(description="Archivo CSV con el inventario de productos.")],
     modo: Annotated[
         ModosBusqueda,
@@ -155,7 +156,13 @@ async def crear_job(
         HTTPException 503: si Redis o Celery no están disponibles.
     """
     # Validar tipo MIME del CSV en la frontera de entrada
-    if file.content_type not in ("text/csv", "application/csv", "text/plain"):
+    if file.content_type not in (
+        "text/csv",
+        "application/csv",
+        "text/plain",
+        "application/vnd.ms-excel",
+        "application/octet-stream",
+    ):
         raise HTTPException(
             status_code=400,
             detail="El archivo debe ser un CSV (text/csv).",
