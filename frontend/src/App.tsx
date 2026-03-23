@@ -59,7 +59,7 @@ const App: React.FC = () => {
       formData.append('columna_categoria', config.columnMapping.columnaCategoria)
       formData.append('columna_nombre_foto', config.columnMapping.columnaNombreFoto)
       formData.append('groq_api_key_usuario', config.groqApiKey)
-      formData.append('prompt_personalizado', config.promptPersonalizado)
+      formData.append('store_type_usuario', config.storeType)
 
       const response = await apiClient.post<{
         success: boolean

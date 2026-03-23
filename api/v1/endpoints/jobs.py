@@ -153,9 +153,9 @@ async def crear_job(
         str,
         Form(description="API key de Groq del usuario. Tiene prioridad sobre GROQ_API_KEY del .env."),
     ] = "",
-    prompt_personalizado: Annotated[
+    store_type_usuario: Annotated[
         str,
-        Form(description="Plantilla de prompt personalizada. Debe contener {store_type} y {productos_json}."),
+        Form(description="Tipo de tienda para el prompt de IA (ej: 'tiendas de mascotas'). Vacío = usa el del .env."),
     ] = "",
 ) -> JSONResponse:
     """
@@ -207,7 +207,7 @@ async def crear_job(
         imagenes_por_producto=imagenes_por_producto,
         query_personalizada=query_personalizada or None,
         groq_api_key_usuario=groq_api_key_usuario,
-        prompt_personalizado=prompt_personalizado,
+        store_type_usuario=store_type_usuario,
         column_mapping=ColumnMapping(
             columna_codigo=columna_codigo,
             columna_ean=columna_ean,

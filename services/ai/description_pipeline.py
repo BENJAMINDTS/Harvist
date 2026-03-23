@@ -123,11 +123,11 @@ class DescripcionPipeline:
             max_retries=settings.claude_max_retries,
             provider=settings.ai_provider,
         )
+        store_type = self._config.store_type_usuario or settings.claude_store_type
         generator = DescriptionGenerator(
             client=claude_client,
-            store_type=settings.claude_store_type,
+            store_type=store_type,
             prompt_file=settings.claude_prompt_file,
-            prompt_inline=self._config.prompt_personalizado,
         )
 
         # ── Paso 3: Generar descripciones en batches ──────────────────────────
@@ -166,24 +166,11 @@ class DescripcionPipeline:
         # ── Paso 4: Guardar descripciones.csv ────────────────────────────────
         self._guardar_csv(descripciones)
 
-        # ── Paso 5: Comprimir en ZIP ──────────────────────────────────────────
-        ruta_zip = ""
-        try:
-            zip_path = self._storage.create_zip(self._job_id)
-            ruta_zip = str(zip_path)
-        except Exception as exc:
-            logger.error(
-                "Error al crear el ZIP de descripciones",
-                exc_info=exc,
-                extra={"job_id": self._job_id},
-            )
-
         resumen = {
             "total_productos": total,
             "descripciones_generadas": descripciones_ok,
             "descripciones_fallidas": descripciones_fail,
             "errores_csv": resultado_csv.errores,
-            "ruta_zip": ruta_zip,
         }
 
         logger.info(
@@ -213,9 +200,6 @@ class DescripcionPipeline:
             "categoria",
             "corta",
             "larga",
-            "keywords_principales",
-            "keywords_secundarias",
-            "meta_description",
             "exitoso",
             "error",
         ]
@@ -231,9 +215,6 @@ class DescripcionPipeline:
                 "categoria": r.categoria,
                 "corta": r.corta,
                 "larga": r.larga,
-                "keywords_principales": " | ".join(r.keywords_principales),
-                "keywords_secundarias": " | ".join(r.keywords_secundarias),
-                "meta_description": r.meta_description,
                 "exitoso": r.exitoso,
                 "error": r.error,
             })
@@ -242,7 +223,7 @@ class DescripcionPipeline:
             self._storage.save_image(
                 self._job_id,
                 "descripciones.csv",
-                buffer.getvalue().encode("utf-8"),
+                buffer.getvalue().encode("utf-8-sig"),
             )
             logger.info(
                 "descripciones.csv guardado",

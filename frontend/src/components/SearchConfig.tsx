@@ -56,8 +56,8 @@ export interface SearchConfigValues {
   columnMapping: ColumnMapping;
   /** API key de Groq del usuario (opcional, tiene prioridad sobre la del .env). */
   groqApiKey: string;
-  /** Plantilla de prompt personalizada para generación de descripciones. */
-  promptPersonalizado: string;
+  /** Tipo de tienda inyectado en el prompt (ej: 'tiendas de mascotas'). Vacío = usa el del servidor. */
+  storeType: string;
 }
 
 /**
@@ -325,7 +325,7 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
   );
   const [columnaNombreFoto, setColumnaNombreFoto] = useState<string>("");
   const [groqApiKey, setGroqApiKey] = useState<string>("");
-  const [promptPersonalizado, setPromptPersonalizado] = useState<string>("");
+  const [storeType, setStoreType] = useState<string>("");
 
   /** Indica si `onLaunch` está en curso para bloquear el botón y mostrar spinner. */
   const [launching, setLaunching] = useState<boolean>(false);
@@ -367,7 +367,7 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
           columnaNombreFoto,
         },
         groqApiKey,
-        promptPersonalizado,
+        storeType,
       });
     } finally {
       // Siempre desbloquear, incluso si onLaunch lanza una excepción.
@@ -387,7 +387,7 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
     columnaCategoria,
     columnaNombreFoto,
     groqApiKey,
-    promptPersonalizado,
+    storeType,
   ]);
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -763,33 +763,32 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
             </p>
           </div>
 
-          {/* Prompt personalizado */}
+          {/* Tipo de tienda */}
           <div className="flex flex-col gap-1">
             <label
-              htmlFor="prompt-personalizado"
+              htmlFor="store-type"
               className="text-xs font-medium text-gray-700"
             >
-              Prompt personalizado
+              Tipo de tienda
             </label>
-            <textarea
-              id="prompt-personalizado"
-              value={promptPersonalizado}
-              onChange={(e) => setPromptPersonalizado(e.target.value)}
-              rows={6}
-              placeholder="Deja vacío para usar el prompt SEO por defecto. Debe contener {productos_json}."
+            <input
+              id="store-type"
+              type="text"
+              value={storeType}
+              onChange={(e) => setStoreType(e.target.value)}
+              placeholder="tiendas de mascotas"
               className={
                 "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 " +
-                "text-sm text-gray-800 placeholder-gray-400 font-mono resize-y " +
+                "text-sm text-gray-800 placeholder-gray-400 " +
                 "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent " +
                 "transition-colors duration-150"
               }
-              aria-describedby="prompt-personalizado-hint"
+              aria-describedby="store-type-hint"
             />
-            <p id="prompt-personalizado-hint" className="text-xs text-gray-400">
-              Debe contener{" "}
-              <code className="font-mono text-gray-600">{"{productos_json}"}</code>{" "}
-              y opcionalmente{" "}
-              <code className="font-mono text-gray-600">{"{store_type}"}</code>.
+            <p id="store-type-hint" className="text-xs text-gray-400">
+              Define el sector en el que trabaja el copywriter de IA.
+              Ejemplos: <em>tiendas de mascotas</em>, <em>ferreterías</em>, <em>ropa deportiva</em>.
+              Vacío = usa el valor del servidor.
             </p>
           </div>
         </fieldset>

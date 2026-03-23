@@ -14,7 +14,7 @@ de plantilla externo (CLAUDE_PROMPT_FILE) con los placeholders {store_type} y {p
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from loguru import logger
@@ -30,28 +30,22 @@ from services.csv_parser import Producto
 _PROMPT_DEFAULT = (
     "Actúa como un copywriter experto en SEO y {store_type}. "
     "Genera descripciones optimizadas para buscadores (SEO) para los siguientes productos, "
-    "teniendo muy en cuenta su 'categoria' (perros, gatos, pájaros, etc.):\n\n"
+    "teniendo muy en cuenta su 'categoria':\n\n"
     "{productos_json}\n\n"
     "REGLAS POR PRODUCTO:\n"
-    "1. Corta: Gancho comercial con la keyword principal integrada de forma natural (máx 10 palabras).\n"
-    "2. Larga: Texto persuasivo (+60 palabras) que incluya de forma natural entre 2 y 3 keywords secundarias. "
-    "   Debe explicar beneficios reales del producto, resolver una necesidad del dueño de la mascota "
-    "   e incluir una llamada a la acción implícita al final.\n"
-    "3. keywords_principales: Lista de 1 a 2 términos de búsqueda de alto volumen y alta intención de compra "
-    "   directamente relacionados con el producto (ej: 'pienso para perros adultos', 'arena aglomerante gatos').\n"
-    "4. keywords_secundarias: Lista de 3 a 5 términos long-tail o complementarios que refuercen el posicionamiento "
-    "   (ej: 'mejor pienso sin cereales para perros', 'arena para gatos sin polvo', 'comida natural para mascotas').\n"
-    "5. meta_description: Texto de entre 140 y 160 caracteres, en tono persuasivo, que incluya la keyword "
-    "   principal y esté optimizado para aparecer en los resultados de búsqueda de Google.\n"
-    "6. Si la categoría es '- Sin Departamento -', deduce el animal por el nombre o descripción del producto.\n\n"
+    "1. Corta: Gancho comercial de máximo 10 palabras. Debe incluir de forma natural "
+    "   la keyword principal de alto volumen de búsqueda para el producto.\n"
+    "2. Larga: Texto persuasivo de más de 60 palabras. Debe incluir de forma natural "
+    "   entre 2 y 3 keywords secundarias (términos long-tail relacionados), "
+    "   explicar los beneficios reales del producto, resolver una necesidad del cliente "
+    "   e incluir una llamada a la acción implícita al final. "
+    "   El texto completo debe estar optimizado para posicionar en Google.\n"
+    "3. Si la categoría es '- Sin Departamento -', dedúcela por el nombre o descripción del producto.\n\n"
     "RESPONDE EXCLUSIVAMENTE EN JSON con esta estructura exacta, sin texto adicional:\n"
     "{{\"productos\": [{{"
     "\"id_interno\": \"...\", "
     "\"corta\": \"...\", "
-    "\"larga\": \"...\", "
-    "\"keywords_principales\": [\"...\", \"...\"], "
-    "\"keywords_secundarias\": [\"...\", \"...\", \"...\"], "
-    "\"meta_description\": \"...\""
+    "\"larga\": \"...\""
     "}}]}}"
 )
 
@@ -75,9 +69,6 @@ class ResultadoDescripcion:
     categoria: str
     corta: str = ""
     larga: str = ""
-    keywords_principales: list[str] = field(default_factory=list)
-    keywords_secundarias: list[str] = field(default_factory=list)
-    meta_description: str = ""
     exitoso: bool = True
     error: str = ""
 
@@ -212,9 +203,6 @@ class DescriptionGenerator:
                         categoria=producto.categoria,
                         corta=datos.get("corta", ""),
                         larga=datos.get("larga", ""),
-                        keywords_principales=datos.get("keywords_principales", []),
-                        keywords_secundarias=datos.get("keywords_secundarias", []),
-                        meta_description=datos.get("meta_description", ""),
                         exitoso=True,
                     )
                 )
