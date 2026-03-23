@@ -130,6 +130,10 @@ async def crear_job(
         str,
         Form(description="Columna del CSV que contiene la marca del producto."),
     ] = "marca",
+    query_personalizada: Annotated[
+        str,
+        Form(description="Plantilla de query para el modo personalizado (con {nombre}, {marca}, etc.)."),
+    ] = "",
 ) -> JSONResponse:
     """
     Recibe un CSV de inventario, encola el trabajo de scraping y devuelve el job_id.
@@ -178,6 +182,7 @@ async def crear_job(
         modo=modo,
         imagenes_por_producto=imagenes_por_producto,
         generar_descripciones=generar_descripciones,
+        query_personalizada=query_personalizada or None,
         column_mapping=ColumnMapping(
             columna_codigo=columna_codigo,
             columna_ean=columna_ean,
