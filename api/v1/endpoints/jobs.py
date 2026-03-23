@@ -131,6 +131,10 @@ async def crear_job(
         str,
         Form(description="Columna del CSV que contiene la marca del producto."),
     ] = "marca",
+    columna_categoria: Annotated[
+        str,
+        Form(description="Columna del CSV que contiene la categoría del producto (opcional)."),
+    ] = "categoria",
     query_personalizada: Annotated[
         str,
         Form(description="Plantilla de query para el modo personalizado (con {nombre}, {marca}, etc.)."),
@@ -189,6 +193,7 @@ async def crear_job(
             columna_ean=columna_ean,
             columna_nombre=columna_nombre,
             columna_marca=columna_marca,
+            columna_categoria=columna_categoria,
         ),
     )
 
