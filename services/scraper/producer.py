@@ -439,7 +439,8 @@ def _crear_driver(settings) -> WebDriver:
     if browser_type == "chrome":
         import undetected_chromedriver as uc
         options = uc.ChromeOptions()
-        options.binary_location = binary_path
+        if binary_path:
+            options.binary_location = binary_path
         if headless:
             options.add_argument("--headless=new")
         options.add_argument("--no-sandbox")
@@ -450,7 +451,8 @@ def _crear_driver(settings) -> WebDriver:
     if browser_type == "chromium":
         import undetected_chromedriver as uc
         options = uc.ChromeOptions()
-        options.binary_location = binary_path
+        if binary_path:
+            options.binary_location = binary_path
         if headless:
             options.add_argument("--headless=new")
         options.add_argument("--no-sandbox")

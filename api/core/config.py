@@ -64,13 +64,32 @@ class Settings(BaseSettings):
     browser_type: Literal["chrome", "opera", "edge", "brave", "chromium"] = Field(
         default="chrome"
     )
-    browser_binary_path: str = Field(...)
+    browser_binary_path: str = Field(
+        default="",
+        description=(
+            "Ruta al ejecutable del navegador. "
+            "Dejar vacío para Chrome/Chromium (auto-detección). "
+            "Obligatoria para opera | brave | edge."
+        ),
+    )
     browser_headless: bool = Field(default=True)
     browser_version_main: int | None = Field(
         default=None,
         description="Versión principal de Chromium del navegador (requerida para Opera/Brave).",
     )
     browser_timeout: int = Field(default=15, ge=5, le=120)
+
+    @field_validator("browser_binary_path", mode="after")
+    @classmethod
+    def _validate_binary_path(cls, value: str, info) -> str:
+        """Valida que la ruta al binario esté presente cuando el navegador la requiere."""
+        browser_type = info.data.get("browser_type", "chrome")
+        requires_path = {"opera", "brave", "edge"}
+        if browser_type in requires_path and not value:
+            raise ValueError(
+                f"BROWSER_BINARY_PATH es obligatoria cuando BROWSER_TYPE={browser_type}."
+            )
+        return value
 
     # ── Scraper / Búsqueda ────────────────────────────────────────────────────
     images_per_product: int = Field(default=5, ge=1, le=20)
