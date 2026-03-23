@@ -191,8 +191,8 @@ export const JobProgress: React.FC<JobProgressProps> = ({
     try {
       await apiClient.post(`/jobs/${jobId}/cancel`)
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'No se pudo cancelar el trabajo.'
-      setCancelError(msg)
+      const apiErr = err as { message?: string; status?: number }
+      setCancelError(apiErr.message ?? 'No se pudo cancelar el trabajo.')
     } finally {
       setCancelling(false)
     }
