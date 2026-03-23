@@ -117,9 +117,14 @@ def descargar_imagenes_producto(
                     callback_imagen(False)
                 continue
 
-            # Generar nombre de archivo: {codigo}_{indice}.{ext}
+            # Generar nombre de archivo usando la columna seleccionada (o código como fallback)
             indice = imagenes_validas + 1
-            filename = f"{producto.codigo}_{indice:03d}.{extension.lower()}"
+            nombre_base = producto.nombre_foto or producto.codigo
+            # Reemplazar caracteres inválidos en nombres de archivo por guion bajo
+            nombre_base = "".join(
+                c if c.isalnum() or c in "-_." else "_" for c in nombre_base
+            ).strip("_") or producto.codigo
+            filename = f"{nombre_base}_{indice:03d}.{extension.lower()}"
 
             try:
                 ruta = storage.save_image(job_id, filename, imagen_bytes)

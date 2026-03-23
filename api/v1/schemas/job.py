@@ -78,6 +78,13 @@ class ColumnMapping(BaseModel):
         default="categoria",
         description="Columna del CSV que contiene la categoría del producto (opcional).",
     )
+    columna_nombre_foto: str = Field(
+        default="",
+        description=(
+            "Columna del CSV cuyo valor se usa para nombrar los archivos de imagen. "
+            "Si está vacía se usa la columna de código."
+        ),
+    )
 
 
 class SearchConfig(BaseModel):

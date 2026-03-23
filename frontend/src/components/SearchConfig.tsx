@@ -30,6 +30,8 @@ export interface ColumnMapping {
   columnaMarca: string;
   /** Columna del CSV con la categoría del producto (opcional). */
   columnaCategoria: string;
+  /** Columna del CSV cuyo valor se usa para nombrar los archivos de imagen (opcional). */
+  columnaNombreFoto: string;
 }
 
 /**
@@ -333,6 +335,7 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
       return found ?? "";
     }
   );
+  const [columnaNombreFoto, setColumnaNombreFoto] = useState<string>("");
 
   /** Indica si `onLaunch` está en curso para bloquear el botón y mostrar spinner. */
   const [launching, setLaunching] = useState<boolean>(false);
@@ -371,6 +374,7 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
           columnaNombre,
           columnaMarca,
           columnaCategoria,
+          columnaNombreFoto,
         },
       });
     } finally {
@@ -389,6 +393,7 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
     columnaNombre,
     columnaMarca,
     columnaCategoria,
+    columnaNombreFoto,
   ]);
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -600,14 +605,26 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
               />
             )}
 
-            {/* Columna Categoría — siempre opcional, disponible como {categoria} */}
+            {/* Columna Categoría — solo en modo personalizado, como {categoria} */}
+            {modo === "personalizado" && (
+              <ColumnSelect
+                id="col-categoria"
+                label="Categoría del producto"
+                headers={csvHeaders}
+                value={columnaCategoria}
+                onChange={setColumnaCategoria}
+                hint="Opcional — disponible como {categoria} en la plantilla personalizada."
+              />
+            )}
+
+            {/* Columna para nombrar las fotos — siempre visible */}
             <ColumnSelect
-              id="col-categoria"
-              label="Categoría del producto"
+              id="col-nombre-foto"
+              label="Nombre de las fotos"
               headers={csvHeaders}
-              value={columnaCategoria}
-              onChange={setColumnaCategoria}
-              hint="Opcional — disponible como {categoria} en la plantilla personalizada."
+              value={columnaNombreFoto}
+              onChange={setColumnaNombreFoto}
+              hint="Columna cuyo valor se usa para nombrar los archivos de imagen. Sin selección = usa el código."
             />
           </div>
         </fieldset>

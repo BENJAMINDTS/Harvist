@@ -49,6 +49,7 @@ class Producto:
     marca: str = ""
     ean: str = ""
     categoria: str = ""
+    nombre_foto: str = ""    # Valor de la columna seleccionada para nombrar los archivos
     query: str = ""          # Calculado por CsvParser según el modo
     fila_original: int = 0   # Número de fila del CSV (para trazabilidad de errores)
     datos_extra: dict[str, str] = field(default_factory=dict)
@@ -272,6 +273,7 @@ class CsvParser:
         marca = _obtener(cm.columna_marca)
         ean = _obtener(cm.columna_ean)
         categoria = _obtener(cm.columna_categoria)
+        nombre_foto = _obtener(cm.columna_nombre_foto) if cm.columna_nombre_foto else ""
 
         # Datos extra: columnas no mapeadas a campos estándar se preservan para exportación
         columnas_conocidas = {
@@ -280,6 +282,7 @@ class CsvParser:
             cm.columna_marca.lower(),
             cm.columna_ean.lower(),
             cm.columna_categoria.lower(),
+            cm.columna_nombre_foto.lower(),
         }
         datos_extra = {
             col: self._sanitizar(fila[idx])
@@ -293,6 +296,7 @@ class CsvParser:
             marca=marca,
             ean=ean,
             categoria=categoria,
+            nombre_foto=nombre_foto,
             fila_original=num_fila,
             datos_extra=datos_extra,
         )
