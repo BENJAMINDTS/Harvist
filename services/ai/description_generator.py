@@ -45,14 +45,14 @@ _PROMPT_DEFAULT = (
     "   principal y esté optimizado para aparecer en los resultados de búsqueda de Google.\n"
     "6. Si la categoría es '- Sin Departamento -', deduce el animal por el nombre o descripción del producto.\n\n"
     "RESPONDE EXCLUSIVAMENTE EN JSON con esta estructura exacta, sin texto adicional:\n"
-    "{\"productos\": [{"
+    "{{\"productos\": [{{"
     "\"id_interno\": \"...\", "
     "\"corta\": \"...\", "
     "\"larga\": \"...\", "
     "\"keywords_principales\": [\"...\", \"...\"], "
     "\"keywords_secundarias\": [\"...\", \"...\", \"...\"], "
     "\"meta_description\": \"...\""
-    "}]}"
+    "}}]}}"
 )
 
 

@@ -48,8 +48,8 @@ class ClaudeClient:
             import anthropic  # noqa: PLC0415 — import diferido intencionado
         except ImportError as exc:
             raise ImportError(
-                "El paquete 'anthropic' no está instalado. "
-                "Ejecuta: pip install anthropic"
+                f"No se pudo importar 'anthropic': {exc}. "
+                "Ejecuta: pip install anthropic==0.49.0"
             ) from exc
 
         self._client = anthropic.Anthropic(
