@@ -105,10 +105,11 @@ class DescripcionPipeline:
             extra={"job_id": self._job_id, "total_productos": total},
         )
 
-        # ── Paso 2: Inicializar cliente Claude ────────────────────────────────
+        # ── Paso 2: Inicializar cliente IA ────────────────────────────────────
         settings = get_settings()
         if settings.ai_provider == "groq":
-            ai_api_key = settings.groq_api_key
+            # La API key del usuario tiene prioridad sobre la del .env
+            ai_api_key = self._config.groq_api_key_usuario or settings.groq_api_key
             ai_model = settings.groq_model
         else:
             ai_api_key = settings.claude_api_key
@@ -126,6 +127,7 @@ class DescripcionPipeline:
             client=claude_client,
             store_type=settings.claude_store_type,
             prompt_file=settings.claude_prompt_file,
+            prompt_inline=self._config.prompt_personalizado,
         )
 
         # ── Paso 3: Generar descripciones en batches ──────────────────────────
