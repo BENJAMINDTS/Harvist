@@ -132,23 +132,33 @@ class Settings(BaseSettings):
     log_rotation: str = Field(default="100 MB")
     log_retention: str = Field(default="7 days")
 
-    # ── IA — Fase 5 (opcional) ────────────────────────────────────────────────
+    # ── IA — Fase 5 (Claude API) ──────────────────────────────────────────────
     enable_ai_descriptions: bool = Field(default=False)
-    grok_api_key: str = Field(default="")
-    grok_api_base_url: str = Field(default="https://api.x.ai/v1")
-    grok_model: str = Field(default="grok-beta")
-    grok_timeout: int = Field(default=30, ge=5)
-    grok_max_retries: int = Field(default=3, ge=1)
+    claude_api_key: str = Field(
+        default="",
+        description="API key de Anthropic Claude. Obligatoria si ENABLE_AI_DESCRIPTIONS=true.",
+    )
+    claude_model: str = Field(
+        default="claude-haiku-4-5-20251001",
+        description="Modelo Claude a usar para generar descripciones.",
+    )
+    claude_max_tokens: int = Field(
+        default=300,
+        ge=50,
+        le=4096,
+        description="Máximo de tokens por descripción generada.",
+    )
+    claude_timeout: int = Field(default=30, ge=5)
+    claude_max_retries: int = Field(default=3, ge=1)
 
-    @field_validator("grok_api_key", mode="after")
+    @field_validator("claude_api_key", mode="after")
     @classmethod
-    def _validate_grok_key(cls, value: str, info) -> str:
-        """Valida que la clave de Grok esté presente si la IA está habilitada."""
-        # info.data puede no tener enable_ai_descriptions si falla antes
+    def _validate_claude_key(cls, value: str, info) -> str:
+        """Valida que la API key de Claude esté presente si la IA está habilitada."""
         enable = info.data.get("enable_ai_descriptions", False)
         if enable and not value:
             raise ValueError(
-                "GROK_API_KEY es obligatoria cuando ENABLE_AI_DESCRIPTIONS=true"
+                "CLAUDE_API_KEY es obligatoria cuando ENABLE_AI_DESCRIPTIONS=true"
             )
         return value
 
