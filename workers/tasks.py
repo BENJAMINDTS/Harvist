@@ -207,10 +207,16 @@ def ejecutar_scraping(
         job_status.descripciones_generadas = resumen.get("descripciones_generadas", 0)
         job_status.completado_en = datetime.utcnow()
         job_status.actualizado_en = datetime.utcnow()
-        job_status.mensaje = (
-            f"Completado: {resumen['imagenes_descargadas']} imágenes descargadas "
-            f"de {resumen['total_productos']} productos."
-        )
+        if config.tipo_job == TipoJob.DESCRIPCIONES:
+            job_status.mensaje = (
+                f"Completado: {resumen.get('descripciones_generadas', 0)} descripciones generadas "
+                f"de {resumen['total_productos']} productos."
+            )
+        else:
+            job_status.mensaje = (
+                f"Completado: {resumen.get('imagenes_descargadas', 0)} imágenes descargadas "
+                f"de {resumen['total_productos']} productos."
+            )
         _actualizar_estado(redis_client, job_status)
 
         logger.info(
