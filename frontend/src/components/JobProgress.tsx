@@ -11,6 +11,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { useJobWebSocket } from '@/hooks/useJobWebSocket'
 import type { EstadoJob } from '@/hooks/useJobWebSocket'
 import { apiClient } from '@/api/client'
+import type { TipoJob } from '@/components/SearchConfig'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -19,6 +20,8 @@ import { apiClient } from '@/api/client'
 interface JobProgressProps {
   /** UUID del job a monitorizar */
   jobId: string
+  /** Tipo de trabajo: 'fotos' o 'descripciones'. Controla los contadores mostrados. */
+  tipoJob: TipoJob
   /** Llamado cuando el job alcanza un estado terminal (completado o fallido) */
   onFinished: () => void
   /** Llamado cuando el usuario pulsa "Nuevo trabajo" */
@@ -161,6 +164,7 @@ const CounterCard: React.FC<CounterCardProps> = ({
  */
 export const JobProgress: React.FC<JobProgressProps> = ({
   jobId,
+  tipoJob,
   onFinished,
   onReset,
 }) => {
@@ -215,6 +219,7 @@ export const JobProgress: React.FC<JobProgressProps> = ({
     total_productos,
     imagenes_descargadas,
     imagenes_fallidas,
+    descripciones_generadas,
     mensaje,
     error,
   } = progress
@@ -310,16 +315,33 @@ export const JobProgress: React.FC<JobProgressProps> = ({
           value={total_productos}
           colorClass="text-gray-700"
         />
-        <CounterCard
-          label="Imágenes OK"
-          value={imagenes_descargadas}
-          colorClass="text-green-600"
-        />
-        <CounterCard
-          label="Imágenes fallidas"
-          value={imagenes_fallidas}
-          colorClass="text-red-500"
-        />
+        {tipoJob === 'descripciones' ? (
+          <>
+            <CounterCard
+              label="Descripciones OK"
+              value={descripciones_generadas}
+              colorClass="text-green-600"
+            />
+            <CounterCard
+              label="Desc. fallidas"
+              value={Math.max(0, productos_procesados - descripciones_generadas)}
+              colorClass="text-red-500"
+            />
+          </>
+        ) : (
+          <>
+            <CounterCard
+              label="Imágenes OK"
+              value={imagenes_descargadas}
+              colorClass="text-green-600"
+            />
+            <CounterCard
+              label="Imágenes fallidas"
+              value={imagenes_fallidas}
+              colorClass="text-red-500"
+            />
+          </>
+        )}
       </div>
 
       {/* Error al intentar cancelar */}
@@ -350,9 +372,9 @@ export const JobProgress: React.FC<JobProgressProps> = ({
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-green-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
-              aria-label="Descargar imágenes en formato ZIP"
+              aria-label={tipoJob === 'descripciones' ? 'Descargar descripciones en formato ZIP' : 'Descargar imágenes en formato ZIP'}
             >
-              Descargar ZIP
+              {tipoJob === 'descripciones' ? 'Descargar descripciones' : 'Descargar ZIP'}
             </a>
           )}
           <button
