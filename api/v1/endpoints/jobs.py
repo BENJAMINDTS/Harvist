@@ -135,6 +135,15 @@ async def crear_job(
         str,
         Form(description="Columna del CSV que contiene la categoría del producto (opcional)."),
     ] = "categoria",
+    columna_nombre_foto: Annotated[
+        str,
+        Form(
+            description=(
+                "Columna del CSV cuyo valor se usa para nombrar los archivos de imagen. "
+                "Vacío = usar columna de código."
+            )
+        ),
+    ] = "",
     query_personalizada: Annotated[
         str,
         Form(description="Plantilla de query para el modo personalizado (con {nombre}, {marca}, etc.)."),
@@ -194,6 +203,7 @@ async def crear_job(
             columna_nombre=columna_nombre,
             columna_marca=columna_marca,
             columna_categoria=columna_categoria,
+            columna_nombre_foto=columna_nombre_foto,
         ),
     )
 
