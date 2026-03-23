@@ -242,7 +242,7 @@ class DescripcionPipeline:
             self._storage.save_image(
                 self._job_id,
                 "descripciones.csv",
-                buffer.getvalue().encode("utf-8"),
+                buffer.getvalue().encode("utf-8-sig"),
             )
             logger.info(
                 "descripciones.csv guardado",
