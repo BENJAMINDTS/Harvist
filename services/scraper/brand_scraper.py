@@ -93,6 +93,29 @@ class EanBrandResolver:
     _URL_BUSQUEDA: str = "https://www.bing.com/search?q={query}"
     _SELECTOR_RESULTADOS: str = "#b_results"
     _SELECTOR_TITULOS: str = "li.b_algo h2"
+    # Selectores del banner de consentimiento de cookies de Bing
+    _SELECTOR_COOKIES: str = "#bnp_btn_accept, .bnp_btn_accept, button[id*='accept']"
+
+    def _aceptar_cookies(self, driver: WebDriver) -> None:
+        """
+        Acepta el banner de consentimiento de cookies de Bing si está presente.
+
+        Intenta hacer clic en el botón de aceptar durante un breve periodo.
+        Si no aparece o ya fue aceptado, continúa sin lanzar excepción.
+
+        Args:
+            driver: WebDriver con la página de Bing ya cargada.
+        """
+        try:
+            boton = WebDriverWait(driver, 3).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, self._SELECTOR_COOKIES))
+            )
+            boton.click()
+            time.sleep(0.3)
+            logger.debug("Banner de cookies de Bing aceptado")
+        except Exception:
+            # El banner no apareció o ya estaba aceptado — se continúa normalmente
+            pass
 
     def resolver(self, codigo: str, ean: str, driver: WebDriver) -> ResultadoMarca:
         """
@@ -113,6 +136,10 @@ class EanBrandResolver:
         try:
             url = self._URL_BUSQUEDA.format(query=quote_plus(f'"{ean}"'))
             driver.get(url)
+
+            # Aceptar banner de cookies de Bing si aparece antes de los resultados
+            self._aceptar_cookies(driver)
+
             wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, self._SELECTOR_RESULTADOS)))
             time.sleep(0.4)
 
