@@ -757,26 +757,15 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
 
             {/* ── Columnas específicas de fichas de marca ── */}
             {tipoJob === "marcas" && (
-              <>
-                <ColumnSelect
-                  id="col-marca"
-                  label="Marca del producto"
-                  required
-                  headers={csvHeaders}
-                  value={columnaMarca}
-                  onChange={setColumnaMarca}
-                  hint="Requerido — nombre de la marca que se usará para buscar información pública."
-                />
-
-                <ColumnSelect
-                  id="col-categoria"
-                  label="Categoría del producto"
-                  headers={csvHeaders}
-                  value={columnaCategoria}
-                  onChange={setColumnaCategoria}
-                  hint="Opcional — ayuda a contextualizar la búsqueda de información de marca."
-                />
-              </>
+              <ColumnSelect
+                id="col-ean"
+                label="EAN del producto"
+                required
+                headers={csvHeaders}
+                value={columnaEan}
+                onChange={setColumnaEan}
+                hint="Requerido — el EAN se usa para buscar el nombre de la marca en Bing."
+              />
             )}
           </div>
         </fieldset>
