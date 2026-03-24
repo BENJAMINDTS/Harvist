@@ -155,7 +155,7 @@ class TestParsear:
         assert p1.query == "Producto A Marca X"
 
     def test_csv_valido_modo_ean_genera_productos(self) -> None:
-        """CSV válido en modo EAN produce productos con query igual al EAN."""
+        """CSV válido en modo EAN produce productos con query en formato exacto ("EAN")."""
         parser = _parser(ModosBusqueda.EAN)
 
         resultado = parser.parsear(_CSV_EAN)
@@ -165,7 +165,7 @@ class TestParsear:
 
         p = resultado.productos[0]
         assert p.ean == "1234567890123"
-        assert p.query == "1234567890123"
+        assert p.query == '"1234567890123"'
 
     def test_fila_con_codigo_vacio_va_a_errores(self) -> None:
         """Fila con campo 'codigo' vacío se registra en errores y no en productos."""
@@ -254,12 +254,12 @@ class TestConstruirQuery:
 
         assert resultado.productos[0].query == "Producto Solo Nombre"
 
-    def test_ean_devuelve_el_ean(self) -> None:
-        """Modo EAN devuelve el valor del campo ean como query."""
+    def test_ean_devuelve_el_ean_entre_comillas(self) -> None:
+        """Modo EAN devuelve el EAN envuelto en comillas dobles para búsqueda exacta."""
         parser = _parser(ModosBusqueda.EAN)
         resultado = parser.parsear(_CSV_EAN)
 
-        assert resultado.productos[0].query == "1234567890123"
+        assert resultado.productos[0].query == '"1234567890123"'
 
     def test_ean_vacio_registra_error(self) -> None:
         """Modo EAN con campo ean vacío genera un error en la fila correspondiente."""
