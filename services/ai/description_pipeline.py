@@ -49,16 +49,21 @@ class DescripcionPipeline:
         job_id: str,
         config: SearchConfig,
         storage: StorageService | None = None,
+        carpeta_job_id: str | None = None,
     ) -> None:
         """
         Inicializa el pipeline de descripciones para un job concreto.
 
         Args:
-            job_id: identificador del job.
+            job_id: identificador del job (usado para progreso y logs).
             config: configuración del job (solo se usan column_mapping y modo).
             storage: servicio de almacenamiento. Si None, usa el factory por defecto.
+            carpeta_job_id: job_id cuya carpeta de almacenamiento se reutiliza.
+                Al reanudar un job se pasa el job_id original para que el CSV
+                de descripciones se escriba en la misma carpeta. Si None usa job_id.
         """
         self._job_id = job_id
+        self._carpeta_id = carpeta_job_id or job_id
         self._config = config
         self._storage = storage or get_storage_service()
 
@@ -240,7 +245,7 @@ class DescripcionPipeline:
 
         try:
             self._storage.save_image(
-                self._job_id,
+                self._carpeta_id,
                 "descripciones.csv",
                 buffer.getvalue().encode("utf-8-sig"),
             )
@@ -252,5 +257,5 @@ class DescripcionPipeline:
             logger.error(
                 "Error al guardar descripciones.csv",
                 exc_info=exc,
-                extra={"job_id": self._job_id},
+                extra={"job_id": self._carpeta_id},
             )
