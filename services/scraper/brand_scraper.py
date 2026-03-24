@@ -1,17 +1,15 @@
 """
 Resolución de EAN a marca de producto mediante búsqueda exacta en Bing.
 
-Estrategia:
+Estrategia (dos pasos, el segundo es fallback):
   1. Busca el EAN entre comillas ("EAN") en Bing Web para forzar coincidencia exacta.
-  2. Extrae los títulos de los 4 primeros resultados orgánicos (<h2> de li.b_algo).
-  3. Tokeniza, filtra palabras comerciales y stopwords, y calcula la frecuencia.
-  4. La palabra más frecuente que queda es la marca/fabricante del producto.
-
-Usa el mismo WebDriver de Bing que ya está activo en el pipeline de imágenes,
-por lo que no necesita abrir una sesión nueva ni enfrentarse a CAPTCHAs.
+  2. Extrae los snippets de descripción de los primeros N resultados y busca el
+     patrón explícito "Marca: X" / "Fabricante: X" → fuente más precisa.
+  3. Si no hay patrón explícito, vota por la palabra más frecuente en los títulos
+     (unigramas filtrados por stopwords y palabras comerciales).
 
 :author: BenjaminDTS
-:version: 2.0.0
+:version: 3.0.0
 """
 
 from __future__ import annotations
@@ -30,9 +28,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 from api.core.config import get_settings
 
-# ── Palabras que se descartan antes de votar por la marca ─────────────────────
+# ── Palabras que se descartan en el fallback de frecuencia de títulos ─────────
 
-# Palabras comerciales genéricas que no identifican marcas
 _PALABRAS_COMERCIALES: frozenset[str] = frozenset({
     "comprar", "compra", "compre", "compras", "precio", "precios", "barato",
     "baratos", "barata", "baratas", "online", "tienda", "tiendas", "shop",
@@ -45,7 +42,6 @@ _PALABRAS_COMERCIALES: frozenset[str] = frozenset({
     "oficial", "marca", "marcas", "fabricante", "fabricantes",
 })
 
-# Stopwords en español e inglés
 _STOPWORDS: frozenset[str] = frozenset({
     "de", "el", "la", "los", "las", "un", "una", "unos", "unas", "del",
     "al", "se", "su", "sus", "mi", "tu", "nos", "más", "sin", "sobre",
@@ -55,11 +51,55 @@ _STOPWORDS: frozenset[str] = frozenset({
     "gr", "mg", "lt", "pcs", "uds", "ud", "ref", "cod", "ean", "upc",
 })
 
-# Longitud mínima de palabra para ser considerada candidata a marca
 _MIN_LONGITUD_PALABRA = 3
 
+# Palabras de tipo producto usadas en el paso 3 para filtrar el nombre del CSV.
+# Lo que quede tras este filtro (+ _STOPWORDS + _PALABRAS_COMERCIALES) es
+# candidato a ser la marca del producto.
+_PALABRAS_PRODUCTO: frozenset[str] = frozenset({
+    # Tipos de producto — mobiliario / accesorios
+    "cama", "collar", "correa", "jaula", "bebedero", "comedero", "arena",
+    "lecho", "funda", "nido", "manta", "cojin", "colchon", "hamaca",
+    "tunel", "rueda", "bola", "juguete", "rascador", "arenero", "transportin",
+    "arnes", "arnés", "bozal", "placa", "medalla", "visera", "molde",
+    "accesorio", "recambio", "complemento", "dispensador", "recipiente",
+    # Alimentación / salud
+    "alimento", "pienso", "snack", "comida", "croquetas", "galletas",
+    "pasta", "mezcla", "pellet", "granulo", "polvo", "aceite", "spray",
+    "vitamina", "suplemento", "antipulgas", "antiparasitario", "medicamento",
+    "shampoo", "champu", "desinfectante", "limpiador", "crema", "gel",
+    # Animales / especies
+    "perro", "gato", "ave", "pez", "conejo", "hamster", "cobaya",
+    "roedor", "reptil", "tortuga", "lagarto", "gecko", "boa", "serpiente",
+    "canario", "periquito", "loro", "agaporni", "ninfa", "cacatua",
+    "pajaro", "pájaro", "gatito", "cachorro", "mascota", "insecto",
+    "grillo", "gusano", "lombriz", "saltamontes",
+    # Adjetivos descriptivos / talla / calidad
+    "pequeño", "pequeña", "grande", "mediano", "mediana", "mini", "maxi",
+    "micro", "nano", "extra", "super", "ultra", "natural", "ecologico",
+    "organico", "premium", "classic", "basic", "pro", "plus", "deluxe",
+    "junior", "adult", "adulto", "senior", "puppy", "kitten", "macho",
+    "hembra", "esterilizado", "esterilizada",
+    # Materiales
+    "madera", "plastico", "metal", "tela", "nylon", "papel", "paper",
+    "cuero", "goma", "silicona", "acero", "inox", "aluminio", "cristal",
+    # Unidades / medidas genéricas
+    "gramos", "kilogramo", "litros", "unidades", "unid", "metros",
+    "centimetros", "bolsa", "saco", "caja", "bote", "tubo",
+})
+
 # Número de resultados de Bing a analizar
-_NUM_RESULTADOS = 4
+_NUM_RESULTADOS = 6
+
+# Patrón para extraer la marca del campo explícito en los snippets de Bing.
+# Captura el valor después de "Marca:", "Fabricante:", "Brand:", etc.
+# Soporta marcas de varias palabras hasta 30 caracteres.
+_PATRON_MARCA: re.Pattern[str] = re.compile(
+    r'(?:marca|fabricante|manufacturer|brand|marque|hersteller)\s*[:\s·]\s*'
+    r'([\w][\w\s\-&\'\.]{0,28}?)'
+    r'(?=\s*[|·,;\n\r]|\s{2,}|$)',
+    re.IGNORECASE | re.UNICODE,
+)
 
 
 @dataclass
@@ -82,18 +122,20 @@ class EanBrandResolver:
     """
     Resuelve EAN a nombre de marca mediante búsqueda exacta en Bing.
 
-    Reutiliza el WebDriver activo para aprovechar la sesión de Bing ya
-    establecida por el productor de imágenes, minimizando el riesgo de bloqueo.
+    Estrategia primaria: detectar el patrón "Marca: X" en los snippets de
+    descripción de los resultados de Bing. Es la fuente más precisa porque
+    muchas páginas de producto (Amazon, tiendas especializadas) incluyen este
+    campo de forma estructurada.
+
+    Estrategia fallback: frecuencia de palabras en títulos (unigramas).
 
     :author: BenjaminDTS
     """
 
-    # Búsqueda exacta con resultados en español para evitar páginas en otros idiomas.
-    # setlang=es&cc=ES fuerzan el idioma y el mercado a España.
-    _URL_BUSQUEDA: str = "https://www.bing.com/search?q={query}&setlang=es&cc=ES"
+    _URL_BUSQUEDA: str = "https://www.bing.com/search?q={query}"
     _SELECTOR_RESULTADOS: str = "#b_results"
     _SELECTOR_TITULOS: str = "li.b_algo h2"
-    # Selectores del banner de consentimiento de cookies de Bing
+    _SELECTOR_SNIPPETS: str = "li.b_algo .b_caption p"
     _SELECTOR_COOKIES: str = "#bnp_btn_accept, .bnp_btn_accept, button[id*='accept']"
 
     def inicializar_sesion(self, driver: WebDriver) -> None:
@@ -101,8 +143,7 @@ class EanBrandResolver:
         Navega a la página principal de Bing y acepta el consentimiento de cookies.
 
         Debe llamarse UNA VEZ antes del loop de productos para que las búsquedas
-        posteriores no se encuentren con la página de consentimiento GDPR en lugar
-        de los resultados.
+        posteriores no se encuentren con la página de consentimiento GDPR.
 
         Args:
             driver: WebDriver recién creado, sin cookies de Bing.
@@ -116,20 +157,33 @@ class EanBrandResolver:
             time.sleep(0.5)
             logger.info("Consentimiento de cookies de Bing aceptado")
         except Exception:
-            # El banner no apareció o ya estaba aceptado — se continúa normalmente
             logger.debug("Banner de cookies de Bing no detectado (ya aceptado o no presente)")
 
-    def resolver(self, codigo: str, ean: str, driver: WebDriver) -> ResultadoMarca:
+    def resolver(
+        self,
+        codigo: str,
+        ean: str,
+        driver: WebDriver,
+        nombre_producto: str = "",
+    ) -> ResultadoMarca:
         """
-        Busca el EAN en Bing y extrae la marca del producto a partir de los títulos.
+        Busca el EAN en Bing y extrae la marca del producto.
+
+        Tres estrategias en cascada:
+          1. Patrón "Marca: X" en snippets de Bing (más preciso).
+          2. Frecuencia de unigramas en títulos de Bing.
+          3. Frecuencia de unigramas en el nombre del producto del CSV.
 
         Args:
-            codigo: código interno del producto (para identificación en el CSV).
+            codigo: código interno del producto.
             ean: código de barras EAN/UPC del producto.
             driver: WebDriver con sesión de Bing activa.
+            nombre_producto: nombre del producto del CSV, usado como último
+                recurso si Bing no devuelve resultados o no permite identificar
+                la marca.
 
         Returns:
-            ResultadoMarca con la marca detectada y los títulos analizados.
+            ResultadoMarca con la marca detectada.
         """
         resultado = ResultadoMarca(codigo=codigo, ean=ean)
         settings = get_settings()
@@ -141,26 +195,52 @@ class EanBrandResolver:
             wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, self._SELECTOR_RESULTADOS)))
             time.sleep(0.4)
 
-            # Extraer títulos de los primeros N resultados orgánicos
-            elementos = driver.find_elements(By.CSS_SELECTOR, self._SELECTOR_TITULOS)
-            titulos: list[str] = []
-            for el in elementos[:_NUM_RESULTADOS]:
-                texto = el.text.strip()
-                if texto:
-                    titulos.append(texto)
-
+            # ── Extraer títulos ───────────────────────────────────────────────
+            titulos: list[str] = [
+                el.text.strip()
+                for el in driver.find_elements(By.CSS_SELECTOR, self._SELECTOR_TITULOS)[:_NUM_RESULTADOS]
+                if el.text.strip()
+            ]
             resultado.titulos_analizados = titulos
 
             if not titulos:
-                resultado.error = "No se encontraron resultados para este EAN."
-                logger.debug(
-                    "Sin resultados para EAN",
-                    extra={"codigo": codigo, "ean": ean},
-                )
+                # Sin resultados de Bing — intentar step 3 directamente
+                marca = self._extraer_de_nombre(nombre_producto)
+                if marca:
+                    resultado.marca_detectada = marca
+                    resultado.exitoso = True
+                    logger.info(
+                        "Marca extraída del nombre del producto (sin resultados Bing)",
+                        extra={"codigo": codigo, "ean": ean, "marca": marca},
+                    )
+                else:
+                    resultado.error = "No se encontraron resultados para este EAN."
+                    logger.debug("Sin resultados para EAN", extra={"codigo": codigo, "ean": ean})
                 return resultado
 
-            # Votar por la marca más frecuente entre los títulos
-            marca = self._extraer_marca(titulos)
+            # ── Extraer snippets de descripción ───────────────────────────────
+            snippets: list[str] = [
+                el.text.strip()
+                for el in driver.find_elements(By.CSS_SELECTOR, self._SELECTOR_SNIPPETS)[:_NUM_RESULTADOS]
+                if el.text.strip()
+            ]
+
+            # ── Estrategia 1: patrón explícito "Marca: X" en snippets ─────────
+            marca = self._extraer_de_snippets(snippets)
+
+            # ── Estrategia 2: frecuencia de palabras en títulos de Bing ───────
+            if not marca:
+                marca = self._extraer_de_titulos(titulos)
+
+            # ── Estrategia 3: frecuencia de palabras en nombre del producto ───
+            if not marca and nombre_producto:
+                marca = self._extraer_de_nombre(nombre_producto)
+                if marca:
+                    logger.debug(
+                        "Marca extraída del nombre del producto (fallback step 3)",
+                        extra={"codigo": codigo, "ean": ean, "marca": marca},
+                    )
+
             if marca:
                 resultado.marca_detectada = marca
                 resultado.exitoso = True
@@ -170,8 +250,8 @@ class EanBrandResolver:
                 )
             else:
                 resultado.error = (
-                    f"No se pudo identificar una marca. "
-                    f"Títulos encontrados: {' | '.join(titulos)}"
+                    f"No se pudo identificar la marca. "
+                    f"Títulos: {' | '.join(titulos[:3])}"
                 )
                 logger.debug(
                     "No se pudo identificar marca",
@@ -189,40 +269,92 @@ class EanBrandResolver:
         return resultado
 
     @staticmethod
-    def _tokenizar_titulo(titulo: str) -> list[str]:
+    def _extraer_de_snippets(snippets: list[str]) -> str:
         """
-        Tokeniza un título en palabras candidatas (sin stopwords ni nums).
+        Busca el patrón explícito "Marca: X" / "Fabricante: X" en los snippets.
+
+        Esta es la estrategia más precisa: muchas páginas de producto incluyen
+        el campo de marca de forma estructurada en su meta descripción.
 
         Args:
-            titulo: título de un resultado de Bing.
+            snippets: textos de los snippets de descripción de los resultados.
 
         Returns:
-            Lista ordenada de tokens válidos del título.
+            La marca detectada en Title Case, o cadena vacía si no hay coincidencia.
         """
-        tokens: list[str] = []
-        for parte in re.split(r"[\s\-|/,.:;()\"']+", titulo):
+        marcas: list[str] = []
+        for snippet in snippets:
+            for match in _PATRON_MARCA.finditer(snippet):
+                valor = match.group(1).strip()
+                # Descartar valores que parezcan nombres de producto (muy largos
+                # o con números de modelo) en lugar de nombres de marca
+                palabras = valor.split()
+                if 1 <= len(palabras) <= 4 and not any(p.isdigit() for p in palabras):
+                    marcas.append(valor.title())
+
+        if not marcas:
+            return ""
+
+        # La marca que aparece más veces en diferentes snippets gana
+        return Counter(marcas).most_common(1)[0][0]
+
+    @staticmethod
+    def _extraer_de_nombre(nombre_producto: str) -> str:
+        """
+        Extrae la marca más probable del nombre del producto del CSV.
+
+        Filtra stopwords, palabras comerciales y palabras de tipo producto
+        (categorías de animales, materiales, tallas, etc.). Lo que quede
+        es candidato a ser la marca — puede estar en cualquier posición
+        del nombre, no solo al principio.
+
+        Si quedan varios candidatos, gana el más largo (los nombres de marca
+        son habitualmente más "inusuales" que los descriptores comunes y
+        suelen tener más caracteres).
+
+        Omite prefijos numéricos habituales (ej. "36-Crispy…").
+
+        Args:
+            nombre_producto: nombre del producto tal como aparece en el CSV.
+
+        Returns:
+            La marca candidata en Title Case, o cadena vacía si no hay candidato.
+        """
+        if not nombre_producto:
+            return ""
+
+        # Eliminar prefijo numérico tipo "36-" o "101-"
+        nombre_limpio = re.sub(r"^\d+[\-\s]+", "", nombre_producto).strip()
+
+        candidatos: list[str] = []
+        for parte in re.split(r"[\s\-|/,.:;()\"']+", nombre_limpio):
             limpia = re.sub(r"[^\w]", "", parte, flags=re.UNICODE).strip()
+            tok = limpia.lower()
             if (
                 len(limpia) >= _MIN_LONGITUD_PALABRA
                 and not limpia.isdigit()
-                and limpia.lower() not in _PALABRAS_COMERCIALES
-                and limpia.lower() not in _STOPWORDS
+                and tok not in _PALABRAS_COMERCIALES
+                and tok not in _STOPWORDS
+                and tok not in _PALABRAS_PRODUCTO
             ):
-                tokens.append(limpia)
-        return tokens
+                candidatos.append(limpia)
+
+        if not candidatos:
+            return ""
+
+        # Preferir la palabra más larga: los nombres de marca tienden a ser
+        # más "únicos" que los descriptores comunes y suelen tener más letras.
+        return max(candidatos, key=len).title()
 
     @staticmethod
-    def _extraer_marca(titulos: list[str]) -> str:
+    def _extraer_de_titulos(titulos: list[str]) -> str:
         """
-        Extrae la marca más probable a partir de los títulos de resultados de Bing.
+        Fallback: extrae la marca más probable por frecuencia de unigramas en títulos.
 
-        Genera candidatos de 1, 2 y 3 palabras (n-gramas) por título y puntúa
-        cada candidato según en cuántos títulos distintos aparece.  Prefiere
-        los candidatos más largos para detectar marcas de varias palabras
-        (Royal Canin, Animal Vivo, Holland Cova, etc.).
+        Usado cuando ningún snippet contiene el patrón "Marca: X".
 
         Args:
-            titulos: lista de títulos de resultados de Bing.
+            titulos: títulos de los resultados de Bing.
 
         Returns:
             La marca detectada en Title Case, o cadena vacía si no hay candidato.
@@ -230,31 +362,22 @@ class EanBrandResolver:
         presencia: Counter[str] = Counter()
 
         for titulo in titulos:
-            tokens = EanBrandResolver._tokenizar_titulo(titulo)
-            vistos_en_titulo: set[str] = set()
-
-            for i, tok in enumerate(tokens):
-                # Unigramas
-                candidatos = [tok.lower()]
-                # Bigramas
-                if i + 1 < len(tokens):
-                    candidatos.append(f"{tok} {tokens[i + 1]}".lower())
-                # Trigramas
-                if i + 2 < len(tokens):
-                    candidatos.append(f"{tok} {tokens[i + 1]} {tokens[i + 2]}".lower())
-
-                for cand in candidatos:
-                    if cand not in vistos_en_titulo:
-                        vistos_en_titulo.add(cand)
-                        presencia[cand] += 1
+            vistos: set[str] = set()
+            for parte in re.split(r"[\s\-|/,.:;()\"']+", titulo):
+                limpia = re.sub(r"[^\w]", "", parte, flags=re.UNICODE).strip()
+                tok = limpia.lower()
+                if (
+                    len(limpia) >= _MIN_LONGITUD_PALABRA
+                    and not limpia.isdigit()
+                    and tok not in _PALABRAS_COMERCIALES
+                    and tok not in _STOPWORDS
+                    and tok not in vistos
+                ):
+                    vistos.add(tok)
+                    presencia[tok] += 1
 
         if not presencia:
             return ""
 
-        # Ordenar por: (presencia desc, longitud desc) para preferir marcas
-        # multi-palabra cuando tienen la misma presencia que un unigrama.
-        mejor = max(
-            presencia.items(),
-            key=lambda kv: (kv[1], len(kv[0].split())),
-        )
-        return mejor[0].title()
+        candidata, _ = presencia.most_common(1)[0]
+        return candidata.title()

@@ -141,6 +141,7 @@ class BrandPipeline:
                         codigo=producto.codigo,
                         ean=producto.ean,
                         driver=driver,
+                        nombre_producto=producto.nombre,
                     )
                 else:
                     # Sin EAN: marcar como no procesable
