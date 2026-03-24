@@ -124,17 +124,28 @@ class EanBrandResolver:
         except Exception:
             logger.debug("Banner de cookies de Bing no detectado (ya aceptado o no presente)")
 
-    def resolver(self, codigo: str, ean: str, driver: WebDriver) -> ResultadoMarca:
+    def resolver(
+        self,
+        codigo: str,
+        ean: str,
+        driver: WebDriver,
+        nombre_producto: str = "",
+    ) -> ResultadoMarca:
         """
         Busca el EAN en Bing y extrae la marca del producto.
 
-        Intenta primero detectar "Marca: X" en los snippets de descripción.
-        Si no lo encuentra, aplica el fallback de frecuencia de palabras en títulos.
+        Tres estrategias en cascada:
+          1. Patrón "Marca: X" en snippets de Bing (más preciso).
+          2. Frecuencia de unigramas en títulos de Bing.
+          3. Frecuencia de unigramas en el nombre del producto del CSV.
 
         Args:
             codigo: código interno del producto.
             ean: código de barras EAN/UPC del producto.
             driver: WebDriver con sesión de Bing activa.
+            nombre_producto: nombre del producto del CSV, usado como último
+                recurso si Bing no devuelve resultados o no permite identificar
+                la marca.
 
         Returns:
             ResultadoMarca con la marca detectada.
@@ -158,8 +169,18 @@ class EanBrandResolver:
             resultado.titulos_analizados = titulos
 
             if not titulos:
-                resultado.error = "No se encontraron resultados para este EAN."
-                logger.debug("Sin resultados para EAN", extra={"codigo": codigo, "ean": ean})
+                # Sin resultados de Bing — intentar step 3 directamente
+                marca = self._extraer_de_nombre(nombre_producto)
+                if marca:
+                    resultado.marca_detectada = marca
+                    resultado.exitoso = True
+                    logger.info(
+                        "Marca extraída del nombre del producto (sin resultados Bing)",
+                        extra={"codigo": codigo, "ean": ean, "marca": marca},
+                    )
+                else:
+                    resultado.error = "No se encontraron resultados para este EAN."
+                    logger.debug("Sin resultados para EAN", extra={"codigo": codigo, "ean": ean})
                 return resultado
 
             # ── Extraer snippets de descripción ───────────────────────────────
@@ -172,9 +193,18 @@ class EanBrandResolver:
             # ── Estrategia 1: patrón explícito "Marca: X" en snippets ─────────
             marca = self._extraer_de_snippets(snippets)
 
-            # ── Estrategia 2: fallback — frecuencia de palabras en títulos ────
+            # ── Estrategia 2: frecuencia de palabras en títulos de Bing ───────
             if not marca:
                 marca = self._extraer_de_titulos(titulos)
+
+            # ── Estrategia 3: frecuencia de palabras en nombre del producto ───
+            if not marca and nombre_producto:
+                marca = self._extraer_de_nombre(nombre_producto)
+                if marca:
+                    logger.debug(
+                        "Marca extraída del nombre del producto (fallback step 3)",
+                        extra={"codigo": codigo, "ean": ean, "marca": marca},
+                    )
 
             if marca:
                 resultado.marca_detectada = marca
@@ -232,6 +262,49 @@ class EanBrandResolver:
 
         # La marca que aparece más veces en diferentes snippets gana
         return Counter(marcas).most_common(1)[0][0]
+
+    @staticmethod
+    def _extraer_de_nombre(nombre_producto: str) -> str:
+        """
+        Extrae la marca más probable del nombre del producto del CSV.
+
+        Aplica la misma lógica de frecuencia de unigramas que el fallback de
+        títulos, pero sobre el nombre del producto. Útil cuando Bing no devuelve
+        resultados o los resultados no permiten identificar la marca.
+
+        Omite prefijos numéricos habituales en los nombres (ej. "36-Crispy…").
+
+        Args:
+            nombre_producto: nombre del producto tal como aparece en el CSV.
+
+        Returns:
+            La marca candidata en Title Case, o cadena vacía si no hay candidato.
+        """
+        if not nombre_producto:
+            return ""
+
+        # Eliminar prefijo numérico tipo "36-" o "101-"
+        nombre_limpio = re.sub(r"^\d+[\-\s]+", "", nombre_producto).strip()
+
+        tokens: list[str] = []
+        for parte in re.split(r"[\s\-|/,.:;()\"']+", nombre_limpio):
+            limpia = re.sub(r"[^\w]", "", parte, flags=re.UNICODE).strip()
+            tok = limpia.lower()
+            if (
+                len(limpia) >= _MIN_LONGITUD_PALABRA
+                and not limpia.isdigit()
+                and tok not in _PALABRAS_COMERCIALES
+                and tok not in _STOPWORDS
+            ):
+                tokens.append(tok)
+
+        if not tokens:
+            return ""
+
+        # La palabra menos frecuente en el vocabulario general suele ser la marca.
+        # Como heurística simple usamos la primera palabra del nombre limpio
+        # (las marcas tienden a encabezar el nombre del producto en catálogos).
+        return tokens[0].title()
 
     @staticmethod
     def _extraer_de_titulos(titulos: list[str]) -> str:
