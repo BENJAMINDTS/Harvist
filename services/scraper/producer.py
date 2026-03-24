@@ -10,14 +10,18 @@ El motor de búsqueda activo se selecciona a través de ``SEARCH_ENGINE``
 (bing | google | duckduckgo). Ninguna URL, selector ni credencial se hardcodea
 fuera de las clases de motor o de la capa de Settings.
 
-Cuando el modo de búsqueda es EAN y ``EAN_ENRICHMENT_ENABLED=true``,
-``GoogleEANEnricher`` realiza primero una búsqueda web exacta (``"EAN"``) en
-Google para extraer el nombre del producto desde los títulos ``h3`` y usa ese
-nombre como query de imágenes. Si el enriquecimiento falla, la query cae al
-EAN entre comillas como búsqueda de respaldo.
+Cuando el modo de búsqueda es EAN y ``EAN_ENRICHMENT_ENABLED=true``, se
+ejecuta una cadena de enriquecimiento de 3 niveles para resolver el EAN
+a un nombre de producto semántico antes de buscar imágenes:
+
+  1. ``BarcodeApiLookup`` — petición HTTP a UPC Item DB (sin Selenium,
+     sin riesgo de bot detection). Cubre la mayoría de EANs globales.
+  2. ``GoogleEANEnricher`` — búsqueda web exacta (``"EAN"``) via Selenium
+     para EANs no presentes en la base de datos de barras.
+  3. EAN desnudo en el motor configurado — último recurso.
 
 :author: BenjaminDTS
-:version: 2.1.0
+:version: 2.2.0
 """
 
 from __future__ import annotations
@@ -28,6 +32,8 @@ from abc import ABC, abstractmethod
 from collections import Counter
 from typing import Callable
 from urllib.parse import quote_plus
+
+import requests as _requests
 
 from loguru import logger
 from selenium.common.exceptions import TimeoutException, WebDriverException
@@ -381,7 +387,88 @@ class DuckDuckGoMotor(MotorBusqueda):
 
 
 # ---------------------------------------------------------------------------
-# Enricher EAN → nombre de producto (Google web dork)
+# Tier 1 — Lookup EAN vía API de códigos de barras (HTTP puro, sin Selenium)
+# ---------------------------------------------------------------------------
+
+
+class BarcodeApiLookup:
+    """
+    Resuelve un EAN a nombre de producto mediante la API pública de UPC Item DB.
+
+    No requiere WebDriver: usa una petición HTTP directa, sin riesgo de
+    detección de bot ni consumo de tiempo de navegador. Cubre la mayoría de
+    EANs de consumo global (alimentación, hogar, mascotas, cosmética, etc.).
+
+    Límite gratuito: 100 peticiones / día. Para volúmenes mayores, configurar
+    una clave en ``BARCODE_API_KEY`` y usar el endpoint de producción.
+
+    :author: BenjaminDTS
+    """
+
+    _URL_TRIAL: str = "https://api.upcitemdb.com/prod/trial/lookup?upc={ean}"
+    _TIMEOUT: int = 5
+    _HEADERS: dict[str, str] = {
+        "User-Agent": "Mozilla/5.0 (compatible; HarvistScraper/1.0)",
+        "Accept": "application/json",
+    }
+
+    def lookup(self, ean: str) -> str | None:
+        """
+        Consulta UPC Item DB y devuelve marca + título del producto.
+
+        Args:
+            ean: código EAN/UPC a buscar (solo dígitos).
+
+        Returns:
+            String con ``"marca título"`` listo para usar como query de imagen,
+            o ``None`` si el EAN no está en la base de datos o la petición falla.
+        """
+        url = self._URL_TRIAL.format(ean=ean)
+
+        try:
+            respuesta = _requests.get(url, headers=self._HEADERS, timeout=self._TIMEOUT)
+            respuesta.raise_for_status()
+            datos: dict = respuesta.json()
+
+            items: list[dict] = datos.get("items", [])
+            if not items:
+                logger.debug(
+                    "EAN no encontrado en UPC Item DB",
+                    extra={"ean": ean},
+                )
+                return None
+
+            item = items[0]
+            brand: str = item.get("brand", "").strip()
+            title: str = item.get("title", "").strip()
+
+            # Evitar duplicar la marca si el título ya la incluye al inicio
+            if brand and not title.lower().startswith(brand.lower()):
+                query = f"{brand} {title}"
+            else:
+                query = title
+
+            query = query[:120].strip()
+            if not query:
+                return None
+
+            logger.info(
+                "EAN resuelto vía UPC Item DB",
+                extra={"ean": ean, "query": query},
+            )
+            return query
+
+        except _requests.exceptions.RequestException as exc:
+            logger.warning(
+                "Error en UPC Item DB lookup",
+                exc_info=exc,
+                extra={"ean": ean},
+            )
+            return None
+
+
+# ---------------------------------------------------------------------------
+# Tier 2 — Enricher EAN vía Google web dork (Selenium)
 # ---------------------------------------------------------------------------
 
 
@@ -667,30 +754,42 @@ def buscar_urls_imagenes(
         driver = _crear_driver(settings)
         driver.set_page_load_timeout(settings.browser_timeout)
 
-        # ── EAN enrichment ────────────────────────────────────────────────────
-        # Si el producto tiene EAN y el enriquecimiento está habilitado, se
-        # hace primero una búsqueda web exacta en Google para obtener el nombre
-        # real del producto. Así el motor de imágenes recibe una query semántica
-        # ("collar nylon trixie") en lugar del número EAN, que los motores de
-        # imágenes no indexan.
-        # Fallback: si falla el enriquecimiento se usa la query original
-        # (EAN entre comillas) como búsqueda de respaldo.
+        # ── EAN enrichment — cadena de 3 niveles ─────────────────────────────
+        # Los motores de imágenes no indexan EANs — indexan imágenes.
+        # Buscar un EAN directamente devuelve resultados aleatorios.
+        # La solución es resolver el EAN a un nombre de producto semántico
+        # antes de lanzar la búsqueda de imágenes.
+        #
+        # Tier 1 — BarcodeApiLookup (HTTP puro, sin bot detection, más fiable)
+        # Tier 2 — GoogleEANEnricher (Selenium, por si el EAN no está en la DB)
+        # Tier 3 — EAN desnudo en el motor configurado (último recurso)
         query_efectiva = producto.query
         es_modo_ean = bool(
             producto.ean and producto.query == f'"{producto.ean}"'
         )
         if es_modo_ean and settings.ean_enrichment_enabled:
-            enricher = GoogleEANEnricher()
-            query_enriquecida = enricher.enriquecer(producto.ean, driver)
-            if query_enriquecida:
-                query_efectiva = query_enriquecida
+            nombre_producto: str | None = None
+
+            # Tier 1: API de códigos de barras (HTTP, sin Selenium)
+            nombre_producto = BarcodeApiLookup().lookup(producto.ean)
+
+            # Tier 2: Google web dork (Selenium) si la API no tiene el EAN
+            if not nombre_producto:
+                logger.debug(
+                    "Tier 1 sin resultado, intentando Google web enricher",
+                    extra={"codigo": producto.codigo, "ean": producto.ean},
+                )
+                nombre_producto = GoogleEANEnricher().enriquecer(
+                    producto.ean, driver
+                )
+
+            if nombre_producto:
+                query_efectiva = nombre_producto
             else:
-                # Fallback: EAN sin comillas. Las comillas las entiende Google
-                # pero motores como Bing las ignoran; el EAN desnudo da más
-                # posibilidades de coincidencia parcial que el EAN entre comillas.
+                # Tier 3: EAN desnudo — Bing lo ignora pero es el último recurso
                 query_efectiva = producto.ean
                 logger.warning(
-                    "EAN enrichment sin resultado, usando EAN desnudo como fallback",
+                    "Todos los enrichers fallaron, usando EAN desnudo como fallback",
                     extra={"codigo": producto.codigo, "ean": producto.ean},
                 )
 
