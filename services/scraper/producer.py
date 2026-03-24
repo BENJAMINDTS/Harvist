@@ -10,17 +10,22 @@ El motor de búsqueda activo se selecciona a través de ``SEARCH_ENGINE``
 (bing | google | duckduckgo). Ninguna URL, selector ni credencial se hardcodea
 fuera de las clases de motor o de la capa de Settings.
 
-Cuando el modo de búsqueda es EAN, la query ya llega con comillas dobles
-(``"EAN"``) desde el CsvParser, forzando coincidencia exacta en todos los motores.
+Cuando el modo de búsqueda es EAN y ``EAN_ENRICHMENT_ENABLED=true``,
+``GoogleEANEnricher`` realiza primero una búsqueda web exacta (``"EAN"``) en
+Google para extraer el nombre del producto desde los títulos ``h3`` y usa ese
+nombre como query de imágenes. Si el enriquecimiento falla, la query cae al
+EAN entre comillas como búsqueda de respaldo.
 
 :author: BenjaminDTS
-:version: 2.0.0
+:version: 2.1.0
 """
 
 from __future__ import annotations
 
 import json
+import re
 from abc import ABC, abstractmethod
+from collections import Counter
 from typing import Callable
 from urllib.parse import quote_plus
 
@@ -376,6 +381,117 @@ class DuckDuckGoMotor(MotorBusqueda):
 
 
 # ---------------------------------------------------------------------------
+# Enricher EAN → nombre de producto (Google web dork)
+# ---------------------------------------------------------------------------
+
+
+class GoogleEANEnricher:
+    """
+    Resuelve un EAN a nombre de producto mediante búsqueda web exacta en Google.
+
+    Navega a ``https://www.google.com/search?q=%22EAN%22`` (búsqueda web, no
+    imágenes), extrae el texto de los primeros ``h3`` de resultados, filtra
+    palabras de ruido comercial y devuelve las palabras más repetidas como
+    query enriquecida para el motor de imágenes.
+
+    Se reutiliza el mismo ``WebDriver`` del pipeline para no abrir un
+    navegador extra por producto.
+
+    :author: BenjaminDTS
+    """
+
+    _URL_BUSQUEDA: str = "https://www.google.com/search?q=%22{ean}%22"
+    _SELECTOR_TITULOS: str = "h3"
+    _NUM_RESULTADOS: int = 4
+    _NUM_PALABRAS_QUERY: int = 5
+
+    _PALABRAS_RUIDO: frozenset[str] = frozenset({
+        # Artículos y conectores
+        "de", "la", "el", "los", "las", "un", "una", "y", "a", "en", "con",
+        "por", "del", "al", "o", "e", "ni", "pero", "sin", "para", "su",
+        "sus", "que", "es", "se", "le", "lo", "nos", "mas", "si",
+        # Términos comerciales
+        "comprar", "precio", "barato", "oferta", "descuento", "online",
+        "entrega", "gratis", "stock", "disponible", "compra", "venta",
+        "vender", "tienda", "producto", "articulo", "pack", "caja",
+        "unidad", "unidades", "envio", "envío",
+        # Plataformas de e-commerce
+        "amazon", "ebay", "aliexpress", "carrefour", "mercadona",
+        "walmart", "fnac", "pccomponentes", "mediamarkt",
+        # Unidades de medida
+        "kg", "gr", "g", "ml", "l", "lt", "cm", "mm",
+    })
+
+    def enriquecer(self, ean: str, driver: WebDriver) -> str | None:
+        """
+        Busca el EAN en Google web y extrae el nombre del producto de los h3.
+
+        Args:
+            ean: código EAN sin codificar (solo dígitos).
+            driver: instancia de WebDriver activa, reutilizada del pipeline.
+
+        Returns:
+            String con las palabras más representativas del producto extraídas
+            de los títulos de resultados, o ``None`` si no se pudo enriquecer.
+        """
+        settings = get_settings()
+        url = self._URL_BUSQUEDA.format(ean=ean)
+
+        try:
+            driver.get(url)
+            WebDriverWait(driver, settings.browser_timeout).until(
+                EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, self._SELECTOR_TITULOS)
+                )
+            )
+        except TimeoutException:
+            logger.warning(
+                "Timeout en Google web al enriquecer EAN",
+                extra={"ean": ean},
+            )
+            return None
+
+        elementos: list[WebElement] = driver.find_elements(
+            By.CSS_SELECTOR, self._SELECTOR_TITULOS
+        )[: self._NUM_RESULTADOS]
+
+        textos = [e.text.strip() for e in elementos if e.text.strip()]
+        if not textos:
+            logger.debug(
+                "Sin títulos h3 en resultados Google web",
+                extra={"ean": ean},
+            )
+            return None
+
+        frecuencia: Counter[str] = Counter()
+        for titulo in textos:
+            for palabra_raw in titulo.lower().split():
+                palabra = re.sub(r"[^a-záéíóúüñ0-9]", "", palabra_raw)
+                if (
+                    len(palabra) > 2
+                    and palabra not in self._PALABRAS_RUIDO
+                    and not palabra.isdigit()
+                ):
+                    frecuencia[palabra] += 1
+
+        if not frecuencia:
+            logger.debug(
+                "Sin palabras útiles tras filtrar ruido",
+                extra={"ean": ean, "titulos": textos},
+            )
+            return None
+
+        top = [p for p, _ in frecuencia.most_common(self._NUM_PALABRAS_QUERY)]
+        query_enriquecida = " ".join(top)
+
+        logger.info(
+            "EAN enriquecido con nombre de producto",
+            extra={"ean": ean, "query": query_enriquecida, "titulos": textos},
+        )
+        return query_enriquecida
+
+
+# ---------------------------------------------------------------------------
 # Factory de motores
 # ---------------------------------------------------------------------------
 
@@ -542,16 +658,40 @@ def buscar_urls_imagenes(
         driver = _crear_driver(settings)
         driver.set_page_load_timeout(settings.browser_timeout)
 
+        # ── EAN enrichment ────────────────────────────────────────────────────
+        # Si el producto tiene EAN y el enriquecimiento está habilitado, se
+        # hace primero una búsqueda web exacta en Google para obtener el nombre
+        # real del producto. Así el motor de imágenes recibe una query semántica
+        # ("collar nylon trixie") en lugar del número EAN, que los motores de
+        # imágenes no indexan.
+        # Fallback: si falla el enriquecimiento se usa la query original
+        # (EAN entre comillas) como búsqueda de respaldo.
+        query_efectiva = producto.query
+        es_modo_ean = bool(
+            producto.ean and producto.query == f'"{producto.ean}"'
+        )
+        if es_modo_ean and settings.ean_enrichment_enabled:
+            enricher = GoogleEANEnricher()
+            query_enriquecida = enricher.enriquecer(producto.ean, driver)
+            if query_enriquecida:
+                query_efectiva = query_enriquecida
+            else:
+                logger.warning(
+                    "EAN enrichment sin resultado, usando EAN como fallback",
+                    extra={"codigo": producto.codigo, "ean": producto.ean},
+                )
+
         logger.debug(
             "Iniciando búsqueda",
             extra={
                 "codigo": producto.codigo,
-                "query": producto.query,
+                "query": query_efectiva,
                 "motor": settings.search_engine,
+                "enriquecido": es_modo_ean and query_efectiva != producto.query,
             },
         )
 
-        urls = motor.buscar_urls(producto.query, cantidad, driver)
+        urls = motor.buscar_urls(query_efectiva, cantidad, driver)
 
         if callback_progreso is not None:
             try:
