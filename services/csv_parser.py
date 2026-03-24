@@ -323,7 +323,9 @@ class CsvParser:
                 raise ValueError(
                     f"Fila {producto.fila_original}: modo EAN pero el campo 'ean' está vacío."
                 )
-            return producto.ean
+            # Comillas dobles = búsqueda exacta en todos los motores.
+            # quote_plus las codifica como %22 al construir la URL de búsqueda.
+            return f'"{producto.ean}"'
 
         if modo == ModosBusqueda.NOMBRE_MARCA:
             partes = [p for p in [producto.nombre, producto.marca] if p]
