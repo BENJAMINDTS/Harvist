@@ -52,6 +52,13 @@ const App: React.FC = () => {
     setError(null)
   }
 
+  /** El usuario elige el modo "Fichas de Marca" en la pantalla de inicio */
+  const handleSelectMarcas = (): void => {
+    setTipoJobSeleccionado('marcas')
+    setAppState('configuring')
+    setError(null)
+  }
+
   /** El usuario abre el historial desde la pantalla de inicio */
   const handleSelectHistorial = (): void => {
     setTab('historial')
@@ -200,6 +207,7 @@ const App: React.FC = () => {
           <HomeScreen
             onSelectFotos={handleSelectFotos}
             onSelectDescripciones={handleSelectDescripciones}
+            onSelectMarcas={handleSelectMarcas}
             onSelectHistorial={handleSelectHistorial}
           />
         )}

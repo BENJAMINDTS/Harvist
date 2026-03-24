@@ -1,9 +1,10 @@
 /**
  * Pantalla de inicio de Harvist.
  *
- * Muestra el logotipo de NS, el nombre de la aplicación y dos tarjetas
- * de selección de modo de trabajo: descarga de imágenes o generación de
- * descripciones con IA. También expone un acceso rápido al historial.
+ * Muestra el logotipo de NS, el nombre de la aplicación y tres tarjetas
+ * de selección de modo de trabajo: descarga de imágenes, generación de
+ * descripciones con IA y extracción de fichas de marca. También expone
+ * un acceso rápido al historial.
  *
  * @module HomeScreen
  * @author BenjaminDTS | Carlos Vico
@@ -23,6 +24,8 @@ interface HomeScreenProps {
   onSelectFotos: () => void
   /** Callback invocado cuando el usuario elige el modo de generación de descripciones. */
   onSelectDescripciones: () => void
+  /** Callback invocado cuando el usuario elige el modo de extracción de fichas de marca. */
+  onSelectMarcas: () => void
   /** Callback invocado cuando el usuario quiere ver el historial de trabajos. */
   onSelectHistorial: () => void
 }
@@ -84,6 +87,28 @@ const SparklesIcon: React.FC<IconProps> = ({ className, style }) => (
 )
 
 /**
+ * Icono de edificio/tienda (outline).
+ */
+const BuildingIcon: React.FC<IconProps> = ({ className, style }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+    style={style}
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth={1.5}
+    stroke="currentColor"
+    aria-hidden="true"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21m-3.75 3.75h.008v.008h-.008v-.008Zm0 3h.008v.008h-.008v-.008Zm0 3h.008v.008h-.008v-.008Z"
+    />
+  </svg>
+)
+
+/**
  * Icono de historial/reloj (outline).
  */
 const ClockIcon: React.FC<IconProps> = ({ className }) => (
@@ -109,9 +134,9 @@ const ClockIcon: React.FC<IconProps> = ({ className }) => (
 /**
  * Pantalla de bienvenida con selección de modo de trabajo.
  *
- * Muestra el logo y título de la aplicación, dos tarjetas principales
- * para elegir entre descarga de imágenes o generación de descripciones,
- * y un acceso secundario al historial de trabajos anteriores.
+ * Muestra el logo y título de la aplicación, tres tarjetas principales
+ * para elegir entre descarga de imágenes, generación de descripciones
+ * o extracción de fichas de marca, y un acceso secundario al historial.
  *
  * @author BenjaminDTS | Carlos Vico
  * @param props - Ver {@link HomeScreenProps}.
@@ -119,6 +144,7 @@ const ClockIcon: React.FC<IconProps> = ({ className }) => (
 export const HomeScreen: React.FC<HomeScreenProps> = ({
   onSelectFotos,
   onSelectDescripciones,
+  onSelectMarcas,
   onSelectHistorial,
 }) => {
   return (
@@ -138,7 +164,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       </div>
 
       {/* ── Tarjetas de selección de modo ── */}
-      <div className="grid grid-cols-1 gap-5 w-full sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-5 w-full sm:grid-cols-2 lg:grid-cols-3">
 
         {/* Tarjeta: Búsqueda de imágenes */}
         <button
@@ -198,6 +224,38 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           <div
             className="inline-flex w-full items-center justify-center rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition-colors duration-200"
             style={{ backgroundColor: '#85C341' }}
+            aria-hidden="true"
+          >
+            Comenzar
+          </div>
+        </button>
+
+        {/* Tarjeta: Fichas de Marca */}
+        <button
+          type="button"
+          onClick={onSelectMarcas}
+          className="group flex flex-col gap-5 rounded-2xl border-2 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-6 text-left shadow-sm transition-all duration-200 hover:border-orange-400 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500"
+          aria-label="Seleccionar modo de extracción de fichas de marca"
+        >
+          <div
+            className="flex h-12 w-12 items-center justify-center rounded-xl transition-colors duration-200 group-hover:bg-orange-100"
+            style={{ backgroundColor: '#FFF7ED' }}
+          >
+            <BuildingIcon className="h-7 w-7 transition-colors duration-200 group-hover:text-orange-600" style={{ color: '#EA580C' }} />
+          </div>
+
+          <div className="flex flex-col gap-2 flex-1">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 group-hover:text-orange-700 transition-colors duration-200">
+              Fichas de Marca
+            </h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
+              Extrae información pública de cada marca: web oficial, descripción y logo.
+            </p>
+          </div>
+
+          <div
+            className="inline-flex w-full items-center justify-center rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition-colors duration-200"
+            style={{ backgroundColor: '#EA580C' }}
             aria-hidden="true"
           >
             Comenzar

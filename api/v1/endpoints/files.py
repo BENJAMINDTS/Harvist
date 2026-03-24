@@ -161,25 +161,39 @@ async def descargar_csv(job_id: str) -> FileResponse:
 
 @router.get(
     "/{job_id}/brands",
-    summary="(Fase 6) Descargar fichas de marca en JSON",
-    include_in_schema=False,  # Oculto hasta que la Fase 6 esté implementada
+    summary="Descargar fichas de marca en JSON",
+    response_class=FileResponse,
+    include_in_schema=True,
 )
 async def descargar_fichas_marca(job_id: str) -> FileResponse:
     """
-    Endpoint reservado para la Fase 6 — Scraping de información de marca.
-
-    Devuelve el archivo marcas.json generado por brand_enricher.py.
+    Devuelve el archivo marcas.json generado por el pipeline de scraping de marcas.
 
     Args:
         job_id: identificador UUID del trabajo.
 
     Returns:
-        FileResponse con el JSON de fichas de marca.
+        FileResponse con el JSON de fichas de marca como adjunto descargable.
 
     Raises:
-        HTTPException 501: mientras la Fase 6 no esté implementada.
+        HTTPException 404: si el JSON no existe o el job no ha completado.
     """
-    raise HTTPException(
-        status_code=501,
-        detail="Endpoint reservado para la Fase 6 (aún no implementada).",
+    storage = get_storage_service()
+    json_path = storage.get_job_dir(job_id) / "marcas.json"
+
+    if not json_path.exists():
+        logger.warning(
+            "marcas.json no encontrado",
+            extra={"job_id": job_id},
+        )
+        raise HTTPException(
+            status_code=404,
+            detail="El archivo de marcas no existe. El job puede no haber completado aún.",
+        )
+
+    return FileResponse(
+        path=str(json_path),
+        media_type="application/json",
+        filename=f"marcas_{job_id}.json",
+        headers={"Content-Disposition": f'attachment; filename="marcas_{job_id}.json"'},
     )

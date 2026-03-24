@@ -191,6 +191,40 @@ def ejecutar_scraping(
         )
         _actualizar_estado(redis_client, job_status)
 
+    def _callback_marcas(
+        jid: str,
+        procesadas: int,
+        total: int,
+        exitosas: int,
+    ) -> None:
+        """
+        Actualiza el estado del job de marcas en Redis tras procesar cada marca.
+
+        Args:
+            jid: job_id.
+            procesadas: marcas procesadas hasta ahora.
+            total: total de marcas únicas extraídas del CSV.
+            exitosas: marcas procesadas con éxito.
+
+        Raises:
+            JobCancelledError: si el job fue cancelado desde la API.
+        """
+        raw = redis_client.get(_JOB_KEY.format(job_id=jid))
+        if raw:
+            current = JobStatus.model_validate_json(raw)
+            if current.estado == EstadoJob.CANCELADO:
+                raise JobCancelledError(f"Job {jid} cancelado por el usuario.")
+
+        job_status.total_productos = total
+        job_status.productos_procesados = procesadas
+        job_status.marcas_procesadas = exitosas
+        job_status.actualizado_en = datetime.utcnow()
+        job_status.mensaje = (
+            f"Procesando marca {procesadas}/{total} — "
+            f"{exitosas} completadas."
+        )
+        _actualizar_estado(redis_client, job_status)
+
     try:
         if config.tipo_job == TipoJob.DESCRIPCIONES:
             from services.ai.description_pipeline import DescripcionPipeline  # noqa: PLC0415
@@ -198,6 +232,14 @@ def ejecutar_scraping(
             resumen = pipeline_desc.ejecutar(
                 contenido_csv=contenido_csv,
                 callback=_callback_descripciones,
+                offset_productos=offset_productos,
+            )
+        elif config.tipo_job == TipoJob.MARCAS:
+            from services.scraper.brand_pipeline import BrandPipeline  # noqa: PLC0415
+            pipeline_marcas = BrandPipeline(job_id=job_id, config=config, carpeta_job_id=carpeta_job_id)
+            resumen = pipeline_marcas.ejecutar(
+                contenido_csv=contenido_csv,
+                callback=_callback_marcas,
                 offset_productos=offset_productos,
             )
         else:
@@ -210,18 +252,27 @@ def ejecutar_scraping(
 
         # Actualizar estado final: COMPLETADO
         job_status.estado = EstadoJob.COMPLETADO
-        job_status.total_productos = resumen["total_productos"]
-        job_status.imagenes_descargadas = resumen.get("imagenes_descargadas", 0)
-        job_status.imagenes_fallidas = resumen.get("imagenes_fallidas", 0)
-        job_status.descripciones_generadas = resumen.get("descripciones_generadas", 0)
         job_status.completado_en = datetime.utcnow()
         job_status.actualizado_en = datetime.utcnow()
         if config.tipo_job == TipoJob.DESCRIPCIONES:
+            job_status.total_productos = resumen["total_productos"]
+            job_status.descripciones_generadas = resumen.get("descripciones_generadas", 0)
             job_status.mensaje = (
                 f"Completado: {resumen.get('descripciones_generadas', 0)} descripciones generadas "
                 f"de {resumen['total_productos']} productos."
             )
+        elif config.tipo_job == TipoJob.MARCAS:
+            job_status.total_productos = resumen["total_marcas"]
+            job_status.productos_procesados = resumen["total_marcas"]
+            job_status.marcas_procesadas = resumen.get("marcas_exitosas", 0)
+            job_status.mensaje = (
+                f"Completado: {resumen.get('marcas_exitosas', 0)} marcas procesadas "
+                f"de {resumen['total_marcas']}."
+            )
         else:
+            job_status.total_productos = resumen["total_productos"]
+            job_status.imagenes_descargadas = resumen.get("imagenes_descargadas", 0)
+            job_status.imagenes_fallidas = resumen.get("imagenes_fallidas", 0)
             job_status.mensaje = (
                 f"Completado: {resumen.get('imagenes_descargadas', 0)} imágenes descargadas "
                 f"de {resumen['total_productos']} productos."
