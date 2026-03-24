@@ -41,23 +41,23 @@ interface JobProgressProps {
 const ESTADO_BADGE: Record<EstadoJob, { label: string; classes: string }> = {
   pendiente: {
     label: 'Pendiente',
-    classes: 'bg-gray-100 text-gray-600 border border-gray-300',
+    classes: 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600',
   },
   en_proceso: {
     label: 'En proceso',
-    classes: 'bg-blue-100 text-blue-700 border border-blue-300',
+    classes: 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-400 border border-blue-300 dark:border-blue-700',
   },
   completado: {
     label: 'Completado',
-    classes: 'bg-green-100 text-green-700 border border-green-300',
+    classes: 'bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-400 border border-green-300 dark:border-green-800',
   },
   fallido: {
     label: 'Fallido',
-    classes: 'bg-red-100 text-red-700 border border-red-300',
+    classes: 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400 border border-red-300 dark:border-red-800',
   },
   cancelado: {
     label: 'Cancelado',
-    classes: 'bg-yellow-100 text-yellow-700 border border-yellow-300',
+    classes: 'bg-yellow-100 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-400 border border-yellow-300 dark:border-yellow-800',
   },
 }
 
@@ -144,14 +144,14 @@ const ProgressSkeleton: React.FC = () => (
     role="status"
     aria-label="Cargando datos del trabajo…"
   >
-    <div className="h-4 bg-gray-200 rounded w-1/3" />
-    <div className="h-3 bg-gray-200 rounded w-full" />
+    <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/3" />
+    <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-full" />
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
       {Array.from({ length: 4 }).map((_, i) => (
-        <div key={i} className="h-16 bg-gray-200 rounded-lg" />
+        <div key={i} className="h-16 bg-gray-200 dark:bg-gray-700 rounded-lg" />
       ))}
     </div>
-    <div className="h-8 bg-gray-200 rounded w-2/3 mx-auto" />
+    <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-2/3 mx-auto" />
   </div>
 )
 
@@ -175,12 +175,12 @@ const CounterCard: React.FC<CounterCardProps> = ({
   total,
   colorClass,
 }) => (
-  <article className="flex flex-col items-center justify-center rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
+  <article className="flex flex-col items-center justify-center rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 shadow-sm">
     <span className={`text-2xl font-bold ${colorClass}`}>{value}</span>
     {total !== undefined && (
-      <span className="text-xs text-gray-400">/ {total}</span>
+      <span className="text-xs text-gray-400 dark:text-gray-500">/ {total}</span>
     )}
-    <span className="mt-1 text-center text-xs text-gray-500">{label}</span>
+    <span className="mt-1 text-center text-xs text-gray-500 dark:text-gray-400">{label}</span>
   </article>
 )
 
@@ -275,7 +275,7 @@ export const JobProgress: React.FC<JobProgressProps> = ({
     >
       {/* Cabecera: título + badge de estado + botón detener */}
       <header className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold text-gray-800">
+        <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
           Trabajo en curso
         </h2>
         <div className="flex items-center gap-2">
@@ -291,7 +291,7 @@ export const JobProgress: React.FC<JobProgressProps> = ({
               type="button"
               onClick={() => void handleCancel()}
               disabled={cancelling}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-red-300 bg-white px-3 py-1 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-red-300 dark:border-red-700 bg-white dark:bg-gray-800 px-3 py-1 text-sm font-medium text-red-600 dark:text-red-400 transition-colors hover:bg-red-50 dark:hover:bg-red-950 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2 disabled:opacity-50"
               aria-label="Detener este trabajo"
             >
               {cancelling ? 'Deteniendo…' : 'Detener'}
@@ -312,7 +312,7 @@ export const JobProgress: React.FC<JobProgressProps> = ({
       {/* Barra de progreso */}
       <div className="space-y-1">
         <div
-          className="flex justify-between text-xs text-gray-500"
+          className="flex justify-between text-xs text-gray-500 dark:text-gray-400"
           aria-hidden="true"
         >
           <span>Progreso</span>
@@ -326,7 +326,7 @@ export const JobProgress: React.FC<JobProgressProps> = ({
           aria-label={`Progreso del trabajo: ${pct}%`}
         />
         {/* Barra decorativa */}
-        <div className="h-3 w-full overflow-hidden rounded-full bg-gray-200" aria-hidden="true">
+        <div className="h-3 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700" aria-hidden="true">
           <div
             className={`h-full rounded-full transition-all duration-500 ease-out ${progressBarColor}`}
             style={{ width: `${pct}%` }}
@@ -336,7 +336,7 @@ export const JobProgress: React.FC<JobProgressProps> = ({
 
       {/* Mensaje de estado */}
       {mensaje && (
-        <p className="text-sm text-gray-600 italic">{mensaje}</p>
+        <p className="text-sm text-gray-600 dark:text-gray-400 italic">{mensaje}</p>
       )}
 
       {/* Tarjetas de contadores */}
@@ -383,7 +383,7 @@ export const JobProgress: React.FC<JobProgressProps> = ({
 
       {/* Error al intentar cancelar */}
       {cancelError !== null && (
-        <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+        <div className="rounded border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950 px-3 py-2 text-sm text-red-700 dark:text-red-400" role="alert">
           {cancelError}
         </div>
       )}
@@ -391,7 +391,7 @@ export const JobProgress: React.FC<JobProgressProps> = ({
       {/* Mensaje de error cuando el job falla */}
       {estado === 'fallido' && error !== null && (
         <div
-          className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+          className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950 p-3 text-sm text-red-700 dark:text-red-400"
           role="alert"
           aria-live="assertive"
         >
@@ -418,7 +418,7 @@ export const JobProgress: React.FC<JobProgressProps> = ({
             <button
               type="button"
               onClick={onResume}
-              className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-400 bg-white px-5 py-2.5 text-sm font-semibold text-blue-700 shadow-sm transition-colors hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-400 dark:border-blue-700 bg-white dark:bg-gray-800 px-5 py-2.5 text-sm font-semibold text-blue-700 dark:text-blue-400 shadow-sm transition-colors hover:bg-blue-50 dark:hover:bg-blue-950 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
               aria-label="Reanudar este trabajo desde donde se detuvo"
             >
               <ResumeIcon className="h-4 w-4" />
@@ -428,7 +428,7 @@ export const JobProgress: React.FC<JobProgressProps> = ({
           <button
             type="button"
             onClick={onReset}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-5 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-300 shadow-sm transition-colors hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
           >
             Nuevo trabajo
           </button>
