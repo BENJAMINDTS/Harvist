@@ -10,6 +10,9 @@ El motor de búsqueda activo se selecciona a través de ``SEARCH_ENGINE``
 (bing | google | duckduckgo). Ninguna URL, selector ni credencial se hardcodea
 fuera de las clases de motor o de la capa de Settings.
 
+Cuando el modo de búsqueda es EAN, la query ya llega con comillas dobles
+(``"EAN"``) desde el CsvParser, forzando coincidencia exacta en todos los motores.
+
 :author: BenjaminDTS
 :version: 2.0.0
 """
