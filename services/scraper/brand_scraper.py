@@ -7,20 +7,25 @@ Estrategia en cascada (se detiene en cuanto encuentra la marca):
      con campo `brands` estructurado. Cubre alimentación, mascotas, cosmética
      y productos genéricos. Rápido (~100 ms), sin riesgo de CAPTCHA.
 
-  2. JSON-LD / Schema.org en la primera URL de Bing — estándar de e-commerce.
+  2. JSON-LD / Schema.org + título de página en las primeras URLs de Bing.
      Casi todas las tiendas online incluyen `{"@type":"Product","brand":{"name":"X"}}`
-     para Google Shopping. Se obtiene la URL desde Bing y se descarga con requests.
+     para Google Shopping. Como fallback secundario se analiza el título de la
+     página (`Producto - Marca` es el patrón estándar en e-commerce), el meta
+     `og:site_name` y el atributo `itemprop="brand"`.
+     Se intentan hasta 3 URLs: si Bing muestra paneles de compras sin resultados
+     orgánicos, se usa un selector ampliado para extraer igualmente las URLs.
 
   3. Patrón "Marca: X" en snippets de Bing — campo explícito en descripciones.
 
   4. Frecuencia de unigramas en títulos de Bing — último recurso estadístico.
 
 :author: BenjaminDTS
-:version: 5.0.0
+:version: 6.0.0
 """
 
 from __future__ import annotations
 
+import html as _html_lib
 import json
 import re
 import time
@@ -40,6 +45,7 @@ from api.core.config import get_settings
 # ── Constantes ────────────────────────────────────────────────────────────────
 
 _NUM_RESULTADOS = 6
+_MAX_URLS_PASO2 = 3          # Número máximo de URLs a intentar en el paso 2
 _MIN_LONGITUD_PALABRA = 3
 _HTTP_TIMEOUT_S = 6
 
@@ -57,9 +63,12 @@ _BING_URL = "https://www.bing.com/search?q={query}&setlang=es"
 # Selectores Bing
 _SEL_RESULTADOS = "#b_results"
 _SEL_TITULOS = "li.b_algo h2"
-_SEL_PRIMER_ENLACE = "li.b_algo h2 a"   # href del primer resultado orgánico
+_SEL_ENLACES_ORGANICOS = "li.b_algo h2 a"   # resultados orgánicos (prioritario)
 _SEL_SNIPPETS = "li.b_algo .b_caption p"
 _SEL_COOKIES = "#bnp_btn_accept, .bnp_btn_accept, button[id*='accept']"
+
+# Dominios de Bing/Microsoft que hay que excluir al buscar URLs de producto
+_DOMINIOS_EXCLUIDOS = ("bing.com", "microsoft.com", "msn.com", "live.com")
 
 # Cabeceras HTTP para parecer un navegador normal
 _HEADERS_HTTP = {
@@ -78,6 +87,10 @@ _PATRON_MARCA: re.Pattern[str] = re.compile(
     r'(?=\s*[|·,;\n\r]|\s{2,}|$)',
     re.IGNORECASE,
 )
+
+# Separadores comunes entre nombre de producto y marca en el título de página
+# Ej: "Collar para perro - Trixie" | "Collar para perro | Trixie"
+_SEPARADORES_TITULO: tuple[str, ...] = (" - ", " | ", " – ", " · ", " — ")
 
 # Filtros para el paso 4 (frecuencia de títulos)
 _PALABRAS_COMERCIALES: frozenset[str] = frozenset({
@@ -130,13 +143,26 @@ class EanBrandResolver:
         Args:
             driver: WebDriver recién creado sin cookies de Bing.
         """
+        driver.get("https://www.bing.com")
+        self._descartar_cookies(driver)
+
+    @staticmethod
+    def _descartar_cookies(driver: WebDriver) -> None:
+        """
+        Descarta el banner de consentimiento de cookies de Bing si está presente.
+
+        Se puede llamar tanto al inicio de la sesión como antes de cada búsqueda,
+        ya que Bing puede volver a mostrar el banner en cualquier carga de página.
+
+        Args:
+            driver: WebDriver con cualquier página de Bing cargada o cargándose.
+        """
         try:
-            driver.get("https://www.bing.com")
-            boton = WebDriverWait(driver, 5).until(
+            boton = WebDriverWait(driver, 4).until(
                 EC.element_to_be_clickable((By.CSS_SELECTOR, _SEL_COOKIES))
             )
             boton.click()
-            time.sleep(0.5)
+            time.sleep(0.4)
             logger.info("Consentimiento de cookies de Bing aceptado")
         except Exception:
             logger.debug("Banner de cookies de Bing no detectado")
@@ -181,11 +207,15 @@ class EanBrandResolver:
         try:
             url_busqueda = _BING_URL.format(query=quote_plus(f'"{ean}"'))
             driver.get(url_busqueda)
+            # Descartar el banner de cookies si vuelve a aparecer en la búsqueda
+            self._descartar_cookies(driver)
             wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, _SEL_RESULTADOS)))
             time.sleep(0.4)
 
-            # URL del primer resultado orgánico para el paso 2
-            primer_enlace = self._obtener_primer_enlace(driver)
+            # URLs de los primeros resultados para el paso 2.
+            # Si Bing no muestra resultados orgánicos (li.b_algo vacío) se usa
+            # un selector ampliado que cubre también paneles de compras.
+            enlaces = self._obtener_enlaces_resultado(driver, n=_MAX_URLS_PASO2)
 
             titulos: list[str] = [
                 el.text.strip()
@@ -208,15 +238,15 @@ class EanBrandResolver:
             )
             return resultado
 
-        # ── Paso 2: JSON-LD / Schema.org en la primera URL ───────────────────
-        if primer_enlace:
-            marca = self._extraer_de_pagina(primer_enlace)
+        # ── Paso 2: extracción de marca en las primeras URLs de resultado ─────
+        for enlace in enlaces:
+            marca = self._extraer_de_pagina(enlace)
             if marca:
                 resultado.marca_detectada = marca
                 resultado.exitoso = True
                 logger.info(
-                    "Marca resuelta — JSON-LD página producto",
-                    extra={"codigo": codigo, "ean": ean, "marca": marca, "url": primer_enlace},
+                    "Marca resuelta — página producto",
+                    extra={"codigo": codigo, "ean": ean, "marca": marca, "url": enlace},
                 )
                 return resultado
 
@@ -287,42 +317,70 @@ class EanBrandResolver:
                 )
         return ""
 
-    # ── Paso 2: JSON-LD en página de producto ─────────────────────────────────
+    # ── Paso 2: extracción desde páginas de producto ──────────────────────────
 
     @staticmethod
-    def _obtener_primer_enlace(driver: WebDriver) -> str:
+    def _obtener_enlaces_resultado(driver: WebDriver, n: int = 3) -> list[str]:
         """
-        Extrae el href del primer resultado orgánico de Bing.
+        Extrae hasta N URLs de resultados de Bing, excluyendo dominios propios.
+
+        Primero intenta los resultados orgánicos (`li.b_algo h2 a`). Si no hay
+        ninguno (p. ej. Bing muestra solo un panel de compras), recurre a todos
+        los enlaces presentes en `#b_results` que apunten a dominios externos.
 
         Args:
             driver: WebDriver con la página de resultados de Bing cargada.
+            n: número máximo de URLs a devolver.
 
         Returns:
-            URL del primer resultado, o cadena vacía si no se encuentra.
+            Lista ordenada de URLs de producto (puede estar vacía).
         """
+        def _es_externo(href: str) -> bool:
+            return (
+                bool(href)
+                and href.startswith("http")
+                and not any(d in href for d in _DOMINIOS_EXCLUIDOS)
+            )
+
+        hrefs: list[str] = []
+
         try:
-            elementos = driver.find_elements(By.CSS_SELECTOR, _SEL_PRIMER_ENLACE)
-            if elementos:
-                href = elementos[0].get_attribute("href") or ""
-                return href
-        except Exception:
-            pass
-        return ""
+            # Prioridad: resultados orgánicos
+            for el in driver.find_elements(By.CSS_SELECTOR, _SEL_ENLACES_ORGANICOS):
+                href = el.get_attribute("href") or ""
+                if _es_externo(href) and href not in hrefs:
+                    hrefs.append(href)
+                if len(hrefs) >= n:
+                    return hrefs
+
+            # Fallback: cualquier enlace externo en el contenedor de resultados
+            if not hrefs:
+                for el in driver.find_elements(By.CSS_SELECTOR, "#b_results a[href]"):
+                    href = el.get_attribute("href") or ""
+                    if _es_externo(href) and href not in hrefs:
+                        hrefs.append(href)
+                    if len(hrefs) >= n:
+                        return hrefs
+
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Error obteniendo enlaces de Bing", exc_info=exc)
+
+        return hrefs
 
     @staticmethod
     def _extraer_de_pagina(url: str) -> str:
         """
-        Descarga la página del primer resultado y extrae la marca del JSON-LD.
+        Descarga la página del resultado y extrae la marca con múltiples estrategias.
 
-        Busca bloques `<script type="application/ld+json">` con `@type: Product`
-        y extrae el campo `brand.name`. Este es el estándar de facto en e-commerce
-        para declarar el fabricante (usado por Google Shopping, SEO estructurado).
-
-        Como fallback secundario busca `itemprop="brand"` y el patrón "Marca: X"
-        directamente en el HTML de la página.
+        Orden de preferencia:
+        1. JSON-LD `{"@type":"Product","brand":{"name":"X"}}` (Schema.org)
+        2. `itemprop="brand"` (microdata)
+        3. `og:site_name` (meta Open Graph — suele ser el nombre de la tienda/marca)
+        4. Título de página con patrón "Producto - Marca" / "Producto | Marca"
+        5. Patrón "Marca: X" directo en el HTML
 
         Args:
-            url: URL del primer resultado de Bing.
+            url: URL de un resultado de Bing.
 
         Returns:
             Nombre de marca en Title Case, o cadena vacía si no se encuentra.
@@ -339,7 +397,7 @@ class EanBrandResolver:
 
             html = resp.text
 
-            # ── JSON-LD con @type Product ─────────────────────────────────────
+            # ── 1. JSON-LD con @type Product ──────────────────────────────────
             for ld_raw in re.findall(
                 r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
                 html,
@@ -368,7 +426,7 @@ class EanBrandResolver:
                 except (json.JSONDecodeError, AttributeError, TypeError):
                     continue
 
-            # ── itemprop="brand" ──────────────────────────────────────────────
+            # ── 2. itemprop="brand" ───────────────────────────────────────────
             m = re.search(
                 r'itemprop=["\']brand["\'][^>]*>(?:<[^>]+>)*([^<]{2,40})',
                 html,
@@ -379,7 +437,33 @@ class EanBrandResolver:
                 if valor:
                     return valor.title()
 
-            # ── "Marca: X" en el HTML de la página ───────────────────────────
+            # ── 3. og:site_name ───────────────────────────────────────────────
+            for patron_og in (
+                r'<meta[^>]+property=["\']og:site_name["\'][^>]+content=["\']([^"\']{2,50})["\']',
+                r'<meta[^>]+content=["\']([^"\']{2,50})["\'][^>]+property=["\']og:site_name["\']',
+            ):
+                m = re.search(patron_og, html, re.IGNORECASE)
+                if m:
+                    valor = m.group(1).strip()
+                    palabras = valor.split()
+                    if 1 <= len(palabras) <= 4 and not any(p.isdigit() for p in palabras):
+                        return valor.title()
+
+            # ── 4. Título de página "Producto - Marca" ────────────────────────
+            m = re.search(r'<title[^>]*>([^<]{5,150})</title>', html, re.IGNORECASE)
+            if m:
+                titulo_pag = _html_lib.unescape(m.group(1)).strip()
+                for sep in _SEPARADORES_TITULO:
+                    partes = titulo_pag.rsplit(sep, 1)
+                    if len(partes) == 2:
+                        candidato = partes[1].strip()
+                        palabras = candidato.split()
+                        if 1 <= len(palabras) <= 4 and not any(
+                            c.isdigit() for c in candidato
+                        ):
+                            return candidato.title()
+
+            # ── 5. "Marca: X" en el HTML de la página ────────────────────────
             m = re.search(_PATRON_MARCA, html)
             if m:
                 valor = m.group(1).strip()
