@@ -88,9 +88,9 @@ class EanBrandResolver:
     :author: BenjaminDTS
     """
 
-    # Búsqueda exacta: las comillas dobles en la query fuerzan coincidencia literal del EAN.
-    # Se pasa la query ya formateada con comillas para que quote_plus las codifique una sola vez.
-    _URL_BUSQUEDA: str = "https://www.bing.com/search?q={query}"
+    # Búsqueda exacta: las comillas dobles fuerzan coincidencia literal del EAN y se añade
+    # "marca" para sesgar los resultados hacia páginas que mencionan el fabricante.
+    _URL_BUSQUEDA: str = "https://www.bing.com/search?q={query}+marca"
     _SELECTOR_RESULTADOS: str = "#b_results"
     _SELECTOR_TITULOS: str = "li.b_algo h2"
     # Selectores del banner de consentimiento de cookies de Bing
@@ -193,8 +193,11 @@ class EanBrandResolver:
         """
         Extrae la marca más probable a partir de los títulos de resultados de Bing.
 
-        Tokeniza todos los títulos, elimina stopwords y palabras comerciales,
-        y devuelve la palabra con mayor frecuencia entre los candidatos.
+        Para cada título construye un conjunto de palabras candidatas (sin repetición
+        dentro del mismo título). Luego cuenta en cuántos títulos distintos aparece
+        cada palabra: las marcas aparecen en todos los resultados de forma consistente,
+        mientras que palabras genéricas de producto tienden a concentrarse en uno o
+        pocos títulos. En caso de empate se usa la frecuencia bruta como desempate.
 
         Args:
             titulos: lista de títulos de resultados de Bing.
@@ -202,13 +205,13 @@ class EanBrandResolver:
         Returns:
             La marca detectada en Title Case, o cadena vacía si no hay candidato.
         """
-        todas_palabras: list[str] = []
+        # palabras_por_titulo[i] = set de palabras candidatas del título i
+        palabras_por_titulo: list[set[str]] = []
 
         for titulo in titulos:
-            # Dividir por espacios y signos de puntuación
+            palabras_titulo: set[str] = set()
             palabras_crudas = re.split(r"[\s\-|/,.:;()\"']+", titulo)
             for palabra in palabras_crudas:
-                # Limpiar caracteres no alfanuméricos de los extremos
                 limpia = re.sub(r"[^\w]", "", palabra, flags=re.UNICODE).strip()
                 if (
                     len(limpia) >= _MIN_LONGITUD_PALABRA
@@ -216,12 +219,20 @@ class EanBrandResolver:
                     and limpia.lower() not in _PALABRAS_COMERCIALES
                     and limpia.lower() not in _STOPWORDS
                 ):
-                    todas_palabras.append(limpia.lower())
+                    palabras_titulo.add(limpia.lower())
+            if palabras_titulo:
+                palabras_por_titulo.append(palabras_titulo)
 
-        if not todas_palabras:
+        if not palabras_por_titulo:
             return ""
 
-        # La palabra más frecuente que no sea un número puro es la candidata a marca
-        contador = Counter(todas_palabras)
-        candidata, _ = contador.most_common(1)[0]
+        # Contar en cuántos títulos distintos aparece cada palabra.
+        # La marca aparece de forma consistente en todos los resultados.
+        presencia: Counter[str] = Counter(
+            palabra
+            for palabras in palabras_por_titulo
+            for palabra in palabras
+        )
+
+        candidata, _ = presencia.most_common(1)[0]
         return candidata.title()
