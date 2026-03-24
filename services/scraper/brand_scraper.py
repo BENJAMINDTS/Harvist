@@ -1,19 +1,24 @@
 """
-Scraper de información de marca usando Bing.
+Resolución de EAN a marca de producto mediante búsqueda exacta en Bing.
 
-Para cada marca: busca el logo en Bing Images y extrae el sitio web
-y descripción del primer resultado de Bing Web.
+Estrategia:
+  1. Busca el EAN entre comillas ("EAN") en Bing Web para forzar coincidencia exacta.
+  2. Extrae los títulos de los 4 primeros resultados orgánicos (<h2> de li.b_algo).
+  3. Tokeniza, filtra palabras comerciales y stopwords, y calcula la frecuencia.
+  4. La palabra más frecuente que queda es la marca/fabricante del producto.
 
-Mismo patrón que producer.py: recibe un driver Selenium activo y lo reutiliza.
+Usa el mismo WebDriver de Bing que ya está activo en el pipeline de imágenes,
+por lo que no necesita abrir una sesión nueva ni enfrentarse a CAPTCHAs.
 
 :author: BenjaminDTS
-:version: 1.0.0
+:version: 2.0.0
 """
 
 from __future__ import annotations
 
-import json as _json
+import re
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 from urllib.parse import quote_plus
 
@@ -25,98 +30,169 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 from api.core.config import get_settings
 
+# ── Palabras que se descartan antes de votar por la marca ─────────────────────
+
+# Palabras comerciales genéricas que no identifican marcas
+_PALABRAS_COMERCIALES: frozenset[str] = frozenset({
+    "comprar", "compra", "compre", "compras", "precio", "precios", "barato",
+    "baratos", "barata", "baratas", "online", "tienda", "tiendas", "shop",
+    "store", "amazon", "ebay", "zooplus", "aliexpress", "pccomponentes",
+    "envio", "envío", "envios", "gratis", "oferta", "ofertas", "descuento",
+    "descuentos", "venta", "vender", "vende", "mejor", "mejores", "nuevo",
+    "nuevos", "nueva", "nuevas", "pack", "packs", "set", "kit", "stock",
+    "disponible", "pedido", "pedidos", "producto", "productos", "articulo",
+    "articulos", "artículo", "artículos", "calidad", "original", "originales",
+    "oficial", "marca", "marcas", "fabricante", "fabricantes",
+})
+
+# Stopwords en español e inglés
+_STOPWORDS: frozenset[str] = frozenset({
+    "de", "el", "la", "los", "las", "un", "una", "unos", "unas", "del",
+    "al", "se", "su", "sus", "mi", "tu", "nos", "más", "sin", "sobre",
+    "entre", "bajo", "ante", "desde", "para", "con", "por", "en", "a",
+    "y", "o", "e", "u", "que", "es", "son", "the", "and", "for", "with",
+    "or", "in", "of", "to", "a", "by", "at", "from", "cm", "ml", "kg",
+    "gr", "mg", "lt", "pcs", "uds", "ud", "ref", "cod", "ean", "upc",
+})
+
+# Longitud mínima de palabra para ser considerada candidata a marca
+_MIN_LONGITUD_PALABRA = 3
+
+# Número de resultados de Bing a analizar
+_NUM_RESULTADOS = 4
+
 
 @dataclass
-class FichaMarca:
+class ResultadoMarca:
     """
-    Datos de una marca extraídos por el scraper.
+    Resultado de la resolución EAN → marca.
 
     :author: BenjaminDTS
     """
 
-    marca: str
-    logo_url: str = field(default="")
-    website: str = field(default="")
-    descripcion: str = field(default="")
+    codigo: str
+    ean: str
+    marca_detectada: str = field(default="")
+    titulos_analizados: list[str] = field(default_factory=list)
     exitoso: bool = field(default=False)
     error: str = field(default="")
 
 
-class BrandScraper:
+class EanBrandResolver:
     """
-    Scraper de información de marca.
+    Resuelve EAN a nombre de marca mediante búsqueda exacta en Bing.
 
-    Para cada marca busca en Bing Images el logo y en Bing Web el sitio oficial
-    y una descripción breve. Reutiliza el WebDriver activo del productor de imágenes.
+    Reutiliza el WebDriver activo para aprovechar la sesión de Bing ya
+    establecida por el productor de imágenes, minimizando el riesgo de bloqueo.
 
     :author: BenjaminDTS
     """
 
-    _URL_LOGO: str = "https://www.bing.com/images/search?q={marca}+logo+marca&first=1"
-    _URL_WEB: str = "https://www.bing.com/search?q={marca}+sitio+oficial+marca"
+    # Búsqueda exacta: las comillas dobles fuerzan coincidencia literal del EAN
+    _URL_BUSQUEDA: str = "https://www.bing.com/search?q=%22{ean}%22"
+    _SELECTOR_RESULTADOS: str = "#b_results"
+    _SELECTOR_TITULOS: str = "li.b_algo h2"
 
-    def scrape(self, marca: str, driver: WebDriver) -> FichaMarca:
+    def resolver(self, codigo: str, ean: str, driver: WebDriver) -> ResultadoMarca:
         """
-        Extrae logo URL, website y descripción de una marca.
+        Busca el EAN en Bing y extrae la marca del producto a partir de los títulos.
 
         Args:
-            marca: nombre de la marca a buscar.
-            driver: instancia de WebDriver con sesión de Bing activa.
+            codigo: código interno del producto (para identificación en el CSV).
+            ean: código de barras EAN/UPC del producto.
+            driver: WebDriver con sesión de Bing activa.
 
         Returns:
-            FichaMarca con los datos encontrados. exitoso=False si hubo error.
+            ResultadoMarca con la marca detectada y los títulos analizados.
         """
-        ficha = FichaMarca(marca=marca)
+        resultado = ResultadoMarca(codigo=codigo, ean=ean)
         settings = get_settings()
         wait = WebDriverWait(driver, settings.browser_timeout)
 
         try:
-            # ── Logo: Bing Images ──────────────────────────────────────────────
-            url_logo = self._URL_LOGO.format(marca=quote_plus(marca))
-            driver.get(url_logo)
-            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "a.iusc")))
-            time.sleep(0.5)
+            url = self._URL_BUSQUEDA.format(ean=quote_plus(f'"{ean}"'))
+            driver.get(url)
+            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, self._SELECTOR_RESULTADOS)))
+            time.sleep(0.4)
 
-            elementos = driver.find_elements(By.CSS_SELECTOR, "a.iusc")
-            for el in elementos[:5]:
-                m_attr = el.get_attribute("m") or ""
-                try:
-                    data = _json.loads(m_attr)
-                    murl = data.get("murl", "")
-                    if murl and murl.startswith("http"):
-                        ficha.logo_url = murl
-                        break
-                except Exception:
-                    continue
+            # Extraer títulos de los primeros N resultados orgánicos
+            elementos = driver.find_elements(By.CSS_SELECTOR, self._SELECTOR_TITULOS)
+            titulos: list[str] = []
+            for el in elementos[:_NUM_RESULTADOS]:
+                texto = el.text.strip()
+                if texto:
+                    titulos.append(texto)
 
-            # ── Web: Bing Search ───────────────────────────────────────────────
-            url_web = self._URL_WEB.format(marca=quote_plus(marca))
-            driver.get(url_web)
-            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "#b_results")))
-            time.sleep(0.3)
+            resultado.titulos_analizados = titulos
 
-            # Primer resultado web: URL del sitio
-            titulos = driver.find_elements(By.CSS_SELECTOR, "li.b_algo h2 a")
-            if titulos:
-                ficha.website = titulos[0].get_attribute("href") or ""
+            if not titulos:
+                resultado.error = "No se encontraron resultados para este EAN."
+                logger.debug(
+                    "Sin resultados para EAN",
+                    extra={"codigo": codigo, "ean": ean},
+                )
+                return resultado
 
-            # Snippet/descripción del primer resultado
-            snippets = driver.find_elements(By.CSS_SELECTOR, "li.b_algo .b_caption p")
-            if snippets:
-                ficha.descripcion = snippets[0].text.strip()[:300]
-
-            ficha.exitoso = True
-            logger.info(
-                "Marca scrapeada",
-                extra={"marca": marca, "website": ficha.website},
-            )
+            # Votar por la marca más frecuente entre los títulos
+            marca = self._extraer_marca(titulos)
+            if marca:
+                resultado.marca_detectada = marca
+                resultado.exitoso = True
+                logger.info(
+                    "Marca resuelta por EAN",
+                    extra={"codigo": codigo, "ean": ean, "marca": marca},
+                )
+            else:
+                resultado.error = "No se pudo identificar una marca en los resultados."
+                logger.debug(
+                    "No se pudo identificar marca",
+                    extra={"codigo": codigo, "ean": ean, "titulos": titulos},
+                )
 
         except Exception as exc:
-            ficha.error = str(exc)
+            resultado.error = str(exc)
             logger.warning(
-                "Error scrapeando marca",
+                "Error resolviendo EAN a marca",
                 exc_info=exc,
-                extra={"marca": marca},
+                extra={"codigo": codigo, "ean": ean},
             )
 
-        return ficha
+        return resultado
+
+    @staticmethod
+    def _extraer_marca(titulos: list[str]) -> str:
+        """
+        Extrae la marca más probable a partir de los títulos de resultados de Bing.
+
+        Tokeniza todos los títulos, elimina stopwords y palabras comerciales,
+        y devuelve la palabra con mayor frecuencia entre los candidatos.
+
+        Args:
+            titulos: lista de títulos de resultados de Bing.
+
+        Returns:
+            La marca detectada en Title Case, o cadena vacía si no hay candidato.
+        """
+        todas_palabras: list[str] = []
+
+        for titulo in titulos:
+            # Dividir por espacios y signos de puntuación
+            palabras_crudas = re.split(r"[\s\-|/,.:;()\"']+", titulo)
+            for palabra in palabras_crudas:
+                # Limpiar caracteres no alfanuméricos de los extremos
+                limpia = re.sub(r"[^\w]", "", palabra, flags=re.UNICODE).strip()
+                if (
+                    len(limpia) >= _MIN_LONGITUD_PALABRA
+                    and not limpia.isdigit()
+                    and limpia.lower() not in _PALABRAS_COMERCIALES
+                    and limpia.lower() not in _STOPWORDS
+                ):
+                    todas_palabras.append(limpia.lower())
+
+        if not todas_palabras:
+            return ""
+
+        # La palabra más frecuente que no sea un número puro es la candidata a marca
+        contador = Counter(todas_palabras)
+        candidata, _ = contador.most_common(1)[0]
+        return candidata.title()

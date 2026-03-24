@@ -429,14 +429,14 @@ export const JobProgress: React.FC<JobProgressProps> = ({
                 tipoJob === 'descripciones'
                   ? 'Descargar descripciones en formato CSV'
                   : tipoJob === 'marcas'
-                  ? 'Descargar fichas de marca en formato JSON'
+                  ? 'Descargar marcas detectadas en formato CSV'
                   : 'Descargar imágenes en formato ZIP'
               }
             >
               {tipoJob === 'descripciones'
                 ? 'Descargar descripciones'
                 : tipoJob === 'marcas'
-                ? 'Descargar marcas.json'
+                ? 'Descargar marcas.csv'
                 : 'Descargar ZIP'}
             </a>
           )}
