@@ -105,6 +105,14 @@ class Settings(BaseSettings):
         default="bing",
         description="Motor de búsqueda de imágenes: bing | google | duckduckgo.",
     )
+    ean_enrichment_enabled: bool = Field(
+        default=True,
+        description=(
+            "Si True, resuelve el EAN a nombre de producto vía búsqueda web "
+            "exacta en Google antes de buscar imágenes, mejorando la precisión "
+            "en modo EAN. Si False, usa el EAN entre comillas directamente."
+        ),
+    )
 
     # ── Almacenamiento ────────────────────────────────────────────────────────
     storage_backend: Literal["local", "s3", "azure"] = Field(
