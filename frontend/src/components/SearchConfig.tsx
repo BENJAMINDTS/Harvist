@@ -78,6 +78,12 @@ interface SearchConfigProps {
   onLaunch: (config: SearchConfigValues) => Promise<void>;
   /** Callback invocado al pulsar "Volver". */
   onBack: () => void;
+  /**
+   * Tipo de job pre-seleccionado desde la pantalla de inicio.
+   * Si se proporciona, el selector de tipo de trabajo se oculta
+   * y se muestra como badge informativo no editable.
+   */
+  tipoJobForzado?: TipoJob;
 }
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
@@ -294,9 +300,10 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
   csvHeaders,
   onLaunch,
   onBack,
+  tipoJobForzado,
 }) => {
   // ── Estado del formulario ────────────────────────────────────────────────────
-  const [tipoJob, setTipoJob] = useState<TipoJob>("fotos");
+  const [tipoJob, setTipoJob] = useState<TipoJob>(tipoJobForzado ?? "fotos");
   const [modo, setModo] = useState<SearchConfigValues["modo"]>("ean");
   const [imagenesPorProducto, setImagenesPorProducto] =
     useState<number>(DEFAULT_IMAGENES);
@@ -419,7 +426,23 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
         </div>
       </div>
 
-      {/* ── Selector de tipo de trabajo ── */}
+      {/* ── Selector de tipo de trabajo (oculto si tipoJobForzado está definido) ── */}
+      {tipoJobForzado !== undefined ? (
+        <div className="flex items-center gap-3" aria-label={`Tipo de trabajo: ${tipoJobForzado === 'fotos' ? 'Descargar fotos' : 'Generar descripciones'}`}>
+          <span className="text-sm font-semibold text-gray-700">Tipo de trabajo:</span>
+          <span
+            className={
+              "inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold border " +
+              (tipoJobForzado === 'fotos'
+                ? "bg-blue-50 text-blue-700 border-blue-300"
+                : "bg-green-50 text-green-700 border-green-300")
+            }
+            role="status"
+          >
+            {tipoJobForzado === 'fotos' ? 'Descargar fotos' : 'Generar descripciones'}
+          </span>
+        </div>
+      ) : (
       <fieldset>
         <legend className="text-sm font-semibold text-gray-700 mb-3">
           Tipo de trabajo
@@ -476,6 +499,7 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
           })}
         </div>
       </fieldset>
+      )}
 
       {/* ── Selector de modo de búsqueda (solo fotos) ── */}
       {tipoJob === "fotos" && <fieldset>
