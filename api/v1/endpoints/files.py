@@ -161,29 +161,31 @@ async def descargar_csv(job_id: str) -> FileResponse:
 
 @router.get(
     "/{job_id}/brands",
-    summary="Descargar fichas de marca en JSON",
+    summary="Descargar CSV de marcas detectadas por EAN",
     response_class=FileResponse,
     include_in_schema=True,
 )
 async def descargar_fichas_marca(job_id: str) -> FileResponse:
     """
-    Devuelve el archivo marcas.json generado por el pipeline de scraping de marcas.
+    Devuelve el archivo marcas.csv generado por el pipeline de resolución EAN→marca.
+
+    El CSV contiene las columnas: codigo, ean, marca_detectada, exitoso, error.
 
     Args:
         job_id: identificador UUID del trabajo.
 
     Returns:
-        FileResponse con el JSON de fichas de marca como adjunto descargable.
+        FileResponse con el CSV de marcas como adjunto descargable.
 
     Raises:
-        HTTPException 404: si el JSON no existe o el job no ha completado.
+        HTTPException 404: si el CSV no existe o el job no ha completado.
     """
     storage = get_storage_service()
-    json_path = storage.get_job_dir(job_id) / "marcas.json"
+    json_path = storage.get_job_dir(job_id) / "marcas.csv"
 
     if not json_path.exists():
         logger.warning(
-            "marcas.json no encontrado",
+            "marcas.csv no encontrado",
             extra={"job_id": job_id},
         )
         raise HTTPException(
@@ -193,7 +195,7 @@ async def descargar_fichas_marca(job_id: str) -> FileResponse:
 
     return FileResponse(
         path=str(json_path),
-        media_type="application/json",
-        filename=f"marcas_{job_id}.json",
-        headers={"Content-Disposition": f'attachment; filename="marcas_{job_id}.json"'},
+        media_type="text/csv",
+        filename=f"marcas_{job_id}.csv",
+        headers={"Content-Disposition": f'attachment; filename="marcas_{job_id}.csv"'},
     )
