@@ -47,15 +47,17 @@ class ModosBusqueda(str, Enum):
 
 class TipoJob(str, Enum):
     """
-    Tipo de trabajo a ejecutar: descarga de fotos o generación de descripciones con IA.
+    Tipo de trabajo a ejecutar: descarga de fotos, generación de descripciones con IA
+    o scraping de información de marca.
 
-    Son mutuamente excluyentes: un job solo puede hacer uno de los dos.
+    Son mutuamente excluyentes: un job solo puede hacer uno de los tres.
 
     :author: Carlitos6712
     """
 
     FOTOS = "fotos"                         # Scraping y descarga de imágenes
     DESCRIPCIONES = "descripciones"         # Generación de descripciones con Claude API
+    MARCAS = "marcas"                       # Scraping de información de marca (Fase 6)
 
 
 # ── Configuración de búsqueda ─────────────────────────────────────────────────
@@ -188,6 +190,11 @@ class JobStatus(BaseModel):
         ge=0,
         description="Contador de descripciones generadas por IA (Fase 5).",
     )
+    marcas_procesadas: int = Field(
+        default=0,
+        ge=0,
+        description="Contador de marcas procesadas (Fase 6).",
+    )
     mensaje: str = Field(default="", description="Mensaje de estado legible por humanos.")
     error: str | None = Field(default=None, description="Detalle del error si estado=FALLIDO.")
     creado_en: datetime = Field(default_factory=datetime.utcnow)
@@ -233,5 +240,6 @@ class JobProgressEvent(BaseModel):
     imagenes_descargadas: int
     imagenes_fallidas: int
     descripciones_generadas: int
+    marcas_procesadas: int = 0
     mensaje: str
     error: str | None = None
