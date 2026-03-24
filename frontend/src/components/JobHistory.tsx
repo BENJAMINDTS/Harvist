@@ -159,6 +159,7 @@ export const JobHistory: React.FC<JobHistoryProps> = ({ onSelectJob }) => {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set())
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set())
 
   // ── Carga de datos ─────────────────────────────────────────────────────────
 
@@ -235,6 +236,30 @@ export const JobHistory: React.FC<JobHistoryProps> = ({ onSelectJob }) => {
       // Silenciar error de UI — el historial se actualizará en el siguiente refresco
     } finally {
       setCancellingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(jobId)
+        return next
+      })
+    }
+  }
+
+  /**
+   * Elimina un job del historial llamando a DELETE /jobs/{job_id}.
+   *
+   * @param e - Evento del click (necesario para detener la propagación a la fila).
+   * @param jobId - Identificador del job a eliminar.
+   */
+  const handleDelete = async (e: React.MouseEvent, jobId: string): Promise<void> => {
+    e.stopPropagation()
+    setDeletingIds((prev) => new Set(prev).add(jobId))
+    try {
+      await apiClient.delete(`/jobs/${jobId}`)
+      setItems((prev) => prev.filter((item) => item.job_id !== jobId))
+      setTotal((prev) => Math.max(0, prev - 1))
+    } catch {
+      // Silenciar error de UI — el historial se actualizará en el siguiente refresco
+    } finally {
+      setDeletingIds((prev) => {
         const next = new Set(prev)
         next.delete(jobId)
         return next
@@ -431,19 +456,30 @@ export const JobHistory: React.FC<JobHistoryProps> = ({ onSelectJob }) => {
                     </div>
                   </td>
 
-                  {/* Botón de cancelación para jobs activos */}
+                  {/* Acciones: detener (activos) + borrar (todos) */}
                   <td className="px-4 py-3 text-center">
-                    {(item.estado === 'pendiente' || item.estado === 'en_proceso') && (
+                    <div className="flex items-center justify-center gap-1.5">
+                      {(item.estado === 'pendiente' || item.estado === 'en_proceso') && (
+                        <button
+                          type="button"
+                          onClick={(e) => void handleCancel(e, item.job_id)}
+                          disabled={cancellingIds.has(item.job_id)}
+                          className="rounded border border-red-300 bg-white px-2.5 py-1 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1 disabled:opacity-50"
+                          aria-label={`Detener trabajo del ${formatDate(item.creado_en)}`}
+                        >
+                          {cancellingIds.has(item.job_id) ? 'Deteniendo…' : 'Detener'}
+                        </button>
+                      )}
                       <button
                         type="button"
-                        onClick={(e) => void handleCancel(e, item.job_id)}
-                        disabled={cancellingIds.has(item.job_id)}
-                        className="rounded border border-red-300 bg-white px-2.5 py-1 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1 disabled:opacity-50"
-                        aria-label={`Detener trabajo del ${formatDate(item.creado_en)}`}
+                        onClick={(e) => void handleDelete(e, item.job_id)}
+                        disabled={deletingIds.has(item.job_id)}
+                        className="rounded border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-500 transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-600 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1 disabled:opacity-50"
+                        aria-label={`Eliminar trabajo del ${formatDate(item.creado_en)}`}
                       >
-                        {cancellingIds.has(item.job_id) ? 'Deteniendo…' : 'Detener'}
+                        {deletingIds.has(item.job_id) ? '…' : 'Borrar'}
                       </button>
-                    )}
+                    </div>
                   </td>
                 </tr>
               ))}
