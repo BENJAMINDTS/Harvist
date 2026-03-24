@@ -29,6 +29,7 @@ export interface JobProgressEvent {
   imagenes_descargadas: number
   imagenes_fallidas: number
   descripciones_generadas: number
+  marcas_procesadas: number
   mensaje: string
   error: string | null
 }
