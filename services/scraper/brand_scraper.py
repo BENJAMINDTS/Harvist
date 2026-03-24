@@ -130,13 +130,26 @@ class EanBrandResolver:
         Args:
             driver: WebDriver recién creado sin cookies de Bing.
         """
+        driver.get("https://www.bing.com")
+        self._descartar_cookies(driver)
+
+    @staticmethod
+    def _descartar_cookies(driver: WebDriver) -> None:
+        """
+        Descarta el banner de consentimiento de cookies de Bing si está presente.
+
+        Se puede llamar tanto al inicio de la sesión como antes de cada búsqueda,
+        ya que Bing puede volver a mostrar el banner en cualquier carga de página.
+
+        Args:
+            driver: WebDriver con cualquier página de Bing cargada o cargándose.
+        """
         try:
-            driver.get("https://www.bing.com")
-            boton = WebDriverWait(driver, 5).until(
+            boton = WebDriverWait(driver, 4).until(
                 EC.element_to_be_clickable((By.CSS_SELECTOR, _SEL_COOKIES))
             )
             boton.click()
-            time.sleep(0.5)
+            time.sleep(0.4)
             logger.info("Consentimiento de cookies de Bing aceptado")
         except Exception:
             logger.debug("Banner de cookies de Bing no detectado")
@@ -181,6 +194,8 @@ class EanBrandResolver:
         try:
             url_busqueda = _BING_URL.format(query=quote_plus(f'"{ean}"'))
             driver.get(url_busqueda)
+            # Descartar el banner de cookies si vuelve a aparecer en la búsqueda
+            self._descartar_cookies(driver)
             wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, _SEL_RESULTADOS)))
             time.sleep(0.4)
 
