@@ -88,8 +88,9 @@ class EanBrandResolver:
     :author: BenjaminDTS
     """
 
-    # Búsqueda exacta: las comillas dobles fuerzan coincidencia literal del EAN
-    _URL_BUSQUEDA: str = "https://www.bing.com/search?q=%22{ean}%22"
+    # Búsqueda exacta: las comillas dobles en la query fuerzan coincidencia literal del EAN.
+    # Se pasa la query ya formateada con comillas para que quote_plus las codifique una sola vez.
+    _URL_BUSQUEDA: str = "https://www.bing.com/search?q={query}"
     _SELECTOR_RESULTADOS: str = "#b_results"
     _SELECTOR_TITULOS: str = "li.b_algo h2"
 
@@ -110,7 +111,7 @@ class EanBrandResolver:
         wait = WebDriverWait(driver, settings.browser_timeout)
 
         try:
-            url = self._URL_BUSQUEDA.format(ean=quote_plus(f'"{ean}"'))
+            url = self._URL_BUSQUEDA.format(query=quote_plus(f'"{ean}"'))
             driver.get(url)
             wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, self._SELECTOR_RESULTADOS)))
             time.sleep(0.4)
