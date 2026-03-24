@@ -543,6 +543,7 @@ async def websocket_progreso(websocket: WebSocket, job_id: str) -> None:
                 imagenes_descargadas=status.imagenes_descargadas,
                 imagenes_fallidas=status.imagenes_fallidas,
                 descripciones_generadas=status.descripciones_generadas,
+                marcas_procesadas=status.marcas_procesadas,
                 mensaje=status.mensaje,
                 error=status.error,
             )
