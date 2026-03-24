@@ -130,6 +130,11 @@ class BrandPipeline:
         try:
             resolver = EanBrandResolver()
 
+            # Aceptar cookies de Bing una sola vez antes del loop.
+            # El driver recién creado no tiene cookies; sin este paso Bing muestra
+            # la página de consentimiento GDPR en cada búsqueda y no devuelve resultados.
+            resolver.inicializar_sesion(driver)
+
             for idx, producto in enumerate(productos, start=offset_productos + 1):
                 if producto.ean:
                     resultado = resolver.resolver(
