@@ -262,12 +262,12 @@ def ejecutar_scraping(
                 f"de {resumen['total_productos']} productos."
             )
         elif config.tipo_job == TipoJob.MARCAS:
-            job_status.total_productos = resumen["total_marcas"]
-            job_status.productos_procesados = resumen["total_marcas"]
+            job_status.total_productos = resumen["total_productos"]
+            job_status.productos_procesados = resumen["total_productos"]
             job_status.marcas_procesadas = resumen.get("marcas_exitosas", 0)
             job_status.mensaje = (
                 f"Completado: {resumen.get('marcas_exitosas', 0)} marcas procesadas "
-                f"de {resumen['total_marcas']}."
+                f"de {resumen['total_productos']}."
             )
         else:
             job_status.total_productos = resumen["total_productos"]
