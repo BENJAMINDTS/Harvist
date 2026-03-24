@@ -78,6 +78,7 @@ def ejecutar_scraping(
     contenido_csv: str,
     config_dict: dict,
     offset_productos: int = 0,
+    carpeta_job_id: str | None = None,
 ) -> dict:
     """
     Tarea Celery que ejecuta el pipeline completo de scraping para un job.
@@ -93,6 +94,8 @@ def ejecutar_scraping(
         offset_productos: número de productos a saltar desde el inicio del CSV.
             Se usa al reanudar un job cancelado o fallido para no reprocesar
             los productos que ya fueron completados. Por defecto 0 (sin salto).
+        carpeta_job_id: job_id original cuya carpeta de almacenamiento se
+            reutiliza al reanudar. Si None, se usa job_id (comportamiento normal).
 
     Returns:
         Diccionario con el resumen del pipeline (total, ok, fail, ruta_zip).
@@ -191,14 +194,14 @@ def ejecutar_scraping(
     try:
         if config.tipo_job == TipoJob.DESCRIPCIONES:
             from services.ai.description_pipeline import DescripcionPipeline  # noqa: PLC0415
-            pipeline_desc = DescripcionPipeline(job_id=job_id, config=config)
+            pipeline_desc = DescripcionPipeline(job_id=job_id, config=config, carpeta_job_id=carpeta_job_id)
             resumen = pipeline_desc.ejecutar(
                 contenido_csv=contenido_csv,
                 callback=_callback_descripciones,
                 offset_productos=offset_productos,
             )
         else:
-            pipeline_fotos = ScrapingPipeline(job_id=job_id, config=config)
+            pipeline_fotos = ScrapingPipeline(job_id=job_id, config=config, carpeta_job_id=carpeta_job_id)
             resumen = pipeline_fotos.ejecutar(
                 contenido_csv=contenido_csv,
                 callback=_callback_fotos,

@@ -463,7 +463,7 @@ async def reanudar_job(job_id: str) -> JSONResponse:
         from workers.tasks import ejecutar_scraping
         ejecutar_scraping.apply_async(
             args=[nuevo_job_id, csv_raw, config.model_dump()],
-            kwargs={"offset_productos": offset_productos},
+            kwargs={"offset_productos": offset_productos, "carpeta_job_id": job_id},
             task_id=nuevo_job_id,
         )
     except Exception as exc:

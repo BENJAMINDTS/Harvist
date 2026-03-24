@@ -46,16 +46,21 @@ class ScrapingPipeline:
         job_id: str,
         config: SearchConfig,
         storage: StorageService | None = None,
+        carpeta_job_id: str | None = None,
     ) -> None:
         """
         Inicializa el pipeline para un job concreto.
 
         Args:
-            job_id: identificador del job.
+            job_id: identificador del job (usado para progreso y logs).
             config: configuración de búsqueda (modo, imágenes por producto, etc.).
             storage: servicio de almacenamiento. Si None, usa el factory por defecto.
+            carpeta_job_id: job_id cuya carpeta de almacenamiento se reutiliza.
+                Al reanudar un job se pasa el job_id original para que las
+                imágenes se escriban en la misma carpeta. Si None se usa job_id.
         """
         self._job_id = job_id
+        self._carpeta_id = carpeta_job_id or job_id
         self._config = config
         self._storage = storage or get_storage_service()
 
@@ -150,7 +155,7 @@ class ScrapingPipeline:
 
         # ── Paso 3: Comprimir en ZIP ───────────────────────────────────────────
         try:
-            zip_path = self._storage.create_zip(self._job_id)
+            zip_path = self._storage.create_zip(self._carpeta_id)
             ruta_zip = str(zip_path)
         except Exception as exc:
             logger.error(
@@ -207,7 +212,7 @@ class ScrapingPipeline:
 
         # Consumidor: descargar, validar y guardar
         resultados = descargar_imagenes_producto(
-            job_id=self._job_id,
+            job_id=self._carpeta_id,
             producto=producto,
             urls=urls,
             storage=self._storage,
