@@ -56,23 +56,23 @@ const PAGE_SIZE = 20
 const ESTADO_BADGE: Record<EstadoJob, { label: string; classes: string }> = {
   pendiente: {
     label: 'Pendiente',
-    classes: 'bg-gray-100 text-gray-600 border border-gray-300',
+    classes: 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600',
   },
   en_proceso: {
     label: 'En proceso',
-    classes: 'bg-blue-100 text-blue-700 border border-blue-300',
+    classes: 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-400 border border-blue-300 dark:border-blue-700',
   },
   completado: {
     label: 'Completado',
-    classes: 'bg-green-100 text-green-700 border border-green-300',
+    classes: 'bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-400 border border-green-300 dark:border-green-800',
   },
   fallido: {
     label: 'Fallido',
-    classes: 'bg-red-100 text-red-700 border border-red-300',
+    classes: 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400 border border-red-300 dark:border-red-800',
   },
   cancelado: {
     label: 'Cancelado',
-    classes: 'bg-yellow-100 text-yellow-700 border border-yellow-300',
+    classes: 'bg-yellow-100 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-400 border border-yellow-300 dark:border-yellow-800',
   },
 }
 
@@ -115,7 +115,7 @@ const SkeletonRow: React.FC = () => (
   <tr className="animate-pulse" aria-hidden="true">
     {Array.from({ length: 6 }).map((_, i) => (
       <td key={i} className="px-4 py-3">
-        <div className="h-4 rounded bg-gray-200" />
+        <div className="h-4 rounded bg-gray-200 dark:bg-gray-700" />
       </td>
     ))}
   </tr>
@@ -281,7 +281,7 @@ export const JobHistory: React.FC<JobHistoryProps> = ({ onSelectJob }) => {
     >
       {/* Cabecera: título, filtro y botón de actualizar */}
       <header className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold text-gray-800">
+        <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
           Historial de trabajos
         </h2>
 
@@ -295,7 +295,7 @@ export const JobHistory: React.FC<JobHistoryProps> = ({ onSelectJob }) => {
             value={estadoFiltro}
             onChange={handleEstadoChange}
             disabled={isLoading}
-            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+            className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
             aria-label="Filtrar por estado del trabajo"
           >
             {ESTADO_OPTIONS.map(({ value, label }) => (
@@ -310,7 +310,7 @@ export const JobHistory: React.FC<JobHistoryProps> = ({ onSelectJob }) => {
             type="button"
             onClick={handleRefresh}
             disabled={isLoading}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 shadow-sm transition-colors hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
             aria-label="Recargar historial"
           >
             {isLoading ? (
@@ -329,7 +329,7 @@ export const JobHistory: React.FC<JobHistoryProps> = ({ onSelectJob }) => {
       {/* Estado de error */}
       {error !== null && (
         <div
-          className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+          className="flex items-center justify-between gap-3 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950 p-3 text-sm text-red-700 dark:text-red-400"
           role="alert"
           aria-live="assertive"
         >
@@ -337,7 +337,7 @@ export const JobHistory: React.FC<JobHistoryProps> = ({ onSelectJob }) => {
           <button
             type="button"
             onClick={handleRefresh}
-            className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+            className="shrink-0 rounded-md border border-red-300 dark:border-red-700 bg-white dark:bg-gray-800 px-3 py-1.5 text-xs font-medium text-red-700 dark:text-red-400 transition-colors hover:bg-red-50 dark:hover:bg-red-950 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
           >
             Reintentar
           </button>
@@ -345,50 +345,50 @@ export const JobHistory: React.FC<JobHistoryProps> = ({ onSelectJob }) => {
       )}
 
       {/* Tabla de resultados */}
-      <div className="overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50">
+      <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 text-sm">
+          <thead className="bg-gray-50 dark:bg-gray-800">
             <tr>
               <th
                 scope="col"
-                className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider"
+                className="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
               >
                 Fecha
               </th>
               <th
                 scope="col"
-                className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider"
+                className="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
               >
                 Estado
               </th>
               <th
                 scope="col"
-                className="px-4 py-3 text-right font-medium text-gray-500 uppercase tracking-wider"
+                className="px-4 py-3 text-right font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
               >
                 Productos
               </th>
               <th
                 scope="col"
-                className="px-4 py-3 text-right font-medium text-gray-500 uppercase tracking-wider"
+                className="px-4 py-3 text-right font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
               >
                 Imágenes
               </th>
               <th
                 scope="col"
-                className="px-4 py-3 text-right font-medium text-gray-500 uppercase tracking-wider"
+                className="px-4 py-3 text-right font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
               >
                 Progreso
               </th>
               <th
                 scope="col"
-                className="px-4 py-3 text-center font-medium text-gray-500 uppercase tracking-wider"
+                className="px-4 py-3 text-center font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
               >
                 Acciones
               </th>
             </tr>
           </thead>
 
-          <tbody className="divide-y divide-gray-100 bg-white">
+          <tbody className="divide-y divide-gray-100 dark:divide-gray-700 bg-white dark:bg-gray-900">
             {/* Skeleton de carga: 5 filas animadas */}
             {isLoading &&
               Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)}
@@ -399,7 +399,7 @@ export const JobHistory: React.FC<JobHistoryProps> = ({ onSelectJob }) => {
                 <tr
                   key={item.job_id}
                   onClick={() => onSelectJob(item.job_id)}
-                  className="cursor-pointer transition-colors hover:bg-blue-50 focus-within:bg-blue-50"
+                  className="cursor-pointer transition-colors hover:bg-blue-50 dark:hover:bg-blue-950 focus-within:bg-blue-50 dark:focus-within:bg-blue-950"
                   tabIndex={0}
                   role="button"
                   aria-label={`Seleccionar trabajo del ${formatDate(item.creado_en)}, estado: ${ESTADO_BADGE[item.estado].label}`}
@@ -411,7 +411,7 @@ export const JobHistory: React.FC<JobHistoryProps> = ({ onSelectJob }) => {
                   }}
                 >
                   {/* Fecha de creación */}
-                  <td className="whitespace-nowrap px-4 py-3 text-gray-700">
+                  <td className="whitespace-nowrap px-4 py-3 text-gray-700 dark:text-gray-300">
                     {formatDate(item.creado_en)}
                   </td>
 
@@ -421,19 +421,19 @@ export const JobHistory: React.FC<JobHistoryProps> = ({ onSelectJob }) => {
                   </td>
 
                   {/* Total de productos */}
-                  <td className="px-4 py-3 text-right tabular-nums text-gray-700">
+                  <td className="px-4 py-3 text-right tabular-nums text-gray-700 dark:text-gray-300">
                     {item.total_productos}
                   </td>
 
                   {/* Imágenes descargadas */}
-                  <td className="px-4 py-3 text-right tabular-nums text-gray-700">
+                  <td className="px-4 py-3 text-right tabular-nums text-gray-700 dark:text-gray-300">
                     {item.imagenes_descargadas}
                   </td>
 
                   {/* Barra de progreso + porcentaje */}
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-2">
-                      <div className="hidden w-20 overflow-hidden rounded-full bg-gray-200 sm:block">
+                      <div className="hidden w-20 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700 sm:block">
                         <div
                           className={`h-2 rounded-full transition-all ${
                             item.estado === 'completado'
@@ -450,7 +450,7 @@ export const JobHistory: React.FC<JobHistoryProps> = ({ onSelectJob }) => {
                           role="presentation"
                         />
                       </div>
-                      <span className="tabular-nums text-gray-600">
+                      <span className="tabular-nums text-gray-600 dark:text-gray-400">
                         {item.porcentaje.toFixed(1)}%
                       </span>
                     </div>
@@ -464,7 +464,7 @@ export const JobHistory: React.FC<JobHistoryProps> = ({ onSelectJob }) => {
                           type="button"
                           onClick={(e) => void handleCancel(e, item.job_id)}
                           disabled={cancellingIds.has(item.job_id)}
-                          className="rounded border border-red-300 bg-white px-2.5 py-1 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1 disabled:opacity-50"
+                          className="rounded border border-red-300 dark:border-red-700 bg-white dark:bg-gray-800 px-2.5 py-1 text-xs font-medium text-red-600 dark:text-red-400 transition-colors hover:bg-red-50 dark:hover:bg-red-950 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1 disabled:opacity-50"
                           aria-label={`Detener trabajo del ${formatDate(item.creado_en)}`}
                         >
                           {cancellingIds.has(item.job_id) ? 'Deteniendo…' : 'Detener'}
@@ -474,7 +474,7 @@ export const JobHistory: React.FC<JobHistoryProps> = ({ onSelectJob }) => {
                         type="button"
                         onClick={(e) => void handleDelete(e, item.job_id)}
                         disabled={deletingIds.has(item.job_id)}
-                        className="rounded border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-500 transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-600 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1 disabled:opacity-50"
+                        className="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-500 dark:text-gray-400 transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-600 dark:hover:border-red-700 dark:hover:bg-red-950 dark:hover:text-red-400 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1 disabled:opacity-50"
                         aria-label={`Eliminar trabajo del ${formatDate(item.creado_en)}`}
                       >
                         {deletingIds.has(item.job_id) ? '…' : 'Borrar'}
@@ -489,7 +489,7 @@ export const JobHistory: React.FC<JobHistoryProps> = ({ onSelectJob }) => {
               <tr>
                 <td
                   colSpan={6}
-                  className="px-4 py-10 text-center text-sm text-gray-500"
+                  className="px-4 py-10 text-center text-sm text-gray-500 dark:text-gray-400"
                 >
                   No hay trabajos registrados aún.
                 </td>
@@ -501,7 +501,7 @@ export const JobHistory: React.FC<JobHistoryProps> = ({ onSelectJob }) => {
 
       {/* Controles de paginación */}
       {!isLoading && total > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-gray-600">
+        <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-gray-600 dark:text-gray-400">
           <span>
             Página {currentPage} de {totalPages} — {total} trabajo(s) en total
           </span>
@@ -511,7 +511,7 @@ export const JobHistory: React.FC<JobHistoryProps> = ({ onSelectJob }) => {
               type="button"
               onClick={handlePrev}
               disabled={!hasPrev}
-              className="rounded-lg border border-gray-300 bg-white px-4 py-2 font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-4 py-2 font-medium text-gray-700 dark:text-gray-300 transition-colors hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="Página anterior"
             >
               Anterior
@@ -520,7 +520,7 @@ export const JobHistory: React.FC<JobHistoryProps> = ({ onSelectJob }) => {
               type="button"
               onClick={handleNext}
               disabled={!hasNext}
-              className="rounded-lg border border-gray-300 bg-white px-4 py-2 font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-4 py-2 font-medium text-gray-700 dark:text-gray-300 transition-colors hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="Página siguiente"
             >
               Siguiente
