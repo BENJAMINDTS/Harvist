@@ -147,9 +147,9 @@ const App: React.FC = () => {
   // ── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
       {/* ── Cabecera ── */}
-      <header className="bg-white border-b border-gray-200 px-6 py-3">
+      <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-6 py-3">
         <div className="max-w-3xl mx-auto flex items-center justify-between">
           <button
             type="button"
@@ -162,7 +162,7 @@ const App: React.FC = () => {
               <span className="block text-xl font-bold leading-tight" style={{ color: '#1B5FAB' }}>
                 Harvist
               </span>
-              <span className="block text-xs text-gray-400 leading-tight">
+              <span className="block text-xs text-gray-400 dark:text-gray-500 leading-tight">
                 by Nubium Solutions
               </span>
             </div>
@@ -176,8 +176,8 @@ const App: React.FC = () => {
                 onClick={() => setTab(tab === 'historial' ? 'nuevo' : 'historial')}
                 className={`px-4 py-1.5 text-sm font-medium rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
                   tab === 'historial'
-                    ? 'border-blue-300 bg-blue-50 text-blue-700'
-                    : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                    ? 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-950 dark:text-blue-400'
+                    : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800'
                 }`}
               >
                 Historial
@@ -190,7 +190,7 @@ const App: React.FC = () => {
       {/* ── Contenido principal ── */}
       <main className="max-w-3xl mx-auto px-4 py-8 space-y-6">
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm" role="alert">
+          <div className="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm" role="alert">
             {error}
           </div>
         )}
