@@ -16,12 +16,13 @@ a un nombre de producto semántico antes de buscar imágenes:
 
   1. ``BarcodeApiLookup`` — petición HTTP a UPC Item DB (sin Selenium,
      sin riesgo de bot detection). Cubre la mayoría de EANs globales.
-  2. ``GoogleEANEnricher`` — búsqueda web exacta (``"EAN"``) via Selenium
-     para EANs no presentes en la base de datos de barras.
-  3. EAN desnudo en el motor configurado — último recurso.
+  2. ``BingEANEnricher`` — búsqueda web exacta (``"EAN"``) en Bing via
+     Selenium. Usa el mismo dominio que el motor de imágenes, minimizando
+     la detección de bot al no cambiar de servicio entre pasos.
+  3. EAN desnudo en Bing Images — último recurso.
 
 :author: BenjaminDTS
-:version: 2.2.0
+:version: 2.3.0
 """
 
 from __future__ import annotations
@@ -468,39 +469,39 @@ class BarcodeApiLookup:
 
 
 # ---------------------------------------------------------------------------
-# Tier 2 — Enricher EAN vía Google web dork (Selenium)
+# Tier 2 — Enricher EAN vía Bing web (Selenium, mismo dominio que imágenes)
 # ---------------------------------------------------------------------------
 
 
-class GoogleEANEnricher:
+class BingEANEnricher:
     """
-    Resuelve un EAN a nombre de producto mediante búsqueda web exacta en Google.
+    Extrae el nombre de producto buscando el EAN en Bing web (``/search``).
 
-    Navega a ``https://www.google.com/search?q=%22EAN%22`` (búsqueda web, no
-    imágenes), extrae el texto de los primeros ``h3`` de resultados, filtra
-    palabras de ruido comercial y devuelve las palabras más repetidas como
-    query enriquecida para el motor de imágenes.
+    Usa el mismo dominio ``bing.com`` que el motor de imágenes: el navegador
+    ya tiene una sesión activa con Bing y no cambia de servicio, lo que
+    minimiza drásticamente el riesgo de detección de bot en comparación con
+    hacer la búsqueda de enriquecimiento en Google.
 
-    Se reutiliza el mismo ``WebDriver`` del pipeline para no abrir un
-    navegador extra por producto.
+    Espera ``#b_results`` (contenedor principal de resultados de Bing) y
+    extrae los ``h2`` de ``li.b_algo`` (títulos de resultados orgánicos),
+    filtrando ruido comercial y palabras cortas.
 
     :author: BenjaminDTS
     """
 
-    _URL_BUSQUEDA: str = "https://www.google.com/search?q=%22{ean}%22"
-    # #rso = Google Results Section Organizer: selector estable que acota
-    # los h3 a los títulos de resultados reales, evitando los tabs de
-    # navegación ("Imágenes", "Vídeos"...) que también son h3.
-    _SELECTOR_ESPERAR: str = "#rso"
-    _SELECTOR_TITULOS: str = "#rso h3"
+    _URL_BUSQUEDA: str = "https://www.bing.com/search?q=%22{ean}%22"
+    _SELECTOR_ESPERAR: str = "#b_results"
+    _SELECTOR_TITULOS: str = "li.b_algo h2"
     _NUM_RESULTADOS: int = 4
     _NUM_PALABRAS_QUERY: int = 5
 
     _PALABRAS_RUIDO: frozenset[str] = frozenset({
-        # Artículos y conectores
+        # Artículos y conectores ES
         "de", "la", "el", "los", "las", "un", "una", "y", "a", "en", "con",
         "por", "del", "al", "o", "e", "ni", "pero", "sin", "para", "su",
         "sus", "que", "es", "se", "le", "lo", "nos", "mas", "si",
+        # Artículos y conectores EN
+        "the", "and", "for", "with", "from", "buy", "shop", "best", "new",
         # Términos comerciales
         "comprar", "precio", "barato", "oferta", "descuento", "online",
         "entrega", "gratis", "stock", "disponible", "compra", "venta",
@@ -510,28 +511,26 @@ class GoogleEANEnricher:
         "amazon", "ebay", "aliexpress", "carrefour", "mercadona",
         "walmart", "fnac", "pccomponentes", "mediamarkt",
         # Unidades de medida
-        "kg", "gr", "g", "ml", "l", "lt", "cm", "mm",
+        "kg", "gr", "ml", "lt", "cm", "mm",
     })
 
     def enriquecer(self, ean: str, driver: WebDriver) -> str | None:
         """
-        Busca el EAN en Google web y extrae el nombre del producto de los h3.
+        Busca el EAN en Bing web y extrae el nombre del producto de los h2.
 
         Args:
             ean: código EAN sin codificar (solo dígitos).
             driver: instancia de WebDriver activa, reutilizada del pipeline.
 
         Returns:
-            String con las palabras más representativas del producto extraídas
-            de los títulos de resultados, o ``None`` si no se pudo enriquecer.
+            String con las palabras más representativas del producto, listo
+            para pasar al motor de imágenes. ``None`` si no hay resultados.
         """
         settings = get_settings()
         url = self._URL_BUSQUEDA.format(ean=ean)
 
         try:
             driver.get(url)
-            # Esperar a #rso (Results Section Organizer) garantiza que los
-            # resultados reales están cargados, no solo los tabs de navegación.
             WebDriverWait(driver, settings.browser_timeout).until(
                 EC.presence_of_element_located(
                     (By.CSS_SELECTOR, self._SELECTOR_ESPERAR)
@@ -539,7 +538,7 @@ class GoogleEANEnricher:
             )
         except TimeoutException:
             logger.warning(
-                "Timeout en Google web al enriquecer EAN",
+                "Timeout en Bing web al enriquecer EAN",
                 extra={"ean": ean},
             )
             return None
@@ -551,7 +550,7 @@ class GoogleEANEnricher:
         textos = [e.text.strip() for e in elementos if e.text.strip()]
         if not textos:
             logger.debug(
-                "Sin títulos h3 en resultados Google web",
+                "Sin títulos en resultados Bing web",
                 extra={"ean": ean},
             )
             return None
@@ -559,9 +558,6 @@ class GoogleEANEnricher:
         frecuencia: Counter[str] = Counter()
         for titulo in textos:
             for palabra_raw in titulo.lower().split():
-                # re.UNICODE preserva letras de cualquier idioma europeo
-                # (polaco ą/ę/ż, alemán ä/ö/ü, etc.) evitando mutilar
-                # nombres de producto que vengan en idioma del fabricante.
                 palabra = re.sub(r"[^\w]", "", palabra_raw, flags=re.UNICODE)
                 if (
                     len(palabra) > 2
@@ -572,7 +568,7 @@ class GoogleEANEnricher:
 
         if not frecuencia:
             logger.debug(
-                "Sin palabras útiles tras filtrar ruido",
+                "Sin palabras útiles tras filtrar ruido en Bing web",
                 extra={"ean": ean, "titulos": textos},
             )
             return None
@@ -581,7 +577,7 @@ class GoogleEANEnricher:
         query_enriquecida = " ".join(top)
 
         logger.info(
-            "EAN enriquecido con nombre de producto",
+            "EAN enriquecido vía Bing web",
             extra={"ean": ean, "query": query_enriquecida, "titulos": textos},
         )
         return query_enriquecida
@@ -770,16 +766,18 @@ def buscar_urls_imagenes(
         if es_modo_ean and settings.ean_enrichment_enabled:
             nombre_producto: str | None = None
 
-            # Tier 1: API de códigos de barras (HTTP, sin Selenium)
+            # Tier 1: API de códigos de barras (HTTP puro, sin Selenium)
             nombre_producto = BarcodeApiLookup().lookup(producto.ean)
 
-            # Tier 2: Google web dork (Selenium) si la API no tiene el EAN
+            # Tier 2: Bing web dork (Selenium, mismo dominio que imágenes)
+            # Se usa Bing en lugar de Google para evitar bot detection:
+            # el driver ya tiene sesión activa con bing.com.
             if not nombre_producto:
                 logger.debug(
-                    "Tier 1 sin resultado, intentando Google web enricher",
+                    "Tier 1 sin resultado, intentando Bing web enricher",
                     extra={"codigo": producto.codigo, "ean": producto.ean},
                 )
-                nombre_producto = GoogleEANEnricher().enriquecer(
+                nombre_producto = BingEANEnricher().enriquecer(
                     producto.ean, driver
                 )
 
