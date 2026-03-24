@@ -225,6 +225,7 @@ const App: React.FC = () => {
 
             {(appState === 'running' || appState === 'done') && jobId && (
               <JobProgress
+                key={jobId}
                 jobId={jobId}
                 tipoJob={tipoJob}
                 onFinished={handleJobFinished}
