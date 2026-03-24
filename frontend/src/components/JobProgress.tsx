@@ -20,7 +20,7 @@ import type { TipoJob } from '@/components/SearchConfig'
 interface JobProgressProps {
   /** UUID del job a monitorizar */
   jobId: string
-  /** Tipo de trabajo: 'fotos' o 'descripciones'. Controla los contadores mostrados. */
+  /** Tipo de trabajo: 'fotos', 'descripciones' o 'marcas'. Controla los contadores mostrados. */
   tipoJob: TipoJob
   /** Llamado cuando el job alcanza un estado terminal (completado o fallido) */
   onFinished: () => void
@@ -255,6 +255,7 @@ export const JobProgress: React.FC<JobProgressProps> = ({
     imagenes_descargadas,
     imagenes_fallidas,
     descripciones_generadas,
+    marcas_procesadas,
     mensaje,
     error,
   } = progress
@@ -265,6 +266,8 @@ export const JobProgress: React.FC<JobProgressProps> = ({
   const pct = Math.min(100, Math.max(0, Math.round(porcentaje)))
   const downloadUrl = tipoJob === 'descripciones'
     ? `/api/v1/files/${jobId}/csv`
+    : tipoJob === 'marcas'
+    ? `/api/v1/files/${jobId}/brands`
     : `/api/v1/files/${jobId}`
 
   // ── Render principal ─────────────────────────────────────────────────────
@@ -365,6 +368,19 @@ export const JobProgress: React.FC<JobProgressProps> = ({
               colorClass="text-red-500"
             />
           </>
+        ) : tipoJob === 'marcas' ? (
+          <>
+            <CounterCard
+              label="Marcas OK"
+              value={marcas_procesadas}
+              colorClass="text-green-600"
+            />
+            <CounterCard
+              label="Marcas fallidas"
+              value={Math.max(0, productos_procesados - marcas_procesadas)}
+              colorClass="text-red-500"
+            />
+          </>
         ) : (
           <>
             <CounterCard
@@ -409,9 +425,19 @@ export const JobProgress: React.FC<JobProgressProps> = ({
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-green-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
-              aria-label={tipoJob === 'descripciones' ? 'Descargar descripciones en formato ZIP' : 'Descargar imágenes en formato ZIP'}
+              aria-label={
+                tipoJob === 'descripciones'
+                  ? 'Descargar descripciones en formato CSV'
+                  : tipoJob === 'marcas'
+                  ? 'Descargar fichas de marca en formato JSON'
+                  : 'Descargar imágenes en formato ZIP'
+              }
             >
-              {tipoJob === 'descripciones' ? 'Descargar descripciones' : 'Descargar ZIP'}
+              {tipoJob === 'descripciones'
+                ? 'Descargar descripciones'
+                : tipoJob === 'marcas'
+                ? 'Descargar marcas.json'
+                : 'Descargar ZIP'}
             </a>
           )}
           {(estado === 'cancelado' || estado === 'fallido') && onResume !== undefined && (
