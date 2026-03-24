@@ -34,14 +34,14 @@ export interface ColumnMapping {
   columnaNombreFoto: string;
 }
 
-/** Tipo de trabajo: descarga de fotos o generación de descripciones. Mutuamente excluyentes. */
-export type TipoJob = "fotos" | "descripciones";
+/** Tipo de trabajo: descarga de fotos, generación de descripciones o extracción de fichas de marca. Mutuamente excluyentes. */
+export type TipoJob = "fotos" | "descripciones" | "marcas";
 
 /**
  * Valores de configuración de búsqueda que se envían al padre al lanzar el job.
  */
 export interface SearchConfigValues {
-  /** Tipo de trabajo: 'fotos' o 'descripciones'. */
+  /** Tipo de trabajo: 'fotos', 'descripciones' o 'marcas'. */
   tipoJob: TipoJob;
   /** Modo de búsqueda seleccionado por el usuario (solo aplica en tipoJob='fotos'). */
   modo: "ean" | "nombre_marca" | "personalizado";
@@ -82,6 +82,7 @@ interface SearchConfigProps {
    * Tipo de job pre-seleccionado desde la pantalla de inicio.
    * Si se proporciona, el selector de tipo de trabajo se oculta
    * y se muestra como badge informativo no editable.
+   * Puede ser 'fotos', 'descripciones' o 'marcas'.
    */
   tipoJobForzado?: TipoJob;
 }
@@ -428,18 +429,23 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
 
       {/* ── Selector de tipo de trabajo (oculto si tipoJobForzado está definido) ── */}
       {tipoJobForzado !== undefined ? (
-        <div className="flex items-center gap-3" aria-label={`Tipo de trabajo: ${tipoJobForzado === 'fotos' ? 'Descargar fotos' : 'Generar descripciones'}`}>
+        <div
+          className="flex items-center gap-3"
+          aria-label={`Tipo de trabajo: ${tipoJobForzado === 'fotos' ? 'Descargar fotos' : tipoJobForzado === 'descripciones' ? 'Generar descripciones' : 'Fichas de Marca'}`}
+        >
           <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Tipo de trabajo:</span>
           <span
             className={
               "inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold border " +
               (tipoJobForzado === 'fotos'
                 ? "bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-400 border-blue-300 dark:border-blue-700"
-                : "bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-400 border-green-300 dark:border-green-800")
+                : tipoJobForzado === 'descripciones'
+                ? "bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-400 border-green-300 dark:border-green-800"
+                : "bg-orange-50 dark:bg-orange-950 text-orange-700 dark:text-orange-400 border-orange-300 dark:border-orange-800")
             }
             role="status"
           >
-            {tipoJobForzado === 'fotos' ? 'Descargar fotos' : 'Generar descripciones'}
+            {tipoJobForzado === 'fotos' ? 'Descargar fotos' : tipoJobForzado === 'descripciones' ? 'Generar descripciones' : 'Fichas de Marca'}
           </span>
         </div>
       ) : (
@@ -452,6 +458,7 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
             [
               { valor: "fotos", titulo: "Descargar fotos", descripcion: "Busca y descarga imágenes de producto mediante scraping." },
               { valor: "descripciones", titulo: "Generar descripciones", descripcion: "Genera descripciones de catálogo con IA (Claude API)." },
+              { valor: "marcas", titulo: "Fichas de Marca", descripcion: "Extrae información de marca (logo, web, descripción) a partir del CSV." },
             ] as { valor: TipoJob; titulo: string; descripcion: string }[]
           ).map(({ valor, titulo, descripcion }) => {
             const isSelected = tipoJob === valor;
@@ -630,9 +637,9 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
               value={columnaCodigo}
               onChange={setColumnaCodigo}
               hint={
-                tipoJob === "descripciones"
-                  ? "Identificador único del producto."
-                  : "Identificador único — se usa para nombrar las imágenes."
+                tipoJob === "fotos"
+                  ? "Identificador único — se usa para nombrar las imágenes."
+                  : "Identificador único del producto."
               }
             />
 
@@ -744,6 +751,30 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
                   value={columnaCategoria}
                   onChange={setColumnaCategoria}
                   hint="Opcional — ayuda al modelo a adaptar la descripción al tipo de producto."
+                />
+              </>
+            )}
+
+            {/* ── Columnas específicas de fichas de marca ── */}
+            {tipoJob === "marcas" && (
+              <>
+                <ColumnSelect
+                  id="col-marca"
+                  label="Marca del producto"
+                  required
+                  headers={csvHeaders}
+                  value={columnaMarca}
+                  onChange={setColumnaMarca}
+                  hint="Requerido — nombre de la marca que se usará para buscar información pública."
+                />
+
+                <ColumnSelect
+                  id="col-categoria"
+                  label="Categoría del producto"
+                  headers={csvHeaders}
+                  value={columnaCategoria}
+                  onChange={setColumnaCategoria}
+                  hint="Opcional — ayuda a contextualizar la búsqueda de información de marca."
                 />
               </>
             )}
