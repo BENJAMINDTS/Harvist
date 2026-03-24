@@ -2,7 +2,8 @@
 Endpoint HTTP para el historial paginado de trabajos de scraping.
 
 Rutas expuestas:
-  GET /api/v1/jobs — Lista paginada y filtrable de todos los jobs registrados.
+  GET    /api/v1/jobs        — Lista paginada y filtrable de todos los jobs registrados.
+  DELETE /api/v1/jobs/{id}   — Elimina un job del historial y limpia sus claves Redis.
 
 Lee el sorted set ``jobs:history`` de Redis (insertado por el worker al crear
 cada job) y recupera el estado completo de cada job desde ``job:{job_id}``.
@@ -10,7 +11,7 @@ No contiene lógica de negocio: solo orquesta la lectura desde Redis y
 devuelve la respuesta paginada con el contrato estándar.
 
 :author: BenjaminDTS
-:version: 1.0.0
+:version: 1.1.0
 """
 
 import json
@@ -271,4 +272,62 @@ async def listar_historial(
             },
             "message": f"Se encontraron {total} trabajo(s).",
         }
+    )
+
+
+@router.delete(
+    "/{job_id}",
+    status_code=200,
+    summary="Eliminar un trabajo del historial",
+)
+async def eliminar_job(job_id: str) -> JSONResponse:
+    """
+    Elimina un trabajo del historial y borra todas sus claves de Redis.
+
+    Elimina el job_id del sorted set ``jobs:history``, la clave de estado
+    ``job:{job_id}`` y, si existen, las claves auxiliares de CSV y config
+    guardadas al crear el job para la funcionalidad de reanudación.
+
+    No comprueba el estado del job: cualquier job puede borrarse
+    independientemente de si está activo o terminado.
+
+    Args:
+        job_id: identificador UUID del trabajo a eliminar.
+
+    Returns:
+        JSONResponse 200 confirmando la eliminación.
+
+    Raises:
+        HTTPException 404: si el job no existe en el historial.
+        HTTPException 503: si Redis no está disponible.
+    """
+    redis = await _get_redis()
+    try:
+        # Verificar que el job existe en el historial
+        score = await redis.zscore(_HISTORY_KEY, job_id)
+        if score is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Job '{job_id}' no encontrado en el historial.",
+            )
+
+        # Borrar todas las claves asociadas al job
+        await redis.zrem(_HISTORY_KEY, job_id)
+        await redis.delete(
+            _JOB_KEY.format(job_id=job_id),
+            f"job:{job_id}:csv",
+            f"job:{job_id}:config",
+        )
+    finally:
+        await redis.aclose()
+
+    logger.info("Job eliminado del historial", extra={"job_id": job_id})
+
+    return JSONResponse(
+        status_code=200,
+        content={
+            "success": True,
+            "data": {"job_id": job_id},
+            "message": "Trabajo eliminado correctamente.",
+        },
     )
