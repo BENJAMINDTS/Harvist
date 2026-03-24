@@ -1,43 +1,44 @@
 """
-Pipeline de scraping de información de marca.
+Pipeline de resolución EAN → marca de producto.
 
 Flujo:
-  1. CsvParser → lista de productos → extrae marcas únicas
-  2. BrandScraper (Selenium/Bing) → logo URL + website + descripción
-  3. Descarga del logo como imagen vía HTTP
-  4. Exporta marcas.json al storage del job
+  1. CsvParser → lista de productos con EAN
+  2. EanBrandResolver (Selenium/Bing exacto) → marca detectada por EAN
+  3. Exporta marcas.csv al storage del job con columnas:
+     codigo, ean, marca_detectada, exitoso, error
+
+Solo procesa productos que tengan EAN. Los productos sin EAN se
+incluyen en el CSV de salida con marca_detectada vacía y exitoso=False.
 
 :author: BenjaminDTS
-:version: 1.0.0
+:version: 2.0.0
 """
 
 from __future__ import annotations
 
+import csv
 import io
-import json
 from typing import Callable
 
-import requests as _requests
 from loguru import logger
-from PIL import Image
 
 from api.core.config import get_settings
+from api.v1.schemas.job import SearchConfig
 from services.csv_parser import CsvParser, CsvParserError
-from services.scraper.brand_scraper import BrandScraper, FichaMarca
+from services.scraper.brand_scraper import EanBrandResolver, ResultadoMarca
 from services.storage_service import StorageService, get_storage_service
 
+# Firma: (job_id, procesados, total, exitosos) -> None
 BrandProgressCallback = Callable[[str, int, int, int], None]
-# Firma: (job_id, procesadas, total, exitosas) -> None
-
-_LOGO_DOWNLOAD_HEADERS: dict[str, str] = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    "Accept": "image/*,*/*;q=0.8",
-}
 
 
 class BrandPipeline:
     """
-    Orquestador del proceso de scraping de marcas para un job.
+    Orquestador del pipeline de resolución EAN → marca.
+
+    Para cada producto del CSV que tenga EAN, busca el EAN exacto en Bing
+    y extrae la marca del producto a partir de los títulos de los resultados.
+    El resultado final es un CSV descargable con la marca detectada por producto.
 
     :author: BenjaminDTS
     """
@@ -45,16 +46,16 @@ class BrandPipeline:
     def __init__(
         self,
         job_id: str,
-        config,
+        config: SearchConfig,
         storage: StorageService | None = None,
         carpeta_job_id: str | None = None,
     ) -> None:
         """
-        Inicializa el pipeline de marcas.
+        Inicializa el pipeline de resolución de marcas.
 
         Args:
             job_id: identificador del job (para progreso y logs).
-            config: configuración del job (se usa column_mapping.columna_marca).
+            config: configuración del job (se usa column_mapping para parsear el CSV).
             storage: servicio de almacenamiento. Si None usa el factory.
             carpeta_job_id: carpeta de almacenamiento a reutilizar (para resume).
         """
@@ -73,19 +74,22 @@ class BrandPipeline:
         Ejecuta el pipeline completo y devuelve un resumen.
 
         Args:
-            contenido_csv: contenido del CSV como string.
-            callback: función de progreso (job_id, procesadas, total, exitosas).
-            offset_productos: número de marcas a saltar (para resume).
+            contenido_csv: contenido del CSV como string (ya decodificado).
+            callback: función de progreso (job_id, procesados, total, exitosos).
+            offset_productos: número de productos a saltar (para resume).
 
         Returns:
-            Dict con total_marcas, marcas_exitosas, marcas_fallidas, errores_csv.
+            Dict con total_productos, marcas_exitosas, marcas_fallidas, errores_csv.
 
         Raises:
-            CsvParserError: si el CSV es inválido.
+            CsvParserError: si el CSV es inválido estructuralmente.
         """
-        logger.info("Pipeline de marcas iniciado", extra={"job_id": self._job_id})
+        logger.info(
+            "Pipeline de resolución de marcas iniciado",
+            extra={"job_id": self._job_id, "offset": offset_productos},
+        )
 
-        # ── Paso 1: Parsear CSV y extraer marcas únicas ───────────────────────
+        # ── Paso 1: Parsear CSV ───────────────────────────────────────────────
         parser = CsvParser(self._config)
         resultado_csv = parser.parsear(contenido_csv)
 
@@ -95,77 +99,76 @@ class BrandPipeline:
                 f"Errores: {'; '.join(resultado_csv.errores[:5])}"
             )
 
-        # Deduplica manteniendo orden de aparición
-        seen: set[str] = set()
-        marcas: list[str] = []
-        for p in resultado_csv.productos:
-            m = (p.marca or "").strip()
-            if m and m not in seen:
-                seen.add(m)
-                marcas.append(m)
-
-        total = len(marcas)
+        productos = resultado_csv.productos
+        total = len(productos)
 
         if offset_productos > 0:
-            marcas = marcas[offset_productos:]
+            productos = productos[offset_productos:]
             logger.info(
                 "Offset aplicado",
                 extra={
                     "job_id": self._job_id,
                     "offset": offset_productos,
-                    "pendientes": len(marcas),
+                    "pendientes": len(productos),
                 },
             )
 
         logger.info(
-            "Marcas únicas encontradas",
-            extra={"job_id": self._job_id, "total": total},
+            "CSV parseado",
+            extra={"job_id": self._job_id, "total_productos": total},
         )
 
-        # ── Paso 2: Scrape + descarga logo para cada marca ────────────────────
-        fichas: list[dict] = []
-        exitosas = 0
+        # ── Paso 2: Resolver EAN → marca para cada producto ───────────────────
+        resultados: list[ResultadoMarca] = []
+        exitosos = 0
 
-        # Crear driver una sola vez para toda la sesión
-        from services.scraper.producer import _crear_driver  # noqa: PLC0415
         settings = get_settings()
+        from services.scraper.producer import _crear_driver  # noqa: PLC0415
+
         driver = _crear_driver(settings)
 
         try:
-            scraper = BrandScraper()
-            for idx, marca in enumerate(marcas, start=offset_productos + 1):
-                ficha = scraper.scrape(marca, driver)
+            resolver = EanBrandResolver()
 
-                # Descargar logo si se encontró URL
-                logo_archivo = ""
-                if ficha.logo_url:
-                    logo_archivo = self._descargar_logo(ficha)
+            for idx, producto in enumerate(productos, start=offset_productos + 1):
+                if producto.ean:
+                    resultado = resolver.resolver(
+                        codigo=producto.codigo,
+                        ean=producto.ean,
+                        driver=driver,
+                    )
+                else:
+                    # Sin EAN: marcar como no procesable
+                    resultado = ResultadoMarca(
+                        codigo=producto.codigo,
+                        ean="",
+                        exitoso=False,
+                        error="El producto no tiene EAN.",
+                    )
+                    logger.debug(
+                        "Producto sin EAN omitido",
+                        extra={"job_id": self._job_id, "codigo": producto.codigo},
+                    )
 
-                fichas.append(
-                    {
-                        "marca": ficha.marca,
-                        "website": ficha.website,
-                        "descripcion": ficha.descripcion,
-                        "logo_archivo": logo_archivo,
-                        "exitoso": ficha.exitoso,
-                        "error": ficha.error,
-                    }
-                )
+                resultados.append(resultado)
 
-                if ficha.exitoso:
-                    exitosas += 1
+                if resultado.exitoso:
+                    exitosos += 1
 
                 if callback:
-                    callback(self._job_id, idx, total, exitosas)
+                    callback(self._job_id, idx, total, exitosos)
 
                 logger.debug(
-                    "Marca procesada",
+                    "Producto procesado",
                     extra={
                         "job_id": self._job_id,
-                        "marca": marca,
-                        "idx": f"{idx}/{total}",
+                        "codigo": producto.codigo,
+                        "ean": producto.ean,
+                        "marca": resultado.marca_detectada,
+                        "progreso": f"{idx}/{total}",
                     },
                 )
+
         finally:
             try:
                 driver.quit()
@@ -176,13 +179,13 @@ class BrandPipeline:
                     extra={"job_id": self._job_id},
                 )
 
-        # ── Paso 3: Exportar marcas.json ──────────────────────────────────────
-        self._guardar_json(fichas)
+        # ── Paso 3: Exportar marcas.csv ───────────────────────────────────────
+        self._guardar_csv(resultados)
 
         resumen = {
-            "total_marcas": total,
-            "marcas_exitosas": exitosas,
-            "marcas_fallidas": total - exitosas,
+            "total_productos": total,
+            "marcas_exitosas": exitosos,
+            "marcas_fallidas": total - exitosos,
             "errores_csv": resultado_csv.errores,
         }
 
@@ -190,77 +193,49 @@ class BrandPipeline:
             "Pipeline de marcas completado",
             extra={
                 "job_id": self._job_id,
-                "total_marcas": resumen["total_marcas"],
-                "marcas_exitosas": resumen["marcas_exitosas"],
-                "marcas_fallidas": resumen["marcas_fallidas"],
+                "total_productos": total,
+                "marcas_exitosas": exitosos,
+                "marcas_fallidas": total - exitosos,
             },
         )
         return resumen
 
-    def _descargar_logo(self, ficha: FichaMarca) -> str:
+    def _guardar_csv(self, resultados: list[ResultadoMarca]) -> None:
         """
-        Descarga el logo de la marca y lo guarda en storage.
+        Serializa los resultados de resolución a CSV y los guarda en storage.
+
+        Columnas: codigo, ean, marca_detectada, exitoso, error.
 
         Args:
-            ficha: ficha de marca con logo_url.
-
-        Returns:
-            Nombre del archivo guardado, o cadena vacía si falla.
+            resultados: lista de ResultadoMarca con los datos de cada producto.
         """
-        settings = get_settings()
+        fieldnames = ["codigo", "ean", "marca_detectada", "exitoso", "error"]
+        buffer = io.StringIO()
+        writer = csv.DictWriter(buffer, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+
+        for r in resultados:
+            writer.writerow({
+                "codigo": r.codigo,
+                "ean": r.ean,
+                "marca_detectada": r.marca_detectada,
+                "exitoso": r.exitoso,
+                "error": r.error,
+            })
 
         try:
-            resp = _requests.get(
-                ficha.logo_url,
-                headers=_LOGO_DOWNLOAD_HEADERS,
-                timeout=settings.download_timeout,
-                stream=False,
+            self._storage.save_image(
+                self._carpeta_id,
+                "marcas.csv",
+                buffer.getvalue().encode("utf-8-sig"),
             )
-            resp.raise_for_status()
-
-            img = Image.open(io.BytesIO(resp.content))
-            img.verify()
-            img = Image.open(io.BytesIO(resp.content))
-            if img.mode not in ("RGB", "L"):
-                img = img.convert("RGB")
-
-            buf = io.BytesIO()
-            img.save(buf, format="JPEG", quality=85, optimize=True)
-
-            nombre_base = (
-                "".join(c if c.isalnum() or c in "-_" else "_" for c in ficha.marca)
-                .strip("_")
-                or "marca"
-            )
-            filename = f"{nombre_base}_logo.jpg"
-            self._storage.save_image(self._carpeta_id, filename, buf.getvalue())
-            return filename
-
-        except Exception as exc:
-            logger.warning(
-                "Error descargando logo",
-                exc_info=exc,
-                extra={"marca": ficha.marca},
-            )
-            return ""
-
-    def _guardar_json(self, fichas: list[dict]) -> None:
-        """
-        Serializa las fichas de marca a JSON y las guarda en storage.
-
-        Args:
-            fichas: lista de dicts con datos de cada marca.
-        """
-        try:
-            contenido = json.dumps(fichas, ensure_ascii=False, indent=2).encode("utf-8")
-            self._storage.save_image(self._carpeta_id, "marcas.json", contenido)
             logger.info(
-                "marcas.json guardado",
-                extra={"job_id": self._job_id, "marcas": len(fichas)},
+                "marcas.csv guardado",
+                extra={"job_id": self._job_id, "filas": len(resultados)},
             )
         except Exception as exc:
             logger.error(
-                "Error guardando marcas.json",
+                "Error guardando marcas.csv",
                 exc_info=exc,
                 extra={"job_id": self._job_id},
             )
