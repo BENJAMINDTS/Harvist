@@ -66,6 +66,7 @@ class DescripcionPipeline:
         self,
         contenido_csv: str,
         callback: DescripcionProgressCallback | None = None,
+        offset_productos: int = 0,
     ) -> dict:
         """
         Ejecuta el pipeline completo y devuelve un resumen del resultado.
@@ -74,6 +75,10 @@ class DescripcionPipeline:
             contenido_csv: contenido del CSV como string (ya decodificado).
             callback: función de progreso invocada tras procesar cada batch.
                       Firma: (job_id, procesados, total, descripciones_ok)
+            offset_productos: número de productos a saltar desde el inicio de
+                la lista antes de comenzar a generar descripciones. Se usa al
+                reanudar un job cancelado o fallido. Por defecto 0 (procesar
+                desde el principio).
 
         Returns:
             Diccionario con: total_productos, descripciones_generadas,
@@ -84,7 +89,7 @@ class DescripcionPipeline:
         """
         logger.info(
             "Pipeline de descripciones iniciado",
-            extra={"job_id": self._job_id},
+            extra={"job_id": self._job_id, "offset_productos": offset_productos},
         )
 
         # ── Paso 1: Parsear CSV ───────────────────────────────────────────────
@@ -99,6 +104,18 @@ class DescripcionPipeline:
 
         productos = resultado_csv.productos
         total = len(productos)
+
+        # Aplicar offset para reanudar desde donde se dejó
+        if offset_productos > 0:
+            productos = productos[offset_productos:]
+            logger.info(
+                "Offset aplicado, saltando productos ya procesados",
+                extra={
+                    "job_id": self._job_id,
+                    "offset_productos": offset_productos,
+                    "productos_pendientes": len(productos),
+                },
+            )
 
         logger.info(
             "CSV parseado, iniciando generación de descripciones",
@@ -135,9 +152,11 @@ class DescripcionPipeline:
         descripciones_ok = 0
         descripciones_fail = 0
         batch_size = settings.claude_batch_size
-        procesados = 0
+        # Comenzar el contador en el offset para que el callback reporte la
+        # posición absoluta correcta dentro del CSV completo
+        procesados = offset_productos
 
-        for batch_inicio in range(0, total, batch_size):
+        for batch_inicio in range(0, len(productos), batch_size):
             batch = productos[batch_inicio:batch_inicio + batch_size]
             resultados_batch = generator.generar_batch(batch)
 

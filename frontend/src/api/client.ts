@@ -76,3 +76,27 @@ export function buildWsUrl(jobId: string): string {
   const host = window.location.host
   return `${protocol}://${host}/api/v1/jobs/${jobId}/ws`
 }
+
+/** Datos devueltos por el endpoint de reanudación de un job. */
+export interface ResumeJobData {
+  job_id: string
+  estado: string
+  ws_url: string
+}
+
+/**
+ * Reanuda un job cancelado o fallido creando un nuevo job a partir del anterior.
+ *
+ * Llama a `POST /api/v1/jobs/{jobId}/resume` y devuelve el identificador
+ * del nuevo job junto con su estado inicial y URL de WebSocket.
+ *
+ * @param jobId - UUID del job a reanudar.
+ * @returns Datos del nuevo job creado.
+ * @throws ApiError si la petición falla o el job no puede reanudarse.
+ */
+export async function resumeJob(jobId: string): Promise<ResumeJobData> {
+  const response = await apiClient.post<ApiResponse<ResumeJobData>>(
+    `/jobs/${jobId}/resume`,
+  )
+  return response.data.data
+}

@@ -63,6 +63,7 @@ class ScrapingPipeline:
         self,
         contenido_csv: str,
         callback: ProgressCallback | None = None,
+        offset_productos: int = 0,
     ) -> dict:
         """
         Ejecuta el pipeline completo y devuelve un resumen del resultado.
@@ -71,6 +72,10 @@ class ScrapingPipeline:
             contenido_csv: contenido del CSV como string (ya decodificado).
             callback: función de progreso invocada tras procesar cada producto.
                       Firma: (job_id, procesados, total, img_ok, img_fail)
+            offset_productos: número de productos a saltar desde el inicio de
+                la lista antes de comenzar a procesar. Se usa al reanudar un
+                job cancelado o fallido. Por defecto 0 (procesar desde el
+                principio).
 
         Returns:
             Diccionario con el resumen: total_productos, imagenes_descargadas,
@@ -79,7 +84,10 @@ class ScrapingPipeline:
         Raises:
             CsvParserError: si el CSV es inválido estructuralmente.
         """
-        logger.info("Pipeline iniciado", extra={"job_id": self._job_id})
+        logger.info(
+            "Pipeline iniciado",
+            extra={"job_id": self._job_id, "offset_productos": offset_productos},
+        )
 
         # ── Paso 1: Parsear y validar el CSV ──────────────────────────────────
         parser = CsvParser(self._config)
@@ -94,6 +102,20 @@ class ScrapingPipeline:
         productos = resultado_csv.productos
         total = len(productos)
 
+        # Aplicar offset para reanudar desde donde se dejó
+        if offset_productos > 0:
+            productos_pendientes = productos[offset_productos:]
+            logger.info(
+                "Offset aplicado, saltando productos ya procesados",
+                extra={
+                    "job_id": self._job_id,
+                    "offset_productos": offset_productos,
+                    "productos_pendientes": len(productos_pendientes),
+                },
+            )
+        else:
+            productos_pendientes = productos
+
         logger.info(
             "CSV parseado, iniciando scraping",
             extra={
@@ -107,7 +129,7 @@ class ScrapingPipeline:
         imagenes_ok = 0
         imagenes_fail = 0
 
-        for idx, producto in enumerate(productos, start=1):
+        for idx, producto in enumerate(productos_pendientes, start=offset_productos + 1):
             producto_ok, producto_fail = self._procesar_producto(producto)
             imagenes_ok += producto_ok
             imagenes_fail += producto_fail

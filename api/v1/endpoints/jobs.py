@@ -2,15 +2,17 @@
 Endpoints HTTP y WebSocket para la gestión de trabajos de scraping.
 
 Rutas expuestas:
-  POST   /api/v1/jobs          — Crear un nuevo job con CSV + configuración
-  GET    /api/v1/jobs/{job_id} — Consultar el estado de un job
-  WS     /api/v1/jobs/{job_id}/ws — Stream de progreso en tiempo real
+  POST   /api/v1/jobs                  — Crear un nuevo job con CSV + configuración
+  GET    /api/v1/jobs/{job_id}         — Consultar el estado de un job
+  POST   /api/v1/jobs/{job_id}/cancel  — Cancelar un job en curso
+  POST   /api/v1/jobs/{job_id}/resume  — Reanudar un job cancelado o fallido
+  WS     /api/v1/jobs/{job_id}/ws      — Stream de progreso en tiempo real
 
 Este módulo solo maneja HTTP: valida, delega a workers y devuelve respuesta.
 Ninguna lógica de negocio vive aquí.
 
 :author: BenjaminDTS
-:version: 1.0.0
+:version: 1.1.0
 """
 
 import json
@@ -51,6 +53,10 @@ settings = get_settings()
 
 # Clave Redis donde se almacena el estado del job: job:{job_id}
 _JOB_KEY = "job:{job_id}"
+# Clave Redis donde se almacena el CSV original para poder reanudar el job
+_JOB_CSV_KEY = "job:{job_id}:csv"
+# Clave Redis donde se almacena la configuración original del job (JSON)
+_JOB_CONFIG_KEY = "job:{job_id}:config"
 # Tiempo de vida de la clave en Redis (igual al TTL de archivos)
 _KEY_TTL = settings.file_ttl_seconds
 
@@ -224,10 +230,22 @@ async def crear_job(
         estado=EstadoJob.PENDIENTE,
         mensaje="Trabajo recibido, en cola de procesamiento.",
     )
+    csv_str = contenido.decode("utf-8-sig", errors="replace")
     redis = await _get_redis()
     await redis.set(
         _JOB_KEY.format(job_id=job_id),
         job_status.model_dump_json(),
+        ex=_KEY_TTL,
+    )
+    # Persistir CSV y config para permitir reanudar el job más adelante
+    await redis.set(
+        _JOB_CSV_KEY.format(job_id=job_id),
+        csv_str,
+        ex=_KEY_TTL,
+    )
+    await redis.set(
+        _JOB_CONFIG_KEY.format(job_id=job_id),
+        json.dumps(config.model_dump()),
         ex=_KEY_TTL,
     )
     await redis.aclose()
@@ -236,7 +254,7 @@ async def crear_job(
     try:
         from workers.tasks import ejecutar_scraping
         ejecutar_scraping.apply_async(
-            args=[job_id, contenido.decode("utf-8-sig", errors="replace"), config.model_dump()],
+            args=[job_id, csv_str, config.model_dump()],
             task_id=job_id,
         )
     except Exception as exc:
@@ -344,6 +362,139 @@ async def cancelar_job(job_id: str) -> JSONResponse:
             "success": True,
             "data": {"job_id": job_id, "estado": EstadoJob.CANCELADO.value},
             "message": "Trabajo cancelado correctamente.",
+        },
+    )
+
+
+@router.post(
+    "/{job_id}/resume",
+    response_model=JobResponse,
+    status_code=202,
+    summary="Reanudar un trabajo cancelado o fallido",
+)
+async def reanudar_job(job_id: str) -> JSONResponse:
+    """
+    Crea un nuevo job que continúa desde donde el job original se detuvo.
+
+    Lee el CSV y la configuración originales almacenados en Redis, determina
+    cuántos productos ya fueron procesados y encola una nueva tarea Celery
+    con ese offset para no repetir trabajo ya completado.
+
+    Solo puede reanudarse un job en estado CANCELADO o FALLIDO. Si el CSV
+    original ya expiró en Redis, se devuelve 404 con instrucciones al usuario.
+
+    Args:
+        job_id: identificador UUID del job original a reanudar.
+
+    Returns:
+        JSONResponse 202 con el nuevo job_id y URL de seguimiento.
+
+    Raises:
+        HTTPException 404: si el job no existe o el CSV original ha expirado.
+        HTTPException 409: si el job no está en estado CANCELADO o FALLIDO.
+        HTTPException 503: si Redis o Celery no están disponibles.
+    """
+    redis = await _get_redis()
+    try:
+        # Paso 1: verificar que el job original existe y está en estado reanudable
+        status = await _get_job_status(redis, job_id)
+
+        if status.estado not in (EstadoJob.CANCELADO, EstadoJob.FALLIDO):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Solo se puede reanudar un trabajo en estado CANCELADO o FALLIDO. "
+                    f"Estado actual: '{status.estado.value}'."
+                ),
+            )
+
+        # Paso 2: recuperar el CSV original
+        csv_raw = await redis.get(_JOB_CSV_KEY.format(job_id=job_id))
+        if csv_raw is None:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    "El CSV original ya no está disponible (expiró). "
+                    "Por favor, inicia un nuevo trabajo."
+                ),
+            )
+
+        # Paso 3: recuperar la configuración original
+        config_raw = await redis.get(_JOB_CONFIG_KEY.format(job_id=job_id))
+        config_dict: dict = json.loads(config_raw) if config_raw else {}
+
+        # Paso 4: offset = productos ya procesados en el job original
+        offset_productos: int = status.productos_procesados or 0
+
+        # Paso 5: crear el nuevo job
+        nuevo_job_id = str(uuid.uuid4())
+        config = SearchConfig.model_validate(config_dict)
+
+        nuevo_status = JobStatus(
+            job_id=uuid.UUID(nuevo_job_id),  # type: ignore[arg-type]
+            estado=EstadoJob.PENDIENTE,
+            mensaje=(
+                f"Reanudando desde el producto {offset_productos + 1} "
+                f"(job original: {job_id})."
+            ),
+        )
+
+        # Paso 6: persistir estado, CSV y config del nuevo job en Redis
+        await redis.set(
+            _JOB_KEY.format(job_id=nuevo_job_id),
+            nuevo_status.model_dump_json(),
+            ex=_KEY_TTL,
+        )
+        await redis.set(
+            _JOB_CSV_KEY.format(job_id=nuevo_job_id),
+            csv_raw,
+            ex=_KEY_TTL,
+        )
+        await redis.set(
+            _JOB_CONFIG_KEY.format(job_id=nuevo_job_id),
+            json.dumps(config_dict),
+            ex=_KEY_TTL,
+        )
+    finally:
+        await redis.aclose()
+
+    # Paso 7: encolar la tarea Celery con el offset
+    try:
+        from workers.tasks import ejecutar_scraping
+        ejecutar_scraping.apply_async(
+            args=[nuevo_job_id, csv_raw, config.model_dump()],
+            kwargs={"offset_productos": offset_productos},
+            task_id=nuevo_job_id,
+        )
+    except Exception as exc:
+        logger.error(
+            "Error al encolar el job reanudado en Celery",
+            exc_info=exc,
+            extra={"job_id": nuevo_job_id, "job_original": job_id},
+        )
+        raise HTTPException(status_code=503, detail="No se pudo encolar el trabajo.") from exc
+
+    logger.info(
+        "Job reanudado",
+        extra={
+            "job_id": nuevo_job_id,
+            "job_original": job_id,
+            "offset_productos": offset_productos,
+        },
+    )
+
+    return JSONResponse(
+        status_code=202,
+        content={
+            "success": True,
+            "data": {
+                "job_id": nuevo_job_id,
+                "job_original": job_id,
+                "offset_productos": offset_productos,
+                "estado": EstadoJob.PENDIENTE.value,
+                "ws_url": f"/api/v1/jobs/{nuevo_job_id}/ws",
+            },
+            "message": f"Trabajo reanudado desde el producto {offset_productos + 1}.",
         },
     )
 

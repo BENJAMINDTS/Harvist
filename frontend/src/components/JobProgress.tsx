@@ -26,6 +26,11 @@ interface JobProgressProps {
   onFinished: () => void
   /** Llamado cuando el usuario pulsa "Nuevo trabajo" */
   onReset: () => void
+  /**
+   * Llamado cuando el usuario pulsa "Reanudar" en un job cancelado o fallido.
+   * Si no se proporciona, el botón no se muestra.
+   */
+  onResume?: () => void
 }
 
 // ---------------------------------------------------------------------------
@@ -98,6 +103,35 @@ const WS_STATUS_CONFIG: Record<
 }
 
 // ---------------------------------------------------------------------------
+// Iconos SVG inline
+// ---------------------------------------------------------------------------
+
+interface IconProps {
+  className?: string
+}
+
+/**
+ * Icono de reanudar/reproducir (flecha circular) para el botón de reanudación.
+ */
+const ResumeIcon: React.FC<IconProps> = ({ className }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth={1.5}
+    stroke="currentColor"
+    aria-hidden="true"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"
+    />
+  </svg>
+)
+
+// ---------------------------------------------------------------------------
 // Sub-componentes internos
 // ---------------------------------------------------------------------------
 
@@ -167,6 +201,7 @@ export const JobProgress: React.FC<JobProgressProps> = ({
   tipoJob,
   onFinished,
   onReset,
+  onResume,
 }) => {
   const { progress, wsStatus, isFinished } = useJobWebSocket(jobId)
   const [cancelling, setCancelling] = useState(false)
@@ -378,6 +413,17 @@ export const JobProgress: React.FC<JobProgressProps> = ({
             >
               {tipoJob === 'descripciones' ? 'Descargar descripciones' : 'Descargar ZIP'}
             </a>
+          )}
+          {(estado === 'cancelado' || estado === 'fallido') && onResume !== undefined && (
+            <button
+              type="button"
+              onClick={onResume}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-400 bg-white px-5 py-2.5 text-sm font-semibold text-blue-700 shadow-sm transition-colors hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              aria-label="Reanudar este trabajo desde donde se detuvo"
+            >
+              <ResumeIcon className="h-4 w-4" />
+              Reanudar
+            </button>
           )}
           <button
             type="button"
