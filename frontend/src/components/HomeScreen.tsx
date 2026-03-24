@@ -131,7 +131,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           <h1 className="text-4xl font-bold tracking-tight" style={{ color: '#1B5FAB' }}>
             Harvist
           </h1>
-          <p className="mt-2 text-base text-gray-500">
+          <p className="mt-2 text-base text-gray-500 dark:text-gray-400">
             Automatización inteligente de contenido para e-commerce
           </p>
         </div>
@@ -144,7 +144,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         <button
           type="button"
           onClick={onSelectFotos}
-          className="group flex flex-col gap-5 rounded-2xl border-2 border-gray-200 bg-white p-6 text-left shadow-sm transition-all duration-200 hover:border-blue-400 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          className="group flex flex-col gap-5 rounded-2xl border-2 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-6 text-left shadow-sm transition-all duration-200 hover:border-blue-400 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
           aria-label="Seleccionar modo de búsqueda de imágenes"
         >
           <div
@@ -155,10 +155,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           </div>
 
           <div className="flex flex-col gap-2 flex-1">
-            <h2 className="text-lg font-semibold text-gray-900 group-hover:text-blue-700 transition-colors duration-200">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 group-hover:text-blue-700 transition-colors duration-200">
               Búsqueda de Imágenes
             </h2>
-            <p className="text-sm text-gray-500 leading-relaxed">
+            <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
               Descarga masiva de imágenes de producto a partir de un CSV de inventario.
             </p>
           </div>
@@ -176,7 +176,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         <button
           type="button"
           onClick={onSelectDescripciones}
-          className="group flex flex-col gap-5 rounded-2xl border-2 border-gray-200 bg-white p-6 text-left shadow-sm transition-all duration-200 hover:border-green-400 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+          className="group flex flex-col gap-5 rounded-2xl border-2 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-6 text-left shadow-sm transition-all duration-200 hover:border-green-400 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
           aria-label="Seleccionar modo de generación de descripciones con IA"
         >
           <div
@@ -187,10 +187,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           </div>
 
           <div className="flex flex-col gap-2 flex-1">
-            <h2 className="text-lg font-semibold text-gray-900 group-hover:text-green-700 transition-colors duration-200">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 group-hover:text-green-700 transition-colors duration-200">
               Descripciones con IA
             </h2>
-            <p className="text-sm text-gray-500 leading-relaxed">
+            <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
               Genera descripciones SEO optimizadas para tus productos usando inteligencia artificial.
             </p>
           </div>
@@ -209,7 +209,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       <button
         type="button"
         onClick={onSelectHistorial}
-        className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-5 py-2.5 text-sm font-medium text-gray-600 shadow-sm transition-colors hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+        className="flex items-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-5 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-400 shadow-sm transition-colors hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
         aria-label="Ver historial de trabajos anteriores"
       >
         <ClockIcon className="h-4 w-4" />
