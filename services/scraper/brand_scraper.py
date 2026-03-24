@@ -53,6 +53,41 @@ _STOPWORDS: frozenset[str] = frozenset({
 
 _MIN_LONGITUD_PALABRA = 3
 
+# Palabras de tipo producto usadas en el paso 3 para filtrar el nombre del CSV.
+# Lo que quede tras este filtro (+ _STOPWORDS + _PALABRAS_COMERCIALES) es
+# candidato a ser la marca del producto.
+_PALABRAS_PRODUCTO: frozenset[str] = frozenset({
+    # Tipos de producto — mobiliario / accesorios
+    "cama", "collar", "correa", "jaula", "bebedero", "comedero", "arena",
+    "lecho", "funda", "nido", "manta", "cojin", "colchon", "hamaca",
+    "tunel", "rueda", "bola", "juguete", "rascador", "arenero", "transportin",
+    "arnes", "arnés", "bozal", "placa", "medalla", "visera", "molde",
+    "accesorio", "recambio", "complemento", "dispensador", "recipiente",
+    # Alimentación / salud
+    "alimento", "pienso", "snack", "comida", "croquetas", "galletas",
+    "pasta", "mezcla", "pellet", "granulo", "polvo", "aceite", "spray",
+    "vitamina", "suplemento", "antipulgas", "antiparasitario", "medicamento",
+    "shampoo", "champu", "desinfectante", "limpiador", "crema", "gel",
+    # Animales / especies
+    "perro", "gato", "ave", "pez", "conejo", "hamster", "cobaya",
+    "roedor", "reptil", "tortuga", "lagarto", "gecko", "boa", "serpiente",
+    "canario", "periquito", "loro", "agaporni", "ninfa", "cacatua",
+    "pajaro", "pájaro", "gatito", "cachorro", "mascota", "insecto",
+    "grillo", "gusano", "lombriz", "saltamontes",
+    # Adjetivos descriptivos / talla / calidad
+    "pequeño", "pequeña", "grande", "mediano", "mediana", "mini", "maxi",
+    "micro", "nano", "extra", "super", "ultra", "natural", "ecologico",
+    "organico", "premium", "classic", "basic", "pro", "plus", "deluxe",
+    "junior", "adult", "adulto", "senior", "puppy", "kitten", "macho",
+    "hembra", "esterilizado", "esterilizada",
+    # Materiales
+    "madera", "plastico", "metal", "tela", "nylon", "papel", "paper",
+    "cuero", "goma", "silicona", "acero", "inox", "aluminio", "cristal",
+    # Unidades / medidas genéricas
+    "gramos", "kilogramo", "litros", "unidades", "unid", "metros",
+    "centimetros", "bolsa", "saco", "caja", "bote", "tubo",
+})
+
 # Número de resultados de Bing a analizar
 _NUM_RESULTADOS = 6
 
@@ -268,11 +303,16 @@ class EanBrandResolver:
         """
         Extrae la marca más probable del nombre del producto del CSV.
 
-        Aplica la misma lógica de frecuencia de unigramas que el fallback de
-        títulos, pero sobre el nombre del producto. Útil cuando Bing no devuelve
-        resultados o los resultados no permiten identificar la marca.
+        Filtra stopwords, palabras comerciales y palabras de tipo producto
+        (categorías de animales, materiales, tallas, etc.). Lo que quede
+        es candidato a ser la marca — puede estar en cualquier posición
+        del nombre, no solo al principio.
 
-        Omite prefijos numéricos habituales en los nombres (ej. "36-Crispy…").
+        Si quedan varios candidatos, gana el más largo (los nombres de marca
+        son habitualmente más "inusuales" que los descriptores comunes y
+        suelen tener más caracteres).
+
+        Omite prefijos numéricos habituales (ej. "36-Crispy…").
 
         Args:
             nombre_producto: nombre del producto tal como aparece en el CSV.
@@ -286,7 +326,7 @@ class EanBrandResolver:
         # Eliminar prefijo numérico tipo "36-" o "101-"
         nombre_limpio = re.sub(r"^\d+[\-\s]+", "", nombre_producto).strip()
 
-        tokens: list[str] = []
+        candidatos: list[str] = []
         for parte in re.split(r"[\s\-|/,.:;()\"']+", nombre_limpio):
             limpia = re.sub(r"[^\w]", "", parte, flags=re.UNICODE).strip()
             tok = limpia.lower()
@@ -295,16 +335,16 @@ class EanBrandResolver:
                 and not limpia.isdigit()
                 and tok not in _PALABRAS_COMERCIALES
                 and tok not in _STOPWORDS
+                and tok not in _PALABRAS_PRODUCTO
             ):
-                tokens.append(tok)
+                candidatos.append(limpia)
 
-        if not tokens:
+        if not candidatos:
             return ""
 
-        # La palabra menos frecuente en el vocabulario general suele ser la marca.
-        # Como heurística simple usamos la primera palabra del nombre limpio
-        # (las marcas tienden a encabezar el nombre del producto en catálogos).
-        return tokens[0].title()
+        # Preferir la palabra más larga: los nombres de marca tienden a ser
+        # más "únicos" que los descriptores comunes y suelen tener más letras.
+        return max(candidatos, key=len).title()
 
     @staticmethod
     def _extraer_de_titulos(titulos: list[str]) -> str:
