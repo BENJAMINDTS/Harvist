@@ -262,14 +262,14 @@ export const CsvUploader: React.FC<CsvUploaderProps> = ({ onFileSelected }) => {
 
   const dropZoneStateClasses: Record<UploaderState, string> = {
     idle:
-      "border-gray-300 bg-gray-50 hover:border-blue-400 hover:bg-blue-50 " +
-      "text-gray-500",
+      "border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950 " +
+      "text-gray-500 dark:text-gray-400",
     dragover:
-      "border-blue-500 bg-blue-50 text-blue-700 scale-[1.01]",
+      "border-blue-500 bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-400 scale-[1.01]",
     selected:
-      "border-green-400 bg-green-50 text-green-700 cursor-default",
+      "border-green-400 dark:border-green-700 bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-400 cursor-default",
     error:
-      "border-red-400 bg-red-50 text-red-700",
+      "border-red-400 dark:border-red-700 bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-400",
   };
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -315,16 +315,16 @@ export const CsvUploader: React.FC<CsvUploaderProps> = ({ onFileSelected }) => {
         {uploaderState === "idle" && (
           <div className="flex flex-col items-center gap-3 p-6 text-center">
             <UploadIcon className="w-10 h-10 text-gray-400" />
-            <p className="text-sm font-medium text-gray-700">
+            <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
               Arrastra tu archivo CSV aquí
             </p>
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-gray-400 dark:text-gray-500">
               o haz{" "}
               <span className="font-semibold text-blue-500 underline underline-offset-2">
                 clic para seleccionar
               </span>
             </p>
-            <p className="text-xs text-gray-400">Solo archivos .csv</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500">Solo archivos .csv</p>
           </div>
         )}
 
@@ -344,12 +344,12 @@ export const CsvUploader: React.FC<CsvUploaderProps> = ({ onFileSelected }) => {
             <CheckCircleIcon className="w-10 h-10 text-green-500" />
             <div className="flex flex-col gap-1">
               <p
-                className="text-sm font-semibold text-green-800 break-all max-w-xs sm:max-w-sm"
+                className="text-sm font-semibold text-green-800 dark:text-green-300 break-all max-w-xs sm:max-w-sm"
                 title={selectedFile.name}
               >
                 {selectedFile.name}
               </p>
-              <p className="text-xs text-green-600">
+              <p className="text-xs text-green-600 dark:text-green-400">
                 {formatFileSize(selectedFile.size)}
               </p>
             </div>
@@ -361,8 +361,8 @@ export const CsvUploader: React.FC<CsvUploaderProps> = ({ onFileSelected }) => {
               }}
               className={
                 "mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md " +
-                "text-xs font-medium text-green-700 bg-white border border-green-300 " +
-                "hover:bg-green-100 transition-colors duration-150 " +
+                "text-xs font-medium text-green-700 dark:text-green-400 bg-white dark:bg-gray-800 border border-green-300 dark:border-green-700 " +
+                "hover:bg-green-100 dark:hover:bg-green-950 transition-colors duration-150 " +
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
               }
               aria-label="Eliminar el archivo seleccionado y volver a elegir"
@@ -392,8 +392,8 @@ export const CsvUploader: React.FC<CsvUploaderProps> = ({ onFileSelected }) => {
               }}
               className={
                 "mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md " +
-                "text-xs font-medium text-red-700 bg-white border border-red-300 " +
-                "hover:bg-red-100 transition-colors duration-150 " +
+                "text-xs font-medium text-red-700 dark:text-red-400 bg-white dark:bg-gray-800 border border-red-300 dark:border-red-700 " +
+                "hover:bg-red-100 dark:hover:bg-red-950 transition-colors duration-150 " +
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
               }
               aria-label="Intentar de nuevo con otro archivo"
