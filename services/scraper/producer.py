@@ -401,7 +401,11 @@ class GoogleEANEnricher:
     """
 
     _URL_BUSQUEDA: str = "https://www.google.com/search?q=%22{ean}%22"
-    _SELECTOR_TITULOS: str = "h3"
+    # #rso = Google Results Section Organizer: selector estable que acota
+    # los h3 a los títulos de resultados reales, evitando los tabs de
+    # navegación ("Imágenes", "Vídeos"...) que también son h3.
+    _SELECTOR_ESPERAR: str = "#rso"
+    _SELECTOR_TITULOS: str = "#rso h3"
     _NUM_RESULTADOS: int = 4
     _NUM_PALABRAS_QUERY: int = 5
 
@@ -439,9 +443,11 @@ class GoogleEANEnricher:
 
         try:
             driver.get(url)
+            # Esperar a #rso (Results Section Organizer) garantiza que los
+            # resultados reales están cargados, no solo los tabs de navegación.
             WebDriverWait(driver, settings.browser_timeout).until(
                 EC.presence_of_element_located(
-                    (By.CSS_SELECTOR, self._SELECTOR_TITULOS)
+                    (By.CSS_SELECTOR, self._SELECTOR_ESPERAR)
                 )
             )
         except TimeoutException:
@@ -466,7 +472,10 @@ class GoogleEANEnricher:
         frecuencia: Counter[str] = Counter()
         for titulo in textos:
             for palabra_raw in titulo.lower().split():
-                palabra = re.sub(r"[^a-záéíóúüñ0-9]", "", palabra_raw)
+                # re.UNICODE preserva letras de cualquier idioma europeo
+                # (polaco ą/ę/ż, alemán ä/ö/ü, etc.) evitando mutilar
+                # nombres de producto que vengan en idioma del fabricante.
+                palabra = re.sub(r"[^\w]", "", palabra_raw, flags=re.UNICODE)
                 if (
                     len(palabra) > 2
                     and palabra not in self._PALABRAS_RUIDO
@@ -676,8 +685,12 @@ def buscar_urls_imagenes(
             if query_enriquecida:
                 query_efectiva = query_enriquecida
             else:
+                # Fallback: EAN sin comillas. Las comillas las entiende Google
+                # pero motores como Bing las ignoran; el EAN desnudo da más
+                # posibilidades de coincidencia parcial que el EAN entre comillas.
+                query_efectiva = producto.ean
                 logger.warning(
-                    "EAN enrichment sin resultado, usando EAN como fallback",
+                    "EAN enrichment sin resultado, usando EAN desnudo como fallback",
                     extra={"codigo": producto.codigo, "ean": producto.ean},
                 )
 
