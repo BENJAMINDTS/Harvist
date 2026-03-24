@@ -163,7 +163,7 @@ const App: React.FC = () => {
                 Harvist
               </span>
               <span className="block text-xs text-gray-400 leading-tight">
-                by NS
+                by NubiumSoltions
               </span>
             </div>
           </button>
