@@ -244,7 +244,7 @@ const ColumnSelect: React.FC<ColumnSelectProps> = ({
   hint,
 }) => (
   <div className="flex flex-col gap-1">
-    <label htmlFor={id} className="text-xs font-medium text-gray-700">
+    <label htmlFor={id} className="text-xs font-medium text-gray-700 dark:text-gray-300">
       {label}
       {required && <span className="text-red-500 ml-0.5">*</span>}
     </label>
@@ -253,8 +253,8 @@ const ColumnSelect: React.FC<ColumnSelectProps> = ({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       className={
-        "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 " +
-        "text-sm text-gray-800 " +
+        "w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 " +
+        "text-sm text-gray-800 dark:text-gray-100 " +
         "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent " +
         "transition-colors duration-150"
       }
@@ -268,7 +268,7 @@ const ColumnSelect: React.FC<ColumnSelectProps> = ({
         </option>
       ))}
     </select>
-    {hint && <p className="text-xs text-gray-400">{hint}</p>}
+    {hint && <p className="text-xs text-gray-400 dark:text-gray-500">{hint}</p>}
   </div>
 );
 
@@ -408,13 +408,13 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
       <div
         className={
           "flex items-center gap-3 px-4 py-3 rounded-lg " +
-          "bg-blue-50 border border-blue-200"
+          "bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800"
         }
         aria-label={`Archivo CSV seleccionado: ${fileName}`}
       >
         <DocumentIcon className="w-5 h-5 text-blue-500 shrink-0" />
         <div className="flex flex-col min-w-0">
-          <span className="text-xs font-medium text-blue-500 uppercase tracking-wide">
+          <span className="text-xs font-medium text-blue-500 dark:text-blue-400 uppercase tracking-wide">
             Archivo seleccionado
           </span>
           <span
@@ -429,13 +429,13 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
       {/* ── Selector de tipo de trabajo (oculto si tipoJobForzado está definido) ── */}
       {tipoJobForzado !== undefined ? (
         <div className="flex items-center gap-3" aria-label={`Tipo de trabajo: ${tipoJobForzado === 'fotos' ? 'Descargar fotos' : 'Generar descripciones'}`}>
-          <span className="text-sm font-semibold text-gray-700">Tipo de trabajo:</span>
+          <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Tipo de trabajo:</span>
           <span
             className={
               "inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold border " +
               (tipoJobForzado === 'fotos'
-                ? "bg-blue-50 text-blue-700 border-blue-300"
-                : "bg-green-50 text-green-700 border-green-300")
+                ? "bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-400 border-blue-300 dark:border-blue-700"
+                : "bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-400 border-green-300 dark:border-green-800")
             }
             role="status"
           >
@@ -444,7 +444,7 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
         </div>
       ) : (
       <fieldset>
-        <legend className="text-sm font-semibold text-gray-700 mb-3">
+        <legend className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
           Tipo de trabajo
         </legend>
         <div className="flex flex-col gap-3 sm:flex-row">
@@ -463,8 +463,8 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
                   "transition-colors duration-150 select-none " +
                   "focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500 " +
                   (isSelected
-                    ? "border-blue-500 bg-blue-50"
-                    : "border-gray-200 bg-white hover:border-blue-300 hover:bg-blue-50/40")
+                    ? "border-blue-500 bg-blue-50 dark:bg-blue-950"
+                    : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 hover:border-blue-300 hover:bg-blue-50/40 dark:hover:border-blue-700 dark:hover:bg-blue-950/40")
                 }
               >
                 <input
@@ -477,20 +477,20 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
                 />
                 <div className="flex flex-col gap-1 w-full">
                   <div className="flex items-center justify-between gap-2">
-                    <span className={"text-sm font-semibold " + (isSelected ? "text-blue-700" : "text-gray-800")}>
+                    <span className={"text-sm font-semibold " + (isSelected ? "text-blue-700 dark:text-blue-400" : "text-gray-800 dark:text-gray-200")}>
                       {titulo}
                     </span>
                     <span
                       aria-hidden="true"
                       className={
                         "w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center " +
-                        (isSelected ? "border-blue-500 bg-blue-500" : "border-gray-300 bg-white")
+                        (isSelected ? "border-blue-500 bg-blue-500" : "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800")
                       }
                     >
                       {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
                     </span>
                   </div>
-                  <p className={"text-xs leading-snug " + (isSelected ? "text-blue-600" : "text-gray-500")}>
+                  <p className={"text-xs leading-snug " + (isSelected ? "text-blue-600 dark:text-blue-400" : "text-gray-500 dark:text-gray-400")}>
                     {descripcion}
                   </p>
                 </div>
@@ -503,7 +503,7 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
 
       {/* ── Selector de modo de búsqueda (solo fotos) ── */}
       {tipoJob === "fotos" && <fieldset>
-        <legend className="text-sm font-semibold text-gray-700 mb-3">
+        <legend className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
           Modo de búsqueda
         </legend>
         <div className="flex flex-col gap-3 sm:flex-row">
@@ -517,8 +517,8 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
                   "transition-colors duration-150 select-none " +
                   "focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500 " +
                   (isSelected
-                    ? "border-blue-500 bg-blue-50"
-                    : "border-gray-200 bg-white hover:border-blue-300 hover:bg-blue-50/40")
+                    ? "border-blue-500 bg-blue-50 dark:bg-blue-950"
+                    : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 hover:border-blue-300 hover:bg-blue-50/40 dark:hover:border-blue-700 dark:hover:bg-blue-950/40")
                 }
               >
                 <input
@@ -535,7 +535,7 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
                     <span
                       className={
                         "text-sm font-semibold " +
-                        (isSelected ? "text-blue-700" : "text-gray-800")
+                        (isSelected ? "text-blue-700 dark:text-blue-400" : "text-gray-800 dark:text-gray-200")
                       }
                     >
                       {titulo}
@@ -559,7 +559,7 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
                     id={`modo-desc-${valor}`}
                     className={
                       "text-xs leading-snug " +
-                      (isSelected ? "text-blue-600" : "text-gray-500")
+                      (isSelected ? "text-blue-600 dark:text-blue-400" : "text-gray-500 dark:text-gray-400")
                     }
                   >
                     {descripcion}
@@ -575,7 +575,7 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
           <div className="mt-4">
             <label
               htmlFor="query-personalizada"
-              className="block text-xs font-medium text-gray-600 mb-1.5"
+              className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5"
             >
               Plantilla de query
             </label>
@@ -586,8 +586,8 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
               onChange={(e) => setQueryPersonalizada(e.target.value)}
               placeholder="{nombre} {marca} {ean}"
               className={
-                "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 " +
-                "text-sm text-gray-800 placeholder-gray-400 " +
+                "w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 " +
+                "text-sm text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 " +
                 "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent " +
                 "transition-colors duration-150"
               }
@@ -595,14 +595,14 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
             />
             <p
               id="query-personalizada-hint"
-              className="mt-1.5 text-xs text-gray-400"
+              className="mt-1.5 text-xs text-gray-400 dark:text-gray-500"
             >
               Placeholders disponibles:{" "}
-              <code className="font-mono text-gray-600">{"{nombre}"}</code>,{" "}
-              <code className="font-mono text-gray-600">{"{marca}"}</code>,{" "}
-              <code className="font-mono text-gray-600">{"{ean}"}</code>,{" "}
-              <code className="font-mono text-gray-600">{"{codigo}"}</code>,{" "}
-              <code className="font-mono text-gray-600">{"{categoria}"}</code>
+              <code className="font-mono text-gray-600 dark:text-gray-400">{"{nombre}"}</code>,{" "}
+              <code className="font-mono text-gray-600 dark:text-gray-400">{"{marca}"}</code>,{" "}
+              <code className="font-mono text-gray-600 dark:text-gray-400">{"{ean}"}</code>,{" "}
+              <code className="font-mono text-gray-600 dark:text-gray-400">{"{codigo}"}</code>,{" "}
+              <code className="font-mono text-gray-600 dark:text-gray-400">{"{categoria}"}</code>
             </p>
           </div>
         )}
@@ -612,11 +612,11 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
 
       {/* ── Mapeo de columnas ── */}
       {csvHeaders.length > 0 && (
-        <fieldset className="rounded-xl border border-gray-200 bg-white p-4">
-          <legend className="text-sm font-semibold text-gray-700 px-1">
+        <fieldset className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
+          <legend className="text-sm font-semibold text-gray-700 dark:text-gray-300 px-1">
             Mapeo de columnas
           </legend>
-          <p className="text-xs text-gray-500 mt-1 mb-4">
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 mb-4">
             Indica qué columna de tu CSV corresponde a cada campo.
             La detección automática ya ha pre-seleccionado las más probables.
           </p>
@@ -753,8 +753,8 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
 
       {/* ── Configuración IA (solo descripciones) ── */}
       {tipoJob === "descripciones" && (
-        <fieldset className="rounded-xl border border-gray-200 bg-white p-4 flex flex-col gap-4">
-          <legend className="text-sm font-semibold text-gray-700 px-1">
+        <fieldset className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4 flex flex-col gap-4">
+          <legend className="text-sm font-semibold text-gray-700 dark:text-gray-300 px-1">
             Configuración de IA
           </legend>
 
@@ -762,7 +762,7 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
           <div className="flex flex-col gap-1">
             <label
               htmlFor="groq-api-key"
-              className="text-xs font-medium text-gray-700"
+              className="text-xs font-medium text-gray-700 dark:text-gray-300"
             >
               API Key de Groq
             </label>
@@ -773,17 +773,17 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
               onChange={(e) => setGroqApiKey(e.target.value)}
               placeholder="gsk_..."
               className={
-                "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 " +
-                "text-sm text-gray-800 placeholder-gray-400 font-mono " +
+                "w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 " +
+                "text-sm text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 font-mono " +
                 "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent " +
                 "transition-colors duration-150"
               }
               aria-describedby="groq-api-key-hint"
             />
-            <p id="groq-api-key-hint" className="text-xs text-gray-400">
+            <p id="groq-api-key-hint" className="text-xs text-gray-400 dark:text-gray-500">
               Opcional — si no la introduces se usa la configurada en el servidor.
               Obtenla en{" "}
-              <span className="font-mono text-gray-500">console.groq.com</span>
+              <span className="font-mono text-gray-500 dark:text-gray-400">console.groq.com</span>
             </p>
           </div>
 
@@ -791,7 +791,7 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
           <div className="flex flex-col gap-1">
             <label
               htmlFor="store-type"
-              className="text-xs font-medium text-gray-700"
+              className="text-xs font-medium text-gray-700 dark:text-gray-300"
             >
               Tipo de tienda
             </label>
@@ -802,14 +802,14 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
               onChange={(e) => setStoreType(e.target.value)}
               placeholder="tiendas de mascotas"
               className={
-                "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 " +
-                "text-sm text-gray-800 placeholder-gray-400 " +
+                "w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 " +
+                "text-sm text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 " +
                 "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent " +
                 "transition-colors duration-150"
               }
               aria-describedby="store-type-hint"
             />
-            <p id="store-type-hint" className="text-xs text-gray-400">
+            <p id="store-type-hint" className="text-xs text-gray-400 dark:text-gray-500">
               Define el sector en el que trabaja el copywriter de IA.
               Ejemplos: <em>tiendas de mascotas</em>, <em>ferreterías</em>, <em>ropa deportiva</em>.
               Vacío = usa el valor del servidor.
@@ -823,7 +823,7 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
         <div className="flex items-center justify-between mb-3">
           <label
             htmlFor="imagenes-slider"
-            className="text-sm font-semibold text-gray-700"
+            className="text-sm font-semibold text-gray-700 dark:text-gray-300"
           >
             Imágenes por producto
           </label>
@@ -836,8 +836,8 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
             onChange={(e) => handleImagenesChange(parseInt(e.target.value, 10))}
             aria-label="Número exacto de imágenes por producto"
             className={
-              "w-16 rounded-lg border border-gray-300 bg-white px-2 py-1 " +
-              "text-sm text-center text-gray-800 font-semibold " +
+              "w-16 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 " +
+              "text-sm text-center text-gray-800 dark:text-gray-100 font-semibold " +
               "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent " +
               "transition-colors duration-150 [appearance:textfield] " +
               "[&::-webkit-outer-spin-button]:appearance-none " +
@@ -860,7 +860,7 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
           aria-label={`Imágenes por producto: ${imagenesPorProducto}`}
           className={
             "w-full h-2 rounded-full appearance-none cursor-pointer " +
-            "bg-gray-200 accent-blue-500 " +
+            "bg-gray-200 dark:bg-gray-700 accent-blue-500 " +
             "focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
           }
         />
@@ -870,8 +870,8 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
           className="flex justify-between mt-1"
           aria-hidden="true"
         >
-          <span className="text-xs text-gray-400">{MIN_IMAGENES}</span>
-          <span className="text-xs text-gray-400">{MAX_IMAGENES}</span>
+          <span className="text-xs text-gray-400 dark:text-gray-500">{MIN_IMAGENES}</span>
+          <span className="text-xs text-gray-400 dark:text-gray-500">{MAX_IMAGENES}</span>
         </div>
       </div>}
 
@@ -884,8 +884,8 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
           disabled={launching}
           className={
             "inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg " +
-            "text-sm font-medium text-gray-700 bg-white border border-gray-300 " +
-            "hover:bg-gray-50 transition-colors duration-150 " +
+            "text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 " +
+            "hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-150 " +
             "focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-gray-400 " +
             "disabled:opacity-50 disabled:cursor-not-allowed"
           }
