@@ -88,9 +88,9 @@ class EanBrandResolver:
     :author: BenjaminDTS
     """
 
-    # Búsqueda exacta: las comillas dobles fuerzan coincidencia literal del EAN y se añade
-    # "marca" para sesgar los resultados hacia páginas que mencionan el fabricante.
-    _URL_BUSQUEDA: str = "https://www.bing.com/search?q={query}+marca"
+    # Búsqueda exacta con resultados en español para evitar páginas en otros idiomas.
+    # setlang=es&cc=ES fuerzan el idioma y el mercado a España.
+    _URL_BUSQUEDA: str = "https://www.bing.com/search?q={query}&setlang=es&cc=ES"
     _SELECTOR_RESULTADOS: str = "#b_results"
     _SELECTOR_TITULOS: str = "li.b_algo h2"
     # Selectores del banner de consentimiento de cookies de Bing
@@ -189,15 +189,37 @@ class EanBrandResolver:
         return resultado
 
     @staticmethod
+    def _tokenizar_titulo(titulo: str) -> list[str]:
+        """
+        Tokeniza un título en palabras candidatas (sin stopwords ni nums).
+
+        Args:
+            titulo: título de un resultado de Bing.
+
+        Returns:
+            Lista ordenada de tokens válidos del título.
+        """
+        tokens: list[str] = []
+        for parte in re.split(r"[\s\-|/,.:;()\"']+", titulo):
+            limpia = re.sub(r"[^\w]", "", parte, flags=re.UNICODE).strip()
+            if (
+                len(limpia) >= _MIN_LONGITUD_PALABRA
+                and not limpia.isdigit()
+                and limpia.lower() not in _PALABRAS_COMERCIALES
+                and limpia.lower() not in _STOPWORDS
+            ):
+                tokens.append(limpia)
+        return tokens
+
+    @staticmethod
     def _extraer_marca(titulos: list[str]) -> str:
         """
         Extrae la marca más probable a partir de los títulos de resultados de Bing.
 
-        Para cada título construye un conjunto de palabras candidatas (sin repetición
-        dentro del mismo título). Luego cuenta en cuántos títulos distintos aparece
-        cada palabra: las marcas aparecen en todos los resultados de forma consistente,
-        mientras que palabras genéricas de producto tienden a concentrarse en uno o
-        pocos títulos. En caso de empate se usa la frecuencia bruta como desempate.
+        Genera candidatos de 1, 2 y 3 palabras (n-gramas) por título y puntúa
+        cada candidato según en cuántos títulos distintos aparece.  Prefiere
+        los candidatos más largos para detectar marcas de varias palabras
+        (Royal Canin, Animal Vivo, Holland Cova, etc.).
 
         Args:
             titulos: lista de títulos de resultados de Bing.
@@ -205,34 +227,34 @@ class EanBrandResolver:
         Returns:
             La marca detectada en Title Case, o cadena vacía si no hay candidato.
         """
-        # palabras_por_titulo[i] = set de palabras candidatas del título i
-        palabras_por_titulo: list[set[str]] = []
+        presencia: Counter[str] = Counter()
 
         for titulo in titulos:
-            palabras_titulo: set[str] = set()
-            palabras_crudas = re.split(r"[\s\-|/,.:;()\"']+", titulo)
-            for palabra in palabras_crudas:
-                limpia = re.sub(r"[^\w]", "", palabra, flags=re.UNICODE).strip()
-                if (
-                    len(limpia) >= _MIN_LONGITUD_PALABRA
-                    and not limpia.isdigit()
-                    and limpia.lower() not in _PALABRAS_COMERCIALES
-                    and limpia.lower() not in _STOPWORDS
-                ):
-                    palabras_titulo.add(limpia.lower())
-            if palabras_titulo:
-                palabras_por_titulo.append(palabras_titulo)
+            tokens = EanBrandResolver._tokenizar_titulo(titulo)
+            vistos_en_titulo: set[str] = set()
 
-        if not palabras_por_titulo:
+            for i, tok in enumerate(tokens):
+                # Unigramas
+                candidatos = [tok.lower()]
+                # Bigramas
+                if i + 1 < len(tokens):
+                    candidatos.append(f"{tok} {tokens[i + 1]}".lower())
+                # Trigramas
+                if i + 2 < len(tokens):
+                    candidatos.append(f"{tok} {tokens[i + 1]} {tokens[i + 2]}".lower())
+
+                for cand in candidatos:
+                    if cand not in vistos_en_titulo:
+                        vistos_en_titulo.add(cand)
+                        presencia[cand] += 1
+
+        if not presencia:
             return ""
 
-        # Contar en cuántos títulos distintos aparece cada palabra.
-        # La marca aparece de forma consistente en todos los resultados.
-        presencia: Counter[str] = Counter(
-            palabra
-            for palabras in palabras_por_titulo
-            for palabra in palabras
+        # Ordenar por: (presencia desc, longitud desc) para preferir marcas
+        # multi-palabra cuando tienen la misma presencia que un unigrama.
+        mejor = max(
+            presencia.items(),
+            key=lambda kv: (kv[1], len(kv[0].split())),
         )
-
-        candidata, _ = presencia.most_common(1)[0]
-        return candidata.title()
+        return mejor[0].title()
