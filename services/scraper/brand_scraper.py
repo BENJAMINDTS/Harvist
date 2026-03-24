@@ -14,12 +14,13 @@ Estrategia en cascada (se detiene en cuanto encuentra la marca):
   puede ayudar y el producto se devuelve inmediatamente como no resoluble.
   No tiene sentido buscar en Bing un código que no es un EAN real.
 
-  2. Visita Selenium de las primeras URLs de Bing — usa el mismo driver ya
-     abierto para visitar la página del producto. Al ser un navegador real
-     evita el bloqueo anti-bot que sufre `requests`. Extrae la marca de:
+  2. requests a las primeras URLs de Bing — descarga la página del producto
+     con cabeceras de navegador completas (User-Agent, Referer, Accept,
+     Sec-Fetch-*) para evitar el bloqueo anti-bot. Extrae la marca de:
        a) JSON-LD Schema.org  `{"@type":"Product","brand":{"name":"X"}}`
        b) `itemprop="brand"` (microdata)
-       c) `og:site_name` (meta Open Graph)
+       c) `og:site_name` (meta Open Graph — fiable cuando el primer
+          resultado es la web del fabricante, no un marketplace)
        d) Título de página  "Nombre producto - Marca"
        e) Patrón "Marca: X" en el HTML
 
@@ -28,7 +29,7 @@ Estrategia en cascada (se detiene en cuanto encuentra la marca):
   4. Frecuencia de unigramas en títulos de Bing — último recurso estadístico.
 
 :author: BenjaminDTS
-:version: 7.0.0
+:version: 8.0.0
 """
 
 from __future__ import annotations
@@ -53,10 +54,9 @@ from api.core.config import get_settings
 # ── Constantes ────────────────────────────────────────────────────────────────
 
 _NUM_RESULTADOS = 6
-_MAX_URLS_PASO2 = 2          # URLs a visitar con Selenium en el paso 2
+_MAX_URLS_PASO2 = 3          # URLs a descargar con requests en el paso 2
 _MIN_LONGITUD_PALABRA = 3
-_HTTP_TIMEOUT_S = 6
-_SELENIUM_PAGE_TIMEOUT_S = 8
+_HTTP_TIMEOUT_S = 8
 
 # APIs Open*Facts — misma estructura, distintas bases de datos.
 _OPEN_FACTS_APIS: tuple[str, ...] = (
@@ -84,6 +84,30 @@ _DOMINIOS_EXCLUIDOS = ("bing.com", "microsoft.com", "msn.com", "live.com")
 
 # Cabeceras HTTP para las llamadas a APIs (Open*Facts, UPC Item DB)
 _HEADERS_API = {"User-Agent": "Harvist/1.0"}
+
+# Cabeceras HTTP para descargar páginas de producto.
+# Imitan las de Chrome para evitar bloqueos anti-bot (403/429).
+_HEADERS_HTTP = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": (
+        "text/html,application/xhtml+xml,application/xml;"
+        "q=0.9,image/avif,image/webp,*/*;q=0.8"
+    ),
+    "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Referer": "https://www.bing.com/",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "cross-site",
+    "Sec-Fetch-User": "?1",
+    "DNT": "1",
+}
 
 # Separadores "Nombre producto <sep> Marca" en títulos de página de e-commerce
 _SEPARADORES_TITULO: tuple[str, ...] = (" - ", " | ", " – ", " · ", " — ")
@@ -261,16 +285,14 @@ class EanBrandResolver:
             )
             return resultado
 
-        # ── Paso 2: visita Selenium de las primeras URLs ──────────────────────
-        # Usamos el driver (navegador real) en lugar de requests para sortear
-        # la protección anti-bot de muchas tiendas online.
+        # ── Paso 2: descarga HTTP de las primeras URLs ────────────────────────
         for enlace in enlaces:
-            marca = self._extraer_de_pagina_con_driver(enlace, driver)
+            marca = self._extraer_de_pagina(enlace)
             if marca:
                 resultado.marca_detectada = marca
                 resultado.exitoso = True
                 logger.info(
-                    "Marca resuelta — página producto (Selenium)",
+                    "Marca resuelta — página producto",
                     extra={"codigo": codigo, "ean": ean, "marca": marca, "url": enlace},
                 )
                 return resultado
@@ -429,126 +451,118 @@ class EanBrandResolver:
         return hrefs
 
     @staticmethod
-    def _extraer_de_pagina_con_driver(url: str, driver: WebDriver) -> str:
+    def _extraer_de_pagina(url: str) -> str:
         """
-        Navega a la URL con el driver Selenium y extrae la marca de la página.
+        Descarga la página del producto con requests y extrae la marca.
 
-        Usar el driver en lugar de `requests` evita el bloqueo anti-bot y
-        permite obtener el HTML completo tras la ejecución de JavaScript.
+        Usa cabeceras de Chrome completas (Referer, Accept, Sec-Fetch-*) para
+        evitar bloqueos anti-bot. Extrae la marca con estos mecanismos en orden:
+          1. JSON-LD Schema.org ``{"@type":"Product","brand":{"name":"X"}}``
+          2. ``itemprop="brand"`` (microdata)
+          3. ``og:site_name`` (solo si el dominio parece del fabricante)
+          4. Título de página  "Nombre producto - Marca"
+          5. Patrón "Marca: X" en el HTML
 
         Args:
-            url: URL de la página del producto.
-            driver: WebDriver activo.
+            url: URL del resultado de Bing.
 
         Returns:
             Nombre de marca en Title Case, o cadena vacía si no se encuentra.
         """
         try:
-            driver.get(url)
-            WebDriverWait(driver, _SELENIUM_PAGE_TIMEOUT_S).until(
-                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            session = http_requests.Session()
+            session.headers.update(_HEADERS_HTTP)
+            resp = session.get(url, timeout=_HTTP_TIMEOUT_S, allow_redirects=True)
+            if not resp.ok:
+                return ""
+            html = resp.text
+
+            # ── 1. JSON-LD con @type Product ──────────────────────────────────
+            for ld_raw in re.findall(
+                r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+                html,
+                re.DOTALL | re.IGNORECASE,
+            ):
+                try:
+                    ld = json.loads(ld_raw.strip())
+                    items = ld if isinstance(ld, list) else [ld]
+                    for item in items:
+                        if not isinstance(item, dict):
+                            continue
+                        tipo = item.get("@type", "")
+                        if isinstance(tipo, list):
+                            tipo = " ".join(tipo)
+                        if "product" not in tipo.lower():
+                            continue
+                        brand = item.get("brand", {})
+                        if isinstance(brand, dict):
+                            nombre = brand.get("name", "")
+                        elif isinstance(brand, str):
+                            nombre = brand
+                        else:
+                            nombre = ""
+                        if nombre and nombre.strip():
+                            return nombre.strip().title()
+                except (json.JSONDecodeError, AttributeError, TypeError):
+                    continue
+
+            # ── 2. itemprop="brand" ───────────────────────────────────────────
+            m = re.search(
+                r'itemprop=["\']brand["\'][^>]*>(?:<[^>]+>)*([^<]{2,40})',
+                html,
+                re.IGNORECASE,
             )
-            time.sleep(0.5)   # margen para que el JS inicialice el JSON-LD
-            return EanBrandResolver._extraer_marca_de_html(driver.page_source)
-        except Exception as exc:  # noqa: BLE001
-            logger.debug(
-                "Error en visita Selenium de página",
-                exc_info=exc,
-                extra={"url": url},
-            )
-            return ""
+            if m:
+                valor = m.group(1).strip()
+                if valor:
+                    return valor.title()
 
-    @staticmethod
-    def _extraer_marca_de_html(html: str) -> str:
-        """
-        Extrae el nombre de marca de un HTML de página de producto.
+            # ── 3. og:site_name ───────────────────────────────────────────────
+            # Solo fiable cuando el dominio de la URL pertenece al fabricante.
+            # Se descarta si parece un marketplace conocido.
+            _MARKETPLACES = frozenset({
+                "amazon", "ebay", "zooplus", "aliexpress", "walmart",
+                "pccomponentes", "mediamarkt", "fnac", "elcorteingles",
+                "carrefour", "mercadolibre", "rakuten",
+            })
+            dominio = url.split("/")[2].lower().replace("www.", "")
+            es_marketplace = any(m_ in dominio for m_ in _MARKETPLACES)
+            if not es_marketplace:
+                for patron_og in (
+                    r'<meta[^>]+property=["\']og:site_name["\'][^>]+content=["\']([^"\']{2,50})["\']',
+                    r'<meta[^>]+content=["\']([^"\']{2,50})["\'][^>]+property=["\']og:site_name["\']',
+                ):
+                    m = re.search(patron_og, html, re.IGNORECASE)
+                    if m:
+                        valor = m.group(1).strip()
+                        palabras = valor.split()
+                        if 1 <= len(palabras) <= 4 and not any(p.isdigit() for p in palabras):
+                            return valor.title()
 
-        Orden de preferencia:
-          1. JSON-LD Schema.org  ``{"@type":"Product","brand":{"name":"X"}}``
-          2. ``itemprop="brand"`` (microdata)
-          3. ``og:site_name`` (meta Open Graph)
-          4. Título de página  "Nombre producto - Marca"
-          5. Patrón "Marca: X" en el HTML
+            # ── 4. Título de página "Producto - Marca" ────────────────────────
+            m = re.search(r'<title[^>]*>([^<]{5,150})</title>', html, re.IGNORECASE)
+            if m:
+                titulo_pag = _html_lib.unescape(m.group(1)).strip()
+                for sep in _SEPARADORES_TITULO:
+                    partes = titulo_pag.rsplit(sep, 1)
+                    if len(partes) == 2:
+                        candidato = partes[1].strip()
+                        palabras = candidato.split()
+                        if 1 <= len(palabras) <= 4 and not any(
+                            c.isdigit() for c in candidato
+                        ):
+                            return candidato.title()
 
-        Args:
-            html: contenido HTML completo de la página.
-
-        Returns:
-            Nombre de marca en Title Case, o cadena vacía si no se encuentra.
-        """
-        # ── 1. JSON-LD con @type Product ──────────────────────────────────────
-        for ld_raw in re.findall(
-            r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
-            html,
-            re.DOTALL | re.IGNORECASE,
-        ):
-            try:
-                ld = json.loads(ld_raw.strip())
-                items = ld if isinstance(ld, list) else [ld]
-                for item in items:
-                    if not isinstance(item, dict):
-                        continue
-                    tipo = item.get("@type", "")
-                    if isinstance(tipo, list):
-                        tipo = " ".join(tipo)
-                    if "product" not in tipo.lower():
-                        continue
-                    brand = item.get("brand", {})
-                    if isinstance(brand, dict):
-                        nombre = brand.get("name", "")
-                    elif isinstance(brand, str):
-                        nombre = brand
-                    else:
-                        nombre = ""
-                    if nombre and nombre.strip():
-                        return nombre.strip().title()
-            except (json.JSONDecodeError, AttributeError, TypeError):
-                continue
-
-        # ── 2. itemprop="brand" ───────────────────────────────────────────────
-        m = re.search(
-            r'itemprop=["\']brand["\'][^>]*>(?:<[^>]+>)*([^<]{2,40})',
-            html,
-            re.IGNORECASE,
-        )
-        if m:
-            valor = m.group(1).strip()
-            if valor:
-                return valor.title()
-
-        # ── 3. og:site_name ───────────────────────────────────────────────────
-        for patron_og in (
-            r'<meta[^>]+property=["\']og:site_name["\'][^>]+content=["\']([^"\']{2,50})["\']',
-            r'<meta[^>]+content=["\']([^"\']{2,50})["\'][^>]+property=["\']og:site_name["\']',
-        ):
-            m = re.search(patron_og, html, re.IGNORECASE)
+            # ── 5. "Marca: X" en el HTML de la página ────────────────────────
+            m = re.search(_PATRON_MARCA, html)
             if m:
                 valor = m.group(1).strip()
                 palabras = valor.split()
                 if 1 <= len(palabras) <= 4 and not any(p.isdigit() for p in palabras):
                     return valor.title()
 
-        # ── 4. Título de página "Producto - Marca" ────────────────────────────
-        m = re.search(r'<title[^>]*>([^<]{5,150})</title>', html, re.IGNORECASE)
-        if m:
-            titulo_pag = _html_lib.unescape(m.group(1)).strip()
-            for sep in _SEPARADORES_TITULO:
-                partes = titulo_pag.rsplit(sep, 1)
-                if len(partes) == 2:
-                    candidato = partes[1].strip()
-                    palabras = candidato.split()
-                    if 1 <= len(palabras) <= 4 and not any(
-                        c.isdigit() for c in candidato
-                    ):
-                        return candidato.title()
-
-        # ── 5. "Marca: X" en el HTML de la página ────────────────────────────
-        m = re.search(_PATRON_MARCA, html)
-        if m:
-            valor = m.group(1).strip()
-            palabras = valor.split()
-            if 1 <= len(palabras) <= 4 and not any(p.isdigit() for p in palabras):
-                return valor.title()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Error extrayendo marca de página", exc_info=exc, extra={"url": url})
 
         return ""
 
