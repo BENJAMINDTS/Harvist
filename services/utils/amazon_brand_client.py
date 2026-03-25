@@ -75,6 +75,16 @@ _BRAND_SPAN_PATTERN: re.Pattern[str] = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+# Cadenas que indican que Amazon no encontró el EAN buscado.
+# En ese caso muestra productos patrocinados/sugeridos que no corresponden
+# al EAN — devolver cualquier marca de esa página sería un falso positivo.
+_NO_RESULTS_MARKERS: tuple[str, ...] = (
+    "no hay resultados para tu consulta",
+    "no results for",
+    "did not match any products",
+    "no coincide con ningún producto",
+)
+
 # Selector para la marca en el listado (fallback STEP C)
 _LISTING_BRAND_PATTERN: re.Pattern[str] = re.compile(
     r'<span[^>]*class="[^"]*a-size-base-plus\s+a-color-base[^"]*"[^>]*>(.*?)</span>',
@@ -492,6 +502,13 @@ class AmazonBrandClient:
         if listing_html is None:
             logger.warning(
                 "AmazonBrandClient: no se pudo obtener el listado",
+                extra={"ean": ean},
+            )
+            return None
+
+        if any(m in listing_html.lower() for m in _NO_RESULTS_MARKERS):
+            logger.debug(
+                "AmazonBrandClient: página sin resultados — EAN no encontrado en Amazon",
                 extra={"ean": ean},
             )
             return None

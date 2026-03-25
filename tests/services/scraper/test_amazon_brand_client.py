@@ -141,6 +141,22 @@ class TestNoResultCases:
 
         assert result is None
 
+    def test_no_results_page_with_sponsored_products_returns_none(
+        self, client: AmazonBrandClient
+    ) -> None:
+        """Página 'sin resultados' con patrocinados visibles → None (falso positivo evitado)."""
+        no_results_html = (
+            "<html><body>"
+            "<span>No hay resultados para tu consulta de búsqueda.</span>"
+            '<div data-component-type="sp-sponsored-result" data-asin="B0CX999999">'
+            '<span class="a-size-base-plus a-color-base">Ruisun</span>'
+            "</div>"
+            "</body></html>"
+        )
+        with patch.object(client, "_get_listing_html", return_value=no_results_html):
+            result = client.lookup(_EAN_TEST)
+        assert result is None
+
     def test_network_error_all_retries_returns_none(self, client: AmazonBrandClient) -> None:
         """Errores de red en todos los reintentos → lookup devuelve None sin propagar excepción."""
         import httpx
