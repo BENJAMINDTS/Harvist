@@ -114,6 +114,15 @@ class Settings(BaseSettings):
         le=60,
         description="Timeout en segundos para las peticiones HTTP de resolución de marcas (Fase 6).",
     )
+    amazon_http_timeout: int = Field(
+        default=10,
+        ge=1,
+        le=60,
+        description=(
+            "Timeout en segundos para las peticiones HTTP de extracción "
+            "de marca desde Amazon.es (Fase 6 — AmazonBrandClient)."
+        ),
+    )
 
     # ── Scraper — motor de búsqueda ───────────────────────────────────────────
     search_engine: Literal["bing", "google", "duckduckgo"] = Field(

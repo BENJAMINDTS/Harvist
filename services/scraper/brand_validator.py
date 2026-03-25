@@ -46,6 +46,7 @@ class BrandResult(BaseModel):
     )
     source: Literal[
         "cache_gs1",
+        "amazon",
         "open_data_api",
         "google_dorking",
         "bing_search",

@@ -1,21 +1,26 @@
 """
-Resolución EAN → marca de producto mediante cascada de 6 niveles.
+Resolución EAN → marca de producto mediante cascada de 8 niveles.
 
 Orden estricto de la cascada (se detiene en cuanto obtiene un resultado):
 
   Nivel 1 → validate_ean_checksum()     → descarta EANs inválidos (ean_invalido)
   Nivel 2 → GS1PrefixCache.resolve()    → prefijos conocidos en memoria (cache_gs1)
-  Nivel 3 → Open Data APIs en cascada   → OpenPetFoodFacts → OpenFoodFacts → UPCItemDb
-             (open_data_api)
-  Nivel 4 → GoogleDorkClient.lookup()   → búsqueda web exacta en Google (google_dorking)
-  Nivel 5 → BingSearchClient.lookup()   → búsqueda web exacta en Bing (bing_search)
-  Nivel 6 → Resultado no encontrado     → (not_found)
+  Nivel 3 → AmazonBrandClient.lookup()  → ficha de producto en Amazon.es (amazon)
+  Nivel 4 → OpenPetFoodFacts            → bases de datos Open*Facts (open_data_api)
+  Nivel 5 → OpenFoodFacts               → bases de datos Open*Facts (open_data_api)
+  Nivel 6 → UPCItemDb                   → base de datos UPC genérica (open_data_api)
+  Nivel 7 → GoogleDorkClient.lookup()   → búsqueda web en Google (google_dorking)
+  Nivel 8 → BingSearchClient.lookup()   → búsqueda web en Bing (bing_search)
+  Nivel 9 → Resultado no encontrado     → (not_found)
 
 Aprendizaje automático de prefijos:
-  Cuando el Nivel 3, 4 o 5 resuelve un EAN con confianza "high" o "medium", el
+  Cuando los niveles 4-8 resuelven un EAN con confianza "high" o "medium", el
   resolver extrae el prefijo (primeros 7 dígitos) y lo registra en GS1PrefixCache
   para que futuros EANs del mismo fabricante se resuelvan en el Nivel 2 sin
   peticiones HTTP adicionales.
+  Para el Nivel 3 (Amazon), solo se aprende el prefijo cuando la confianza es
+  "high" (ficha de producto completa); los resultados con confianza "medium" no
+  se registran para evitar contaminación de la caché.
 
 Sin Selenium:
   Esta versión elimina por completo la dependencia de Selenium/WebDriver.
@@ -23,7 +28,7 @@ Sin Selenium:
   lo que simplifica la gestión de recursos y el uso en entornos Celery.
 
 :author: BenjaminDTS
-:version: 6.0.0
+:version: 7.0.0
 """
 
 from __future__ import annotations
@@ -35,6 +40,7 @@ from loguru import logger
 from api.core.config import get_settings
 from services.scraper.brand_cache import GS1PrefixCache
 from services.scraper.brand_validator import BrandResult, validate_ean_checksum
+from services.utils.amazon_brand_client import AmazonBrandClient
 from services.utils.ean_http_clients import (
     BingSearchClient,
     GoogleDorkClient,
@@ -59,7 +65,7 @@ _EAN_NUMERICO: re.Pattern[str] = re.compile(r"^\d{8,14}$")
 
 class EanBrandResolver:
     """
-    Orquestador de la cascada de 6 niveles para resolver EAN → marca.
+    Orquestador de la cascada de 8 niveles para resolver EAN → marca.
 
     Instanciar una vez por pipeline/job. La caché GS1 se comparte entre
     todas las resoluciones de la misma instancia, por lo que el aprendizaje
@@ -78,8 +84,9 @@ class EanBrandResolver:
         Inicializa el resolver con todos sus componentes.
 
         Los timeouts y reintentos se leen de Settings para evitar valores
-        hardcodeados. Pasar ``gs1_cache`` explícitamente es útil en tests
-        para inyectar una caché pre-poblada o vacía.
+        hardcodeados (``amazon_http_timeout`` y ``brand_http_timeout``).
+        Pasar ``gs1_cache`` explícitamente es útil en tests para inyectar
+        una caché pre-poblada o vacía.
 
         Args:
             gs1_cache: instancia de GS1PrefixCache. Si None, se crea una nueva
@@ -90,6 +97,7 @@ class EanBrandResolver:
         timeout = settings.brand_http_timeout
 
         self._cache = gs1_cache or GS1PrefixCache()
+        self._amazon = AmazonBrandClient(timeout=timeout)
         self._openpetfood = OpenPetFoodFactsClient(timeout=timeout)
         self._openfood = OpenFoodFactsClient(timeout=timeout)
         self._upcitemdb = UPCItemDbClient(timeout=timeout)
@@ -98,7 +106,7 @@ class EanBrandResolver:
 
     def resolver(self, codigo: str, ean: str) -> BrandResult:
         """
-        Ejecuta la cascada de 6 niveles para resolver un EAN a su marca.
+        Ejecuta la cascada de 8 niveles para resolver un EAN a su marca.
 
         La cascada se detiene en cuanto un nivel devuelve un resultado.
         Si ningún nivel tiene éxito, devuelve ``source="not_found"``.
@@ -152,21 +160,27 @@ class EanBrandResolver:
         if resultado:
             logger.info(
                 "EAN resuelto — Nivel 2 (caché GS1)",
-                extra={
-                    "codigo": codigo,
-                    "ean": ean_limpio,
-                    "brand": resultado.brand_name,
-                    "confidence": resultado.confidence,
-                },
+                extra={"codigo": codigo, "ean": ean_limpio, "brand": resultado.brand_name, "confidence": resultado.confidence},
             )
             return resultado
 
-        logger.debug(
-            "Nivel 2 sin resultado, escalando a Nivel 3 (Open Data)",
-            extra={"ean": ean_limpio},
-        )
+        logger.debug("Nivel 2 sin resultado, escalando a Nivel 3 (Amazon)", extra={"ean": ean_limpio})
 
-        # ── Nivel 3: APIs Open Data ───────────────────────────────────────────
+        # ── Nivel 3: Amazon.es ────────────────────────────────────────────────
+        resultado = self._amazon.lookup(ean_limpio)
+        if resultado:
+            logger.info(
+                "EAN resuelto — Nivel 3 (Amazon)",
+                extra={"codigo": codigo, "ean": ean_limpio, "brand": resultado.brand_name, "confidence": resultado.confidence},
+            )
+            # Only learn prefix from high-confidence Amazon results (product page)
+            if resultado.confidence == "high":
+                self._aprender_prefijo(ean_limpio, resultado)
+            return resultado
+
+        logger.debug("Nivel 3 sin resultado, escalando a Nivel 4 (Open Data)", extra={"ean": ean_limpio})
+
+        # ── Nivel 4-5-6: APIs Open Data ───────────────────────────────────────
         # Se consultan en orden de especificidad: primero la base de datos de
         # alimentos para mascotas, luego la general de alimentos, y por último
         # UPC Item DB para productos genéricos.
@@ -174,63 +188,41 @@ class EanBrandResolver:
             resultado = cliente.lookup(ean_limpio)
             if resultado:
                 logger.info(
-                    "EAN resuelto — Nivel 3 (Open Data API)",
-                    extra={
-                        "codigo": codigo,
-                        "ean": ean_limpio,
-                        "brand": resultado.brand_name,
-                        "client": type(cliente).__name__,
-                        "confidence": resultado.confidence,
-                    },
+                    "EAN resuelto — Nivel 4/5/6 (Open Data API)",
+                    extra={"codigo": codigo, "ean": ean_limpio, "brand": resultado.brand_name, "client": type(cliente).__name__, "confidence": resultado.confidence},
                 )
                 self._aprender_prefijo(ean_limpio, resultado)
                 return resultado
 
-        logger.warning(
-            "Nivel 3 sin resultado, escalando a Nivel 4 (Google Dorking)",
-            extra={"ean": ean_limpio},
-        )
+        logger.warning("Niveles 4-6 sin resultado, escalando a Nivel 7 (Google Dorking)", extra={"ean": ean_limpio})
 
-        # ── Nivel 4: búsqueda Google ──────────────────────────────────────────
+        # ── Nivel 7: búsqueda Google ──────────────────────────────────────────
         resultado = self._google.lookup(ean_limpio)
         if resultado:
             logger.info(
-                "EAN resuelto — Nivel 4 (Google Dorking)",
-                extra={
-                    "codigo": codigo,
-                    "ean": ean_limpio,
-                    "brand": resultado.brand_name,
-                    "confidence": resultado.confidence,
-                },
+                "EAN resuelto — Nivel 7 (Google Dorking)",
+                extra={"codigo": codigo, "ean": ean_limpio, "brand": resultado.brand_name, "confidence": resultado.confidence},
             )
             self._aprender_prefijo(ean_limpio, resultado)
             return resultado
 
-        logger.warning(
-            "Nivel 4 sin resultado, escalando a Nivel 5 (Bing Search)",
-            extra={"ean": ean_limpio},
-        )
+        logger.warning("Nivel 7 sin resultado, escalando a Nivel 8 (Bing Search)", extra={"ean": ean_limpio})
 
-        # ── Nivel 5: búsqueda Bing ────────────────────────────────────────────
+        # ── Nivel 8: búsqueda Bing ────────────────────────────────────────────
         resultado = self._bing.lookup(ean_limpio)
         if resultado:
             logger.info(
-                "EAN resuelto — Nivel 5 (Bing Search)",
-                extra={
-                    "codigo": codigo,
-                    "ean": ean_limpio,
-                    "brand": resultado.brand_name,
-                    "confidence": resultado.confidence,
-                },
+                "EAN resuelto — Nivel 8 (Bing Search)",
+                extra={"codigo": codigo, "ean": ean_limpio, "brand": resultado.brand_name, "confidence": resultado.confidence},
             )
             self._aprender_prefijo(ean_limpio, resultado)
             return resultado
 
-        # ── Nivel 6: not_found ────────────────────────────────────────────────
+        # ── Nivel 9: not_found ────────────────────────────────────────────────
         # El EAN existe y su dígito de control es válido, pero no pudo resolverse
         # en ninguna fuente disponible. Se marca como "fantasma".
         logger.info(
-            "EAN marcado como fantasma — Nivel 6 (not_found)",
+            "EAN marcado como fantasma — Nivel 9 (not_found)",
             extra={"codigo": codigo, "ean": ean_limpio},
         )
         return BrandResult(
@@ -245,9 +237,11 @@ class EanBrandResolver:
         """
         Registra en la caché GS1 el prefijo del EAN resuelto por un nivel superior.
 
-        Solo registra si la confianza es "high" (APIs Open Data) o "medium"
-        (≥2 títulos SERP concordantes) para evitar contaminar la caché con
-        inferencias poco fiables ("low").
+        Solo registra si la confianza es "high" o "medium", con la excepción
+        de Amazon (Nivel 3): para ese cliente solo se aprende cuando la confianza
+        es "high" (ficha de producto completa); los resultados "medium" de Amazon
+        no se registran para evitar contaminar la caché con inferencias ambiguas.
+        Los resultados con confianza "low" nunca se registran.
 
         El prefijo registrado tiene ``_PREFIJO_APRENDIZAJE_LEN`` dígitos
         (7 por defecto), que es específico para distinguir fabricantes pero

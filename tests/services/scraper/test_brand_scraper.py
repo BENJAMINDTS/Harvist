@@ -63,7 +63,7 @@ def resolver(mock_settings):
     empty_cache = GS1PrefixCache(seed_path="/nonexistent/empty_cache.json")
     with patch("services.scraper.brand_scraper.get_settings", return_value=mock_settings):
         r = EanBrandResolver(gs1_cache=empty_cache)
-    for attr in ("_openpetfood", "_openfood", "_upcitemdb", "_google", "_bing"):
+    for attr in ("_amazon", "_openpetfood", "_openfood", "_upcitemdb", "_google", "_bing"):
         m = MagicMock()
         m.lookup.return_value = None
         setattr(r, attr, m)
@@ -118,7 +118,7 @@ class TestNivel2CacheGS1:
         cache.register("8413037", "Amanova", "ES")
         with patch("services.scraper.brand_scraper.get_settings", return_value=mock_settings):
             r = EanBrandResolver(gs1_cache=cache)
-        for attr in ("_openpetfood", "_openfood", "_upcitemdb", "_google", "_bing"):
+        for attr in ("_amazon", "_openpetfood", "_openfood", "_upcitemdb", "_google", "_bing"):
             m = MagicMock()
             m.lookup.return_value = None
             setattr(r, attr, m)
@@ -140,7 +140,68 @@ class TestNivel2CacheGS1:
         resolver._openpetfood.lookup.assert_called_once_with(_EAN_AMANOVA)
 
 
-# ── Tests: Nivel 3 — APIs Open Data ──────────────────────────────────────────
+# ── Tests: Nivel 3 — Amazon ───────────────────────────────────────────────────
+
+
+class TestNivel3Amazon:
+    """Amazon.es (Nivel 3) se consulta cuando la caché GS1 no resuelve."""
+
+    def test_amazon_se_llama_despues_de_cache_gs1(self, resolver) -> None:
+        """Amazon se consulta cuando la caché GS1 no resuelve."""
+        resolver._amazon.lookup.return_value = BrandResult(
+            ean_code=_EAN_AMANOVA, brand_name="Amanova", source="amazon", confidence="high"
+        )
+        result = resolver.resolver("1", _EAN_AMANOVA)
+        resolver._amazon.lookup.assert_called_once_with(_EAN_AMANOVA)
+        assert result.source == "amazon"
+        assert result.brand_name == "Amanova"
+
+    def test_amazon_high_detiene_cascada(self, resolver) -> None:
+        """Amazon high confidence detiene la cascada — Open Data no se llama."""
+        resolver._amazon.lookup.return_value = BrandResult(
+            ean_code=_EAN_AMANOVA, brand_name="Amanova", source="amazon", confidence="high"
+        )
+        resolver.resolver("1", _EAN_AMANOVA)
+        resolver._openpetfood.lookup.assert_not_called()
+        resolver._openfood.lookup.assert_not_called()
+        resolver._upcitemdb.lookup.assert_not_called()
+
+    def test_amazon_none_escala_a_openpetfood(self, resolver) -> None:
+        """Si Amazon devuelve None, la cascada escala a OpenPetFoodFacts."""
+        resolver._amazon.lookup.return_value = None
+        resolver._openpetfood.lookup.return_value = BrandResult(
+            ean_code=_EAN_AMANOVA, brand_name="Amanova", source="open_data_api", confidence="high"
+        )
+        result = resolver.resolver("1", _EAN_AMANOVA)
+        resolver._amazon.lookup.assert_called_once()
+        resolver._openpetfood.lookup.assert_called_once()
+        assert result.source == "open_data_api"
+
+    def test_amazon_high_aprende_prefijo_en_cache(self, resolver) -> None:
+        """Amazon confidence=high registra el prefijo en GS1PrefixCache."""
+        resolver._amazon.lookup.return_value = BrandResult(
+            ean_code=_EAN_AMANOVA, brand_name="Amanova", source="amazon", confidence="high"
+        )
+        resolver.resolver("1", _EAN_AMANOVA)
+        prefijo = _EAN_AMANOVA[:7]
+        assert prefijo in resolver._cache._prefixes
+
+    def test_amazon_medium_no_aprende_prefijo(self, resolver) -> None:
+        """Amazon confidence=medium NO registra prefijo (inferencia de listado)."""
+        resolver._amazon.lookup.return_value = BrandResult(
+            ean_code=_EAN_AMANOVA, brand_name="Amanova", source="amazon", confidence="medium"
+        )
+        resolver.resolver("1", _EAN_AMANOVA)
+        prefijo = _EAN_AMANOVA[:7]
+        assert prefijo not in resolver._cache._prefixes
+
+    def test_ean_invalido_no_llama_amazon(self, resolver) -> None:
+        """EAN inválido es rechazado en Nivel 1 — Amazon nunca se llama."""
+        resolver.resolver("1", "NO_ES_EAN")
+        resolver._amazon.lookup.assert_not_called()
+
+
+# ── Tests: Nivel 4 — APIs Open Data ──────────────────────────────────────────
 
 
 class TestNivel3OpenData:
@@ -292,7 +353,7 @@ class TestAprendizajePrefijos:
         cache = GS1PrefixCache(seed_path="/nonexistent/empty.json")
         with patch("services.scraper.brand_scraper.get_settings", return_value=mock_settings):
             r = EanBrandResolver(gs1_cache=cache)
-        for attr in ("_openpetfood", "_openfood", "_upcitemdb", "_google", "_bing"):
+        for attr in ("_amazon", "_openpetfood", "_openfood", "_upcitemdb", "_google", "_bing"):
             m = MagicMock()
             m.lookup.return_value = None
             setattr(r, attr, m)
