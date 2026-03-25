@@ -100,6 +100,21 @@ class Settings(BaseSettings):
     download_workers: int = Field(default=4, ge=1, le=32)
     download_timeout: int = Field(default=10, ge=1, le=60)
 
+    # ── Resolución de marcas — Fase 6 ─────────────────────────────────────────
+    rotating_proxy_url: str = Field(
+        default="",
+        description=(
+            "URL del proxy rotativo para los clientes HTTP de resolución de marcas. "
+            "Formato: http://user:pass@host:port. Dejar vacío para no usar proxy."
+        ),
+    )
+    brand_http_timeout: int = Field(
+        default=10,
+        ge=1,
+        le=60,
+        description="Timeout en segundos para las peticiones HTTP de resolución de marcas (Fase 6).",
+    )
+
     # ── Scraper — motor de búsqueda ───────────────────────────────────────────
     search_engine: Literal["bing", "google", "duckduckgo"] = Field(
         default="bing",
