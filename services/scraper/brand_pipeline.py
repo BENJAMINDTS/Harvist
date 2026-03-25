@@ -3,15 +3,19 @@ Pipeline de resolución EAN → marca de producto.
 
 Flujo:
   1. CsvParser → lista de productos con EAN
-  2. EanBrandResolver (Selenium/Bing exacto) → marca detectada por EAN
+  2. EanBrandResolver (cascada de 6 niveles, sin Selenium) → BrandResult por EAN
   3. Exporta marcas.csv al storage del job con columnas:
-     codigo, ean, marca_detectada, exitoso, error
+     codigo, ean, brand_name, manufacturer, source, confidence
 
 Solo procesa productos que tengan EAN. Los productos sin EAN se
-incluyen en el CSV de salida con marca_detectada vacía y exitoso=False.
+incluyen en el CSV de salida con brand_name vacío y source="ean_invalido".
+
+A diferencia de versiones anteriores, este pipeline NO utiliza Selenium ni
+ningún WebDriver. Toda la resolución se realiza mediante HTTP síncrono
+(httpx.Client) a través de los clientes de ean_http_clients.py.
 
 :author: BenjaminDTS
-:version: 2.0.0
+:version: 3.0.0
 """
 
 from __future__ import annotations
@@ -22,10 +26,10 @@ from typing import Callable
 
 from loguru import logger
 
-from api.core.config import get_settings
 from api.v1.schemas.job import SearchConfig
 from services.csv_parser import CsvParser, CsvParserError
-from services.scraper.brand_scraper import EanBrandResolver, ResultadoMarca
+from services.scraper.brand_scraper import EanBrandResolver
+from services.scraper.brand_validator import BrandResult
 from services.storage_service import StorageService, get_storage_service
 
 # Firma: (job_id, procesados, total, exitosos) -> None
@@ -36,9 +40,10 @@ class BrandPipeline:
     """
     Orquestador del pipeline de resolución EAN → marca.
 
-    Para cada producto del CSV que tenga EAN, busca el EAN exacto en Bing
-    y extrae la marca del producto a partir de los títulos de los resultados.
-    El resultado final es un CSV descargable con la marca detectada por producto.
+    Para cada producto del CSV que tenga EAN, ejecuta la cascada de 6 niveles
+    del EanBrandResolver y exporta los resultados a marcas.csv en el storage
+    del job. El CSV incluye el campo ``source`` para auditoría (qué nivel
+    resolvió cada EAN) y ``confidence`` para filtrar resultados poco fiables.
 
     :author: BenjaminDTS
     """
@@ -58,6 +63,7 @@ class BrandPipeline:
             config: configuración del job (se usa column_mapping para parsear el CSV).
             storage: servicio de almacenamiento. Si None usa el factory.
             carpeta_job_id: carpeta de almacenamiento a reutilizar (para resume).
+                Si None se usa job_id.
         """
         self._job_id = job_id
         self._carpeta_id = carpeta_job_id or job_id
@@ -73,16 +79,26 @@ class BrandPipeline:
         """
         Ejecuta el pipeline completo y devuelve un resumen.
 
+        Crea una única instancia de EanBrandResolver para todo el lote, lo que
+        permite que la caché GS1 aprenda prefijos durante el procesamiento y
+        acelere las resoluciones de EANs del mismo fabricante.
+
         Args:
             contenido_csv: contenido del CSV como string (ya decodificado).
-            callback: función de progreso (job_id, procesados, total, exitosos).
-            offset_productos: número de productos a saltar (para resume).
+            callback: función de progreso con firma (job_id, procesados, total, exitosos).
+                Se invoca tras resolver cada producto.
+            offset_productos: número de productos a saltar desde el inicio del CSV.
+                Útil para reanudar jobs cancelados o fallidos.
 
         Returns:
-            Dict con total_productos, marcas_exitosas, marcas_fallidas, errores_csv.
+            Dict con las claves:
+              - total_productos (int): total de filas del CSV.
+              - marcas_exitosas (int): productos con brand_name resuelto.
+              - marcas_fallidas (int): productos sin brand_name resuelto.
+              - errores_csv (list[str]): errores de parseo del CSV.
 
         Raises:
-            CsvParserError: si el CSV es inválido estructuralmente.
+            CsvParserError: si el CSV está vacío o tiene formato inválido.
         """
         logger.info(
             "Pipeline de resolución de marcas iniciado",
@@ -114,79 +130,71 @@ class BrandPipeline:
             )
 
         logger.info(
-            "CSV parseado",
+            "CSV parseado, iniciando resolución de marcas",
             extra={"job_id": self._job_id, "total_productos": total},
         )
 
-        # ── Paso 2: Resolver EAN → marca para cada producto ───────────────────
-        resultados: list[ResultadoMarca] = []
+        # ── Paso 2: Resolver EAN → marca ──────────────────────────────────────
+        # Se crea una sola instancia del resolver para que la caché GS1 persista
+        # entre productos. Cada vez que el Nivel 3, 4 o 5 resuelve un EAN,
+        # registra el prefijo para acelerar resoluciones posteriores del mismo
+        # fabricante.
+        resolver = EanBrandResolver()
+        resultados: list[BrandResult] = []
         exitosos = 0
 
-        settings = get_settings()
-        from services.scraper.producer import _crear_driver  # noqa: PLC0415
-
-        driver = _crear_driver(settings)
-
-        try:
-            resolver = EanBrandResolver()
-
-            # Aceptar cookies de Bing una sola vez antes del loop.
-            # El driver recién creado no tiene cookies; sin este paso Bing muestra
-            # la página de consentimiento GDPR en cada búsqueda y no devuelve resultados.
-            resolver.inicializar_sesion(driver)
-
-            for idx, producto in enumerate(productos, start=offset_productos + 1):
-                if producto.ean:
-                    resultado = resolver.resolver(
-                        codigo=producto.codigo,
-                        ean=producto.ean,
-                        driver=driver,
-                        nombre_producto=producto.nombre,
-                    )
-                else:
-                    # Sin EAN: marcar como no procesable
-                    resultado = ResultadoMarca(
-                        codigo=producto.codigo,
-                        ean="",
-                        exitoso=False,
-                        error="El producto no tiene EAN.",
-                    )
-                    logger.debug(
-                        "Producto sin EAN omitido",
-                        extra={"job_id": self._job_id, "codigo": producto.codigo},
-                    )
-
-                resultados.append(resultado)
-
-                if resultado.exitoso:
-                    exitosos += 1
-
-                if callback:
-                    callback(self._job_id, idx, total, exitosos)
-
+        for idx, producto in enumerate(productos, start=offset_productos + 1):
+            if producto.ean:
+                resultado = resolver.resolver(
+                    codigo=producto.codigo,
+                    ean=producto.ean,
+                )
+            else:
+                # Sin EAN: marcar directamente como inválido sin peticiones HTTP
+                resultado = BrandResult(
+                    ean_code="",
+                    source="ean_invalido",
+                    confidence="low",
+                )
                 logger.debug(
-                    "Producto procesado",
-                    extra={
-                        "job_id": self._job_id,
-                        "codigo": producto.codigo,
-                        "ean": producto.ean,
-                        "marca": resultado.marca_detectada,
-                        "progreso": f"{idx}/{total}",
-                    },
+                    "Producto sin EAN — omitido",
+                    extra={"job_id": self._job_id, "codigo": producto.codigo},
                 )
 
-        finally:
-            try:
-                driver.quit()
-            except Exception as exc:
-                logger.warning(
-                    "Error al cerrar el WebDriver del pipeline de marcas",
-                    exc_info=exc,
-                    extra={"job_id": self._job_id},
-                )
+            # Enriquecer el resultado con el código interno del producto para que
+            # _guardar_csv pueda asociar cada fila con su código de producto.
+            # BrandResult es inmutable (Pydantic BaseModel), por lo que guardamos
+            # el código como metadato en una tupla.
+            resultados.append(resultado)
+
+            exitoso = resultado.source not in ("not_found", "ean_invalido")
+            if exitoso:
+                exitosos += 1
+
+            if callback:
+                callback(self._job_id, idx, total, exitosos)
+
+            logger.debug(
+                "Producto procesado",
+                extra={
+                    "job_id": self._job_id,
+                    "codigo": producto.codigo,
+                    "ean": producto.ean,
+                    "brand": resultado.brand_name,
+                    "source": resultado.source,
+                    "confidence": resultado.confidence,
+                    "progreso": f"{idx}/{total}",
+                },
+            )
 
         # ── Paso 3: Exportar marcas.csv ───────────────────────────────────────
-        self._guardar_csv(resultados)
+        # Guardamos los resultados junto a los códigos de producto, que necesitamos
+        # para el CSV. Construimos una lista combinada antes de exportar.
+        productos_resultados = list(zip(
+            resultado_csv.productos[offset_productos:] if offset_productos else resultado_csv.productos,
+            resultados,
+        ))
+        self._guardar_csv(productos_resultados)
 
         resumen = {
             "total_productos": total,
@@ -206,27 +214,40 @@ class BrandPipeline:
         )
         return resumen
 
-    def _guardar_csv(self, resultados: list[ResultadoMarca]) -> None:
+    def _guardar_csv(
+        self,
+        productos_resultados: list[tuple],
+    ) -> None:
         """
         Serializa los resultados de resolución a CSV y los guarda en storage.
 
-        Columnas: codigo, ean, marca_detectada, exitoso, error.
+        Columnas exportadas: codigo, ean, brand_name, manufacturer, source, confidence.
+        El archivo se codifica en UTF-8 con BOM (utf-8-sig) para compatibilidad
+        con Excel.
 
         Args:
-            resultados: lista de ResultadoMarca con los datos de cada producto.
+            productos_resultados: lista de tuplas (Producto, BrandResult).
         """
-        fieldnames = ["codigo", "ean", "marca_detectada", "exitoso", "error"]
+        fieldnames = [
+            "codigo",
+            "ean",
+            "brand_name",
+            "manufacturer",
+            "source",
+            "confidence",
+        ]
         buffer = io.StringIO()
         writer = csv.DictWriter(buffer, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
 
-        for r in resultados:
+        for producto, resultado in productos_resultados:
             writer.writerow({
-                "codigo": r.codigo,
-                "ean": r.ean,
-                "marca_detectada": r.marca_detectada,
-                "exitoso": r.exitoso,
-                "error": r.error,
+                "codigo": producto.codigo,
+                "ean": producto.ean,
+                "brand_name": resultado.brand_name or "",
+                "manufacturer": resultado.manufacturer or "",
+                "source": resultado.source,
+                "confidence": resultado.confidence,
             })
 
         try:
@@ -237,7 +258,7 @@ class BrandPipeline:
             )
             logger.info(
                 "marcas.csv guardado",
-                extra={"job_id": self._job_id, "filas": len(resultados)},
+                extra={"job_id": self._job_id, "filas": len(productos_resultados)},
             )
         except Exception as exc:
             logger.error(
