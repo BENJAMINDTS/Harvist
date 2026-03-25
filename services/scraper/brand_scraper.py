@@ -1,623 +1,277 @@
 """
-Resolución de EAN a marca de producto.
+Resolución EAN → marca de producto mediante cascada de 6 niveles.
 
-Estrategia en cascada (se detiene en cuanto encuentra la marca):
+Orden estricto de la cascada (se detiene en cuanto obtiene un resultado):
 
-  1. Open*Facts APIs (sin Selenium) — bases de datos públicas de productos
-     con campo `brands` estructurado. Cubre alimentación, mascotas, cosmética
-     y productos genéricos. Rápido (~100 ms), sin riesgo de CAPTCHA.
+  Nivel 1 → validate_ean_checksum()     → descarta EANs inválidos (ean_invalido)
+  Nivel 2 → GS1PrefixCache.resolve()    → prefijos conocidos en memoria (cache_gs1)
+  Nivel 3 → Open Data APIs en cascada   → OpenPetFoodFacts → OpenFoodFacts → UPCItemDb
+             (open_data_api)
+  Nivel 4 → GoogleDorkClient.lookup()   → búsqueda web exacta en Google (google_dorking)
+  Nivel 5 → BingSearchClient.lookup()   → búsqueda web exacta en Bing (bing_search)
+  Nivel 6 → Resultado no encontrado     → (not_found)
 
-  1b. UPC Item DB API (sin Selenium) — base de datos generalista de códigos
-     de barras. Complementa a Open*Facts para productos no alimenticios.
+Aprendizaje automático de prefijos:
+  Cuando el Nivel 3, 4 o 5 resuelve un EAN con confianza "high" o "medium", el
+  resolver extrae el prefijo (primeros 7 dígitos) y lo registra en GS1PrefixCache
+  para que futuros EANs del mismo fabricante se resuelvan en el Nivel 2 sin
+  peticiones HTTP adicionales.
 
-  Si el EAN no es numérico (p. ej. "LECHUGA ICEBERG") ninguna de las dos
-  puede ayudar y el producto se devuelve inmediatamente como no resoluble.
-  No tiene sentido buscar en Bing un código que no es un EAN real.
-
-  2. requests a las primeras URLs de Bing — descarga la página del producto
-     con cabeceras de navegador completas (User-Agent, Referer, Accept,
-     Sec-Fetch-*) para evitar el bloqueo anti-bot. Extrae la marca de:
-       a) JSON-LD Schema.org  `{"@type":"Product","brand":{"name":"X"}}`
-       b) `itemprop="brand"` (microdata)
-       c) `og:site_name` (meta Open Graph — fiable cuando el primer
-          resultado es la web del fabricante, no un marketplace)
-       d) Título de página  "Nombre producto - Marca"
-       e) Patrón "Marca: X" en el HTML
-
-  3. Patrón "Marca: X" en snippets de Bing — campo explícito en descripciones.
-
-  4. Frecuencia de unigramas en títulos de Bing — último recurso estadístico.
+Sin Selenium:
+  Esta versión elimina por completo la dependencia de Selenium/WebDriver.
+  Todos los accesos a la red se realizan mediante httpx (clientes síncronos),
+  lo que simplifica la gestión de recursos y el uso en entornos Celery.
 
 :author: BenjaminDTS
-:version: 8.0.0
+:version: 6.0.0
 """
 
 from __future__ import annotations
 
-import html as _html_lib
-import json
 import re
-import time
-from collections import Counter
-from dataclasses import dataclass, field
-from urllib.parse import quote_plus
 
-import requests as http_requests
 from loguru import logger
-from selenium.webdriver.common.by import By
-from selenium.webdriver.remote.webdriver import WebDriver
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import WebDriverWait
 
 from api.core.config import get_settings
+from services.scraper.brand_cache import GS1PrefixCache
+from services.scraper.brand_validator import BrandResult, validate_ean_checksum
+from services.utils.ean_http_clients import (
+    BingSearchClient,
+    GoogleDorkClient,
+    OpenFoodFactsClient,
+    OpenPetFoodFactsClient,
+    UPCItemDbClient,
+)
 
 # ── Constantes ────────────────────────────────────────────────────────────────
 
-_NUM_RESULTADOS = 6
-_MAX_URLS_PASO2 = 3          # URLs a descargar con requests en el paso 2
-_MIN_LONGITUD_PALABRA = 3
-_HTTP_TIMEOUT_S = 8
+# Longitud del prefijo GS1 que se registra al aprender desde APIs o búsqueda web.
+# 7 dígitos equilibran especificidad (evita solapamiento con otras empresas) y
+# cobertura (cubre todos los EANs del mismo fabricante).
+_PREFIJO_APRENDIZAJE_LEN: int = 7
 
-# APIs Open*Facts — misma estructura, distintas bases de datos.
-_OPEN_FACTS_APIS: tuple[str, ...] = (
-    "https://world.openpetfoodfacts.org/api/v0/product/{ean}.json",
-    "https://world.openfoodfacts.org/api/v0/product/{ean}.json",
-    "https://world.openproductsfacts.org/api/v0/product/{ean}.json",
-    "https://world.openbeautyfacts.org/api/v0/product/{ean}.json",
-)
-
-# UPC Item DB — base de datos generalista de códigos de barras (tier gratuito)
-_UPC_ITEM_DB_URL = "https://api.upcitemdb.com/prod/trial/lookup?upc={ean}"
-
-# URL de búsqueda en Bing
-_BING_URL = "https://www.bing.com/search?q={query}&setlang=es"
-
-# Selectores Bing
-_SEL_RESULTADOS = "#b_results"
-_SEL_TITULOS = "li.b_algo h2"
-_SEL_ENLACES_ORGANICOS = "li.b_algo h2 a"
-_SEL_SNIPPETS = "li.b_algo .b_caption p"
-_SEL_COOKIES = "#bnp_btn_accept, .bnp_btn_accept, button[id*='accept']"
-
-# Dominios de Bing/Microsoft que hay que excluir al buscar URLs de producto
-_DOMINIOS_EXCLUIDOS = ("bing.com", "microsoft.com", "msn.com", "live.com")
-
-# Cabeceras HTTP para las llamadas a APIs (Open*Facts, UPC Item DB)
-_HEADERS_API = {"User-Agent": "Harvist/1.0"}
-
-# Cabeceras HTTP para descargar páginas de producto.
-# Imitan las de Chrome para evitar bloqueos anti-bot (403/429).
-_HEADERS_HTTP = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept": (
-        "text/html,application/xhtml+xml,application/xml;"
-        "q=0.9,image/avif,image/webp,*/*;q=0.8"
-    ),
-    "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Referer": "https://www.bing.com/",
-    "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
-    "Sec-Fetch-Dest": "document",
-    "Sec-Fetch-Mode": "navigate",
-    "Sec-Fetch-Site": "cross-site",
-    "Sec-Fetch-User": "?1",
-    "DNT": "1",
-}
-
-# Separadores "Nombre producto <sep> Marca" en títulos de página de e-commerce
-_SEPARADORES_TITULO: tuple[str, ...] = (" - ", " | ", " – ", " · ", " — ")
-
-# Patrón para "Marca: X" en snippets y HTML (paso 3 / fallback paso 2)
-_PATRON_MARCA: re.Pattern[str] = re.compile(
-    r'(?:marca|fabricante|manufacturer|brand)\s*[:\s·]\s*'
-    r'([\w\u00C0-\u024F][\w\u00C0-\u024F\s\-&]{1,30}?)'
-    r'(?=\s*[|·,;\n\r]|\s{2,}|$)',
-    re.IGNORECASE,
-)
-
-# Filtros para el paso 4 (frecuencia de títulos)
-_PALABRAS_COMERCIALES: frozenset[str] = frozenset({
-    "comprar", "compra", "precio", "precios", "barato", "online", "tienda",
-    "tiendas", "shop", "store", "amazon", "ebay", "zooplus", "aliexpress",
-    "gratis", "oferta", "ofertas", "descuento", "venta", "mejor", "mejores",
-    "nuevo", "nuevos", "pack", "set", "kit", "stock", "disponible", "pedido",
-    "producto", "productos", "articulo", "articulos", "calidad", "original",
-    "oficial", "marca", "marcas", "fabricante", "fabricantes",
-})
-_STOPWORDS: frozenset[str] = frozenset({
-    "de", "el", "la", "los", "las", "un", "una", "unos", "unas", "del",
-    "al", "se", "su", "sus", "que", "es", "son", "the", "and", "for",
-    "with", "or", "in", "of", "to", "by", "at", "from",
-    "cm", "ml", "kg", "gr", "mg", "lt", "pcs", "uds", "ud",
-})
-
-
-# ── Dataclass ─────────────────────────────────────────────────────────────────
-
-@dataclass
-class ResultadoMarca:
-    """
-    Resultado de la resolución EAN → marca.
-
-    :author: BenjaminDTS
-    """
-
-    codigo: str
-    ean: str
-    marca_detectada: str = field(default="")
-    titulos_analizados: list[str] = field(default_factory=list)
-    exitoso: bool = field(default=False)
-    error: str = field(default="")
+# Patrón para EANs numéricos de 8 a 14 dígitos (sin espacios ni guiones).
+_EAN_NUMERICO: re.Pattern[str] = re.compile(r"^\d{8,14}$")
 
 
 # ── Resolvedor ────────────────────────────────────────────────────────────────
 
+
 class EanBrandResolver:
     """
-    Resuelve EAN a nombre de marca mediante una cascada de estrategias.
+    Orquestador de la cascada de 6 niveles para resolver EAN → marca.
+
+    Instanciar una vez por pipeline/job. La caché GS1 se comparte entre
+    todas las resoluciones de la misma instancia, por lo que el aprendizaje
+    automático de prefijos se acumula durante el procesamiento del lote:
+    si el Nivel 3 resuelve un EAN del fabricante "Nestlé", el siguiente EAN
+    con el mismo prefijo se resolverá en el Nivel 2 (sin peticiones HTTP).
 
     :author: BenjaminDTS
     """
 
-    def inicializar_sesion(self, driver: WebDriver) -> None:
-        """
-        Acepta las cookies de Bing una sola vez al inicio del pipeline.
-
-        Args:
-            driver: WebDriver recién creado sin cookies de Bing.
-        """
-        driver.get("https://www.bing.com")
-        self._descartar_cookies(driver)
-
-    @staticmethod
-    def _descartar_cookies(driver: WebDriver) -> None:
-        """
-        Descarta el banner de consentimiento de cookies de Bing si está presente.
-
-        Args:
-            driver: WebDriver con cualquier página de Bing cargada o cargándose.
-        """
-        try:
-            boton = WebDriverWait(driver, 4).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, _SEL_COOKIES))
-            )
-            boton.click()
-            time.sleep(0.4)
-            logger.info("Consentimiento de cookies de Bing aceptado")
-        except Exception:
-            logger.debug("Banner de cookies de Bing no detectado")
-
-    def resolver(
+    def __init__(
         self,
-        codigo: str,
-        ean: str,
-        driver: WebDriver,
-        nombre_producto: str = "",
-    ) -> ResultadoMarca:
+        gs1_cache: GS1PrefixCache | None = None,
+    ) -> None:
         """
-        Ejecuta la cascada de estrategias para resolver EAN → marca.
+        Inicializa el resolver con todos sus componentes.
+
+        Los timeouts y reintentos se leen de Settings para evitar valores
+        hardcodeados. Pasar ``gs1_cache`` explícitamente es útil en tests
+        para inyectar una caché pre-poblada o vacía.
 
         Args:
-            codigo: código interno del producto.
-            ean: código de barras EAN/UPC.
-            driver: WebDriver con sesión de Bing activa.
-            nombre_producto: nombre del producto del CSV (no usado actualmente).
+            gs1_cache: instancia de GS1PrefixCache. Si None, se crea una nueva
+                con la semilla por defecto cargada desde
+                ``data/gs1_prefixes_seed.json``.
+        """
+        settings = get_settings()
+        timeout = settings.brand_http_timeout
+
+        self._cache = gs1_cache or GS1PrefixCache()
+        self._openpetfood = OpenPetFoodFactsClient(timeout=timeout)
+        self._openfood = OpenFoodFactsClient(timeout=timeout)
+        self._upcitemdb = UPCItemDbClient(timeout=timeout)
+        self._google = GoogleDorkClient(timeout=timeout)
+        self._bing = BingSearchClient(timeout=timeout)
+
+    def resolver(self, codigo: str, ean: str) -> BrandResult:
+        """
+        Ejecuta la cascada de 6 niveles para resolver un EAN a su marca.
+
+        La cascada se detiene en cuanto un nivel devuelve un resultado.
+        Si ningún nivel tiene éxito, devuelve ``source="not_found"``.
+
+        Args:
+            codigo: código interno del producto (solo para trazabilidad en logs).
+            ean: código de barras del producto. Puede no ser numérico; el
+                Nivel 1 lo descartará en ese caso con ``source="ean_invalido"``.
 
         Returns:
-            ResultadoMarca con la marca detectada o el error correspondiente.
+            BrandResult con el resultado de la resolución. Nunca lanza
+            excepción: los errores de red son absorbidos por cada cliente y
+            registrados a nivel WARNING.
         """
-        resultado = ResultadoMarca(codigo=codigo, ean=ean)
+        ean_limpio = ean.strip()
 
-        # ── Guardia: EAN no numérico → no resoluble ────────────────────────────
-        # Los pasos 1, 1b y 2 requieren un EAN de 8-14 dígitos. Buscar en Bing
-        # un código como "LECHUGA ICEBERG" devolvería resultados del producto en
-        # cuestión, no de una marca, generando falsos positivos.
-        if not self._es_ean_numerico(ean):
-            resultado.error = (
-                "El código no es un EAN numérico válido "
-                "(debe tener entre 8 y 14 dígitos)."
-            )
+        logger.debug(
+            "Iniciando resolución EAN",
+            extra={"codigo": codigo, "ean": ean_limpio},
+        )
+
+        # ── Nivel 1: validación del EAN ───────────────────────────────────────
+        # Rechazar EANs no numéricos (ej. "LECHUGA ICEBERG") antes de cualquier
+        # llamada HTTP. Un EAN no numérico no puede aparecer en ninguna base de
+        # datos ni en buscadores de forma significativa para la resolución de marca.
+        if not _EAN_NUMERICO.match(ean_limpio):
             logger.debug(
-                "EAN no numérico, omitido",
-                extra={"codigo": codigo, "ean": ean},
+                "EAN no numérico — descartado sin peticiones HTTP",
+                extra={"codigo": codigo, "ean": ean_limpio},
             )
-            return resultado
+            return BrandResult(
+                ean_code=ean_limpio,
+                source="ean_invalido",
+                confidence="low",
+            )
 
-        # ── Paso 1: APIs Open*Facts ───────────────────────────────────────────
-        marca = self._buscar_en_open_facts(ean)
-        if marca:
-            resultado.marca_detectada = marca
-            resultado.exitoso = True
+        # Validar dígito de control GS1 Módulo 10 para detectar EANs corruptos
+        if not validate_ean_checksum(ean_limpio):
+            logger.debug(
+                "EAN inválido (falla Módulo 10)",
+                extra={"codigo": codigo, "ean": ean_limpio},
+            )
+            return BrandResult(
+                ean_code=ean_limpio,
+                source="ean_invalido",
+                confidence="low",
+            )
+
+        # ── Nivel 2: caché GS1 ────────────────────────────────────────────────
+        resultado = self._cache.resolve(ean_limpio)
+        if resultado:
             logger.info(
-                "Marca resuelta — Open*Facts",
-                extra={"codigo": codigo, "ean": ean, "marca": marca},
+                "EAN resuelto — Nivel 2 (caché GS1)",
+                extra={
+                    "codigo": codigo,
+                    "ean": ean_limpio,
+                    "brand": resultado.brand_name,
+                    "confidence": resultado.confidence,
+                },
             )
             return resultado
 
-        # ── Paso 1b: UPC Item DB ──────────────────────────────────────────────
-        marca = self._buscar_en_upc_db(ean)
-        if marca:
-            resultado.marca_detectada = marca
-            resultado.exitoso = True
-            logger.info(
-                "Marca resuelta — UPC Item DB",
-                extra={"codigo": codigo, "ean": ean, "marca": marca},
-            )
-            return resultado
+        logger.debug(
+            "Nivel 2 sin resultado, escalando a Nivel 3 (Open Data)",
+            extra={"ean": ean_limpio},
+        )
 
-        # ── Buscar en Bing (pasos 2, 3 y 4) ──────────────────────────────────
-        settings = get_settings()
-        wait = WebDriverWait(driver, settings.browser_timeout)
-
-        try:
-            url_busqueda = _BING_URL.format(query=quote_plus(f'"{ean}"'))
-            driver.get(url_busqueda)
-            self._descartar_cookies(driver)
-            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, _SEL_RESULTADOS)))
-            time.sleep(0.4)
-
-            # Extraer URLs, títulos y snippets ANTES de navegar a otra página
-            enlaces = self._obtener_enlaces_resultado(driver, n=_MAX_URLS_PASO2)
-
-            titulos: list[str] = [
-                el.text.strip()
-                for el in driver.find_elements(By.CSS_SELECTOR, _SEL_TITULOS)[:_NUM_RESULTADOS]
-                if el.text.strip()
-            ]
-            resultado.titulos_analizados = titulos
-
-            snippets: list[str] = [
-                el.text.strip()
-                for el in driver.find_elements(By.CSS_SELECTOR, _SEL_SNIPPETS)[:_NUM_RESULTADOS]
-                if el.text.strip()
-            ]
-
-        except Exception as exc:
-            resultado.error = str(exc)
-            logger.warning(
-                "Error cargando Bing", exc_info=exc,
-                extra={"codigo": codigo, "ean": ean},
-            )
-            return resultado
-
-        # ── Paso 2: descarga HTTP de las primeras URLs ────────────────────────
-        for enlace in enlaces:
-            marca = self._extraer_de_pagina(enlace)
-            if marca:
-                resultado.marca_detectada = marca
-                resultado.exitoso = True
+        # ── Nivel 3: APIs Open Data ───────────────────────────────────────────
+        # Se consultan en orden de especificidad: primero la base de datos de
+        # alimentos para mascotas, luego la general de alimentos, y por último
+        # UPC Item DB para productos genéricos.
+        for cliente in (self._openpetfood, self._openfood, self._upcitemdb):
+            resultado = cliente.lookup(ean_limpio)
+            if resultado:
                 logger.info(
-                    "Marca resuelta — página producto",
-                    extra={"codigo": codigo, "ean": ean, "marca": marca, "url": enlace},
+                    "EAN resuelto — Nivel 3 (Open Data API)",
+                    extra={
+                        "codigo": codigo,
+                        "ean": ean_limpio,
+                        "brand": resultado.brand_name,
+                        "client": type(cliente).__name__,
+                        "confidence": resultado.confidence,
+                    },
                 )
+                self._aprender_prefijo(ean_limpio, resultado)
                 return resultado
 
-        # ── Paso 3: patrón "Marca: X" en snippets de Bing ────────────────────
-        marca = self._extraer_de_snippets(snippets)
+        logger.warning(
+            "Nivel 3 sin resultado, escalando a Nivel 4 (Google Dorking)",
+            extra={"ean": ean_limpio},
+        )
 
-        # ── Paso 4: frecuencia de unigramas en títulos ────────────────────────
-        if not marca:
-            marca = self._extraer_de_titulos(titulos)
-
-        if marca:
-            resultado.marca_detectada = marca
-            resultado.exitoso = True
+        # ── Nivel 4: búsqueda Google ──────────────────────────────────────────
+        resultado = self._google.lookup(ean_limpio)
+        if resultado:
             logger.info(
-                "Marca resuelta — análisis Bing",
-                extra={"codigo": codigo, "ean": ean, "marca": marca},
+                "EAN resuelto — Nivel 4 (Google Dorking)",
+                extra={
+                    "codigo": codigo,
+                    "ean": ean_limpio,
+                    "brand": resultado.brand_name,
+                    "confidence": resultado.confidence,
+                },
             )
-        else:
-            muestra = " | ".join(titulos[:3]) if titulos else "sin resultados en Bing"
-            resultado.error = f"No se pudo identificar la marca. Títulos: {muestra}"
+            self._aprender_prefijo(ean_limpio, resultado)
+            return resultado
+
+        logger.warning(
+            "Nivel 4 sin resultado, escalando a Nivel 5 (Bing Search)",
+            extra={"ean": ean_limpio},
+        )
+
+        # ── Nivel 5: búsqueda Bing ────────────────────────────────────────────
+        resultado = self._bing.lookup(ean_limpio)
+        if resultado:
+            logger.info(
+                "EAN resuelto — Nivel 5 (Bing Search)",
+                extra={
+                    "codigo": codigo,
+                    "ean": ean_limpio,
+                    "brand": resultado.brand_name,
+                    "confidence": resultado.confidence,
+                },
+            )
+            self._aprender_prefijo(ean_limpio, resultado)
+            return resultado
+
+        # ── Nivel 6: not_found ────────────────────────────────────────────────
+        # El EAN existe y su dígito de control es válido, pero no pudo resolverse
+        # en ninguna fuente disponible. Se marca como "fantasma".
+        logger.info(
+            "EAN marcado como fantasma — Nivel 6 (not_found)",
+            extra={"codigo": codigo, "ean": ean_limpio},
+        )
+        return BrandResult(
+            ean_code=ean_limpio,
+            source="not_found",
+            confidence="low",
+        )
+
+    # ── Métodos privados ──────────────────────────────────────────────────────
+
+    def _aprender_prefijo(self, ean: str, resultado: BrandResult) -> None:
+        """
+        Registra en la caché GS1 el prefijo del EAN resuelto por un nivel superior.
+
+        Solo registra si la confianza es "high" (APIs Open Data) o "medium"
+        (≥2 títulos SERP concordantes) para evitar contaminar la caché con
+        inferencias poco fiables ("low").
+
+        El prefijo registrado tiene ``_PREFIJO_APRENDIZAJE_LEN`` dígitos
+        (7 por defecto), que es específico para distinguir fabricantes pero
+        suficientemente general para cubrir todos sus EANs.
+
+        Args:
+            ean: código EAN que acaba de resolverse.
+            resultado: BrandResult devuelto por el nivel resolvedor.
+        """
+        if resultado.confidence not in ("high", "medium"):
             logger.debug(
-                "Marca no identificada",
-                extra={"codigo": codigo, "ean": ean},
+                "Prefijo no aprendido — confianza insuficiente",
+                extra={"ean": ean, "confidence": resultado.confidence},
             )
+            return
 
-        return resultado
+        if not resultado.brand_name:
+            return
 
-    # ── Paso 1: Open*Facts ────────────────────────────────────────────────────
+        prefijo = ean[:_PREFIJO_APRENDIZAJE_LEN]
+        company_name = resultado.manufacturer or resultado.brand_name
 
-    @staticmethod
-    def _es_ean_numerico(ean: str) -> bool:
-        """Devuelve True si el valor es un código de barras numérico (8-14 dígitos)."""
-        return bool(re.fullmatch(r"\d{8,14}", ean.strip()))
-
-    @staticmethod
-    def _buscar_en_open_facts(ean: str) -> str:
-        """
-        Consulta las APIs Open*Facts en cascada para obtener el campo `brands`.
-
-        Args:
-            ean: código EAN numérico del producto.
-
-        Returns:
-            Primera marca del campo `brands` en Title Case, o cadena vacía.
-        """
-        for url_tpl in _OPEN_FACTS_APIS:
-            try:
-                resp = http_requests.get(
-                    url_tpl.format(ean=ean),
-                    timeout=_HTTP_TIMEOUT_S,
-                    headers=_HEADERS_API,
-                )
-                if not resp.ok:
-                    continue
-                data = resp.json()
-                if data.get("status") != 1:
-                    continue
-                brands_raw: str = data.get("product", {}).get("brands", "").strip()
-                if brands_raw:
-                    primera = brands_raw.split(",")[0].strip()
-                    if primera:
-                        return primera.title()
-            except Exception as exc:  # noqa: BLE001
-                logger.debug(
-                    "Error en API Open*Facts",
-                    exc_info=exc,
-                    extra={"ean": ean},
-                )
-        return ""
-
-    # ── Paso 1b: UPC Item DB ──────────────────────────────────────────────────
-
-    @staticmethod
-    def _buscar_en_upc_db(ean: str) -> str:
-        """
-        Consulta UPC Item DB para obtener la marca del producto.
-
-        Base de datos generalista que complementa a Open*Facts para productos
-        no alimenticios (electrónica, mascotas, hogar, etc.).
-
-        Args:
-            ean: código EAN numérico del producto.
-
-        Returns:
-            Marca en Title Case, o cadena vacía si no se encuentra.
-        """
-        try:
-            resp = http_requests.get(
-                _UPC_ITEM_DB_URL.format(ean=ean),
-                timeout=_HTTP_TIMEOUT_S,
-                headers=_HEADERS_API,
-            )
-            if not resp.ok:
-                return ""
-            data = resp.json()
-            items = data.get("items", [])
-            if items:
-                brand: str = items[0].get("brand", "").strip()
-                if brand:
-                    return brand.title()
-        except Exception as exc:  # noqa: BLE001
-            logger.debug(
-                "Error en UPC Item DB",
-                exc_info=exc,
-                extra={"ean": ean},
-            )
-        return ""
-
-    # ── Paso 2: visita Selenium de páginas de producto ────────────────────────
-
-    @staticmethod
-    def _obtener_enlaces_resultado(driver: WebDriver, n: int = 2) -> list[str]:
-        """
-        Extrae hasta N URLs de resultados de Bing, excluyendo dominios propios.
-
-        Primero intenta los resultados orgánicos (`li.b_algo h2 a`). Si no hay
-        ninguno (p. ej. Bing muestra solo un panel de compras), recurre a todos
-        los enlaces presentes en `#b_results` que apunten a dominios externos.
-
-        Args:
-            driver: WebDriver con la página de resultados de Bing cargada.
-            n: número máximo de URLs a devolver.
-
-        Returns:
-            Lista ordenada de URLs de producto (puede estar vacía).
-        """
-        def _es_externo(href: str) -> bool:
-            return (
-                bool(href)
-                and href.startswith("http")
-                and not any(d in href for d in _DOMINIOS_EXCLUIDOS)
-            )
-
-        hrefs: list[str] = []
-
-        try:
-            for el in driver.find_elements(By.CSS_SELECTOR, _SEL_ENLACES_ORGANICOS):
-                href = el.get_attribute("href") or ""
-                if _es_externo(href) and href not in hrefs:
-                    hrefs.append(href)
-                if len(hrefs) >= n:
-                    return hrefs
-
-            if not hrefs:
-                for el in driver.find_elements(By.CSS_SELECTOR, "#b_results a[href]"):
-                    href = el.get_attribute("href") or ""
-                    if _es_externo(href) and href not in hrefs:
-                        hrefs.append(href)
-                    if len(hrefs) >= n:
-                        return hrefs
-
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("Error obteniendo enlaces de Bing", exc_info=exc)
-
-        return hrefs
-
-    @staticmethod
-    def _extraer_de_pagina(url: str) -> str:
-        """
-        Descarga la página del producto con requests y extrae la marca.
-
-        Usa cabeceras de Chrome completas (Referer, Accept, Sec-Fetch-*) para
-        evitar bloqueos anti-bot. Extrae la marca con estos mecanismos en orden:
-          1. JSON-LD Schema.org ``{"@type":"Product","brand":{"name":"X"}}``
-          2. ``itemprop="brand"`` (microdata)
-          3. ``og:site_name`` (solo si el dominio parece del fabricante)
-          4. Título de página  "Nombre producto - Marca"
-          5. Patrón "Marca: X" en el HTML
-
-        Args:
-            url: URL del resultado de Bing.
-
-        Returns:
-            Nombre de marca en Title Case, o cadena vacía si no se encuentra.
-        """
-        try:
-            session = http_requests.Session()
-            session.headers.update(_HEADERS_HTTP)
-            resp = session.get(url, timeout=_HTTP_TIMEOUT_S, allow_redirects=True)
-            if not resp.ok:
-                return ""
-            html = resp.text
-
-            # ── 1. JSON-LD con @type Product ──────────────────────────────────
-            for ld_raw in re.findall(
-                r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
-                html,
-                re.DOTALL | re.IGNORECASE,
-            ):
-                try:
-                    ld = json.loads(ld_raw.strip())
-                    items = ld if isinstance(ld, list) else [ld]
-                    for item in items:
-                        if not isinstance(item, dict):
-                            continue
-                        tipo = item.get("@type", "")
-                        if isinstance(tipo, list):
-                            tipo = " ".join(tipo)
-                        if "product" not in tipo.lower():
-                            continue
-                        brand = item.get("brand", {})
-                        if isinstance(brand, dict):
-                            nombre = brand.get("name", "")
-                        elif isinstance(brand, str):
-                            nombre = brand
-                        else:
-                            nombre = ""
-                        if nombre and nombre.strip():
-                            return nombre.strip().title()
-                except (json.JSONDecodeError, AttributeError, TypeError):
-                    continue
-
-            # ── 2. itemprop="brand" ───────────────────────────────────────────
-            m = re.search(
-                r'itemprop=["\']brand["\'][^>]*>(?:<[^>]+>)*([^<]{2,40})',
-                html,
-                re.IGNORECASE,
-            )
-            if m:
-                valor = m.group(1).strip()
-                if valor:
-                    return valor.title()
-
-            # ── 3. og:site_name ───────────────────────────────────────────────
-            # Solo fiable cuando el dominio de la URL pertenece al fabricante.
-            # Se descarta si parece un marketplace conocido.
-            _MARKETPLACES = frozenset({
-                "amazon", "ebay", "zooplus", "aliexpress", "walmart",
-                "pccomponentes", "mediamarkt", "fnac", "elcorteingles",
-                "carrefour", "mercadolibre", "rakuten",
-            })
-            dominio = url.split("/")[2].lower().replace("www.", "")
-            es_marketplace = any(m_ in dominio for m_ in _MARKETPLACES)
-            if not es_marketplace:
-                for patron_og in (
-                    r'<meta[^>]+property=["\']og:site_name["\'][^>]+content=["\']([^"\']{2,50})["\']',
-                    r'<meta[^>]+content=["\']([^"\']{2,50})["\'][^>]+property=["\']og:site_name["\']',
-                ):
-                    m = re.search(patron_og, html, re.IGNORECASE)
-                    if m:
-                        valor = m.group(1).strip()
-                        palabras = valor.split()
-                        if 1 <= len(palabras) <= 4 and not any(p.isdigit() for p in palabras):
-                            return valor.title()
-
-            # ── 4. Título de página "Producto - Marca" ────────────────────────
-            m = re.search(r'<title[^>]*>([^<]{5,150})</title>', html, re.IGNORECASE)
-            if m:
-                titulo_pag = _html_lib.unescape(m.group(1)).strip()
-                for sep in _SEPARADORES_TITULO:
-                    partes = titulo_pag.rsplit(sep, 1)
-                    if len(partes) == 2:
-                        candidato = partes[1].strip()
-                        palabras = candidato.split()
-                        if 1 <= len(palabras) <= 4 and not any(
-                            c.isdigit() for c in candidato
-                        ):
-                            return candidato.title()
-
-            # ── 5. "Marca: X" en el HTML de la página ────────────────────────
-            m = re.search(_PATRON_MARCA, html)
-            if m:
-                valor = m.group(1).strip()
-                palabras = valor.split()
-                if 1 <= len(palabras) <= 4 and not any(p.isdigit() for p in palabras):
-                    return valor.title()
-
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("Error extrayendo marca de página", exc_info=exc, extra={"url": url})
-
-        return ""
-
-    # ── Paso 3: snippets Bing ─────────────────────────────────────────────────
-
-    @staticmethod
-    def _extraer_de_snippets(snippets: list[str]) -> str:
-        """
-        Busca el patrón "Marca: X" en los snippets de descripción de Bing.
-
-        Args:
-            snippets: textos de los snippets de los resultados de Bing.
-
-        Returns:
-            La marca más frecuente en Title Case, o cadena vacía.
-        """
-        marcas: list[str] = []
-        for snippet in snippets:
-            for match in _PATRON_MARCA.finditer(snippet):
-                valor = match.group(1).strip()
-                palabras = valor.split()
-                if 1 <= len(palabras) <= 4 and not any(p.isdigit() for p in palabras):
-                    marcas.append(valor.title())
-        if not marcas:
-            return ""
-        return Counter(marcas).most_common(1)[0][0]
-
-    # ── Paso 4: frecuencia en títulos ─────────────────────────────────────────
-
-    @staticmethod
-    def _extraer_de_titulos(titulos: list[str]) -> str:
-        """
-        Extrae la marca por frecuencia de unigramas en los títulos de Bing.
-
-        Args:
-            titulos: títulos de los primeros resultados de Bing.
-
-        Returns:
-            La palabra más frecuente no filtrada en Title Case, o cadena vacía.
-        """
-        presencia: Counter[str] = Counter()
-        for titulo in titulos:
-            vistos: set[str] = set()
-            for parte in re.split(r"[\s\-|/,.:;()\"']+", titulo):
-                limpia = re.sub(r"[^\w]", "", parte, flags=re.UNICODE).strip()
-                tok = limpia.lower()
-                if (
-                    len(limpia) >= _MIN_LONGITUD_PALABRA
-                    and not limpia.isdigit()
-                    and tok not in _PALABRAS_COMERCIALES
-                    and tok not in _STOPWORDS
-                    and tok not in vistos
-                ):
-                    vistos.add(tok)
-                    presencia[tok] += 1
-        if not presencia:
-            return ""
-        return presencia.most_common(1)[0][0].title()
+        self._cache.register(
+            prefix=prefijo,
+            company_name=company_name,
+            country_code="",  # Desconocido al aprender desde web/API
+        )
