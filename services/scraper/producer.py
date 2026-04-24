@@ -118,7 +118,13 @@ class BingMotor(MotorBusqueda):
 
     Navega a ``https://www.bing.com/images/search`` y extrae la URL original
     de cada imagen desde el atributo JSON ``m`` del elemento ``a.iusc``.
-    El campo ``murl`` dentro de ese JSON contiene la URL de alta resolución.
+    El campo ``murl`` contiene la URL del host original; ``turl`` apunta al
+    thumbnail alojado en la CDN de Bing (siempre accesible, sin hotlink block).
+
+    La lista devuelta por ``buscar_urls`` contiene primero las URLs ``murl``
+    (alta resolución) y luego las ``turl`` como fallback. El consumidor intentará
+    los ``murl`` primero y recurrirá a los thumbnails de Bing si el sitio host
+    bloquea la descarga directa.
 
     :author: BenjaminDTS
     """
@@ -129,19 +135,22 @@ class BingMotor(MotorBusqueda):
 
     def buscar_urls(self, query: str, cantidad: int, driver: WebDriver) -> list[str]:
         """
-        Extrae URLs de imágenes en alta resolución desde Bing Images.
+        Extrae URLs de imágenes desde Bing Images con fallback a thumbnails CDN.
 
-        Navega a la URL de búsqueda, espera a que aparezcan los thumbnails
-        ``a.iusc`` y parsea el atributo JSON ``m`` de cada uno para obtener
-        el campo ``murl`` con la URL original de la imagen.
+        Devuelve primero las URLs originales (``murl``) y luego las URLs de
+        thumbnail de Bing (``turl``) como fallback. Si los sitios host bloquean
+        la descarga directa, el consumidor puede usar el thumbnail de la CDN de
+        Bing, que siempre es accesible.
 
         Args:
             query: término de búsqueda sin codificar.
-            cantidad: número máximo de URLs a devolver.
+            cantidad: número máximo de URLs ``murl`` a devolver (se añaden
+                      las ``turl`` correspondientes además del límite).
             driver: instancia de WebDriver activa.
 
         Returns:
-            Lista de URLs originales en alta resolución extraídas de ``murl``.
+            Lista ``[murl_1..N, turl_1..N]`` — URLs originales seguidas de
+            thumbnails CDN como fallback. Puede estar vacía si hay timeout.
 
         Raises:
             TimeoutException: si los thumbnails no aparecen en el tiempo límite.
@@ -169,45 +178,52 @@ class BingMotor(MotorBusqueda):
             By.CSS_SELECTOR, self._SELECTOR_THUMBNAIL
         )
 
-        urls: list[str] = []
+        murls: list[str] = []
+        turls: list[str] = []
         for elemento in elementos[: cantidad * 2]:
-            if len(urls) >= cantidad:
+            if len(murls) >= cantidad:
                 break
-            url_imagen = self._extraer_url_original(elemento)
-            if url_imagen:
-                urls.append(url_imagen)
+            murl, turl = self._extraer_urls_par(elemento)
+            if murl:
+                murls.append(murl)
+                if turl:
+                    turls.append(turl)
 
-        return urls
+        # murl primero (calidad original), turl como fallback (CDN Bing, siempre accesible)
+        return murls + turls
 
-    def _extraer_url_original(self, elemento: WebElement) -> str | None:
+    def _extraer_urls_par(self, elemento: WebElement) -> tuple[str | None, str | None]:
         """
-        Extrae la URL original desde el atributo JSON ``m`` del thumbnail de Bing.
+        Extrae ``murl`` y ``turl`` desde el atributo JSON ``m`` del thumbnail de Bing.
 
-        Bing almacena los metadatos de cada imagen en el atributo ``m`` como JSON.
-        Parseamos únicamente el campo ``murl`` (media URL) que apunta a la imagen
-        original en alta resolución.
+        ``murl`` apunta a la imagen original en el servidor host (puede bloquear
+        hotlinking). ``turl`` apunta al thumbnail en la CDN de Bing, siempre
+        accesible y sin restricciones de referer.
 
         Args:
             elemento: WebElement del thumbnail ``a.iusc`` de Bing Images.
 
         Returns:
-            URL de la imagen original, o None si no se puede extraer.
+            Tupla ``(murl, turl)``; cada campo es None si no se puede extraer.
         """
         try:
             datos_raw = elemento.get_attribute(self._ATRIBUTO_JSON)
             if not datos_raw:
-                return None
+                return None, None
             datos: dict[str, str] = json.loads(datos_raw)
-            url = datos.get("murl", "")
-            if url and url.startswith("http"):
-                return url
+            murl = datos.get("murl", "") or ""
+            turl = datos.get("turl", "") or ""
+            return (
+                murl if murl.startswith("http") else None,
+                turl if turl.startswith("http") else None,
+            )
         except Exception as exc:
             logger.debug(
-                "No se pudo extraer URL del thumbnail de Bing",
+                "No se pudo extraer URLs del thumbnail de Bing",
                 exc_info=exc,
             )
 
-        return None
+        return None, None
 
 
 class GoogleMotor(MotorBusqueda):

@@ -11,10 +11,18 @@ todas las variables de entorno centralizadas en api/core/config.py.
 """
 
 from celery import Celery
+from celery.signals import worker_process_init
 
 from api.core.config import get_settings
+from api.core.logging import setup_logging
 
 settings = get_settings()
+
+
+@worker_process_init.connect
+def _init_worker_logging(**kwargs):
+    """Inicializa loguru en cada proceso worker para que los logs del pipeline vayan al fichero."""
+    setup_logging()
 
 celery_app = Celery(
     "harvist_scraper",
