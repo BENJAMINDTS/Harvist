@@ -216,6 +216,7 @@ class ScrapingPipeline:
             producto=producto,
             urls=urls,
             storage=self._storage,
+            max_imagenes=self._config.imagenes_por_producto,
         )
 
         ok = sum(1 for r in resultados if r.exitoso)
