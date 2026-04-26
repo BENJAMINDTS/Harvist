@@ -59,20 +59,23 @@ def descargar_imagenes_producto(
     producto: Producto,
     urls: list[str],
     storage: StorageService,
+    max_imagenes: int | None = None,
     callback_imagen: Callable[[bool], None] | None = None,
 ) -> list[ResultadoDescarga]:
     """
     Descarga, valida y guarda las imágenes de un producto usando un thread pool.
 
-    Intenta descargar todas las URLs recibidas en paralelo hasta obtener
-    el número de imágenes válidas configurado en Settings. Las imágenes
-    que no superen la validación de Pillow se descartan silenciosamente.
+    Intenta descargar las URLs recibidas en paralelo hasta obtener ``max_imagenes``
+    imágenes válidas. Los turls de Bing actúan como fallback si los murls fallan:
+    en cuanto se alcanza el límite, el resto de futures se descarta.
 
     Args:
         job_id: identificador del job (para nombrar los archivos).
         producto: producto con su código y datos para nombrar los archivos.
-        urls: lista de URLs a intentar descargar.
+        urls: lista de URLs a intentar descargar (murls + turls de Bing).
         storage: servicio de almacenamiento donde guardar las imágenes.
+        max_imagenes: número máximo de imágenes válidas a guardar. Si None, usa
+                      ``settings.images_per_product`` como valor por defecto.
         callback_imagen: función opcional invocada con (exitoso: bool)
                          tras procesar cada imagen, para actualizar contadores.
 
@@ -80,6 +83,7 @@ def descargar_imagenes_producto(
         Lista de ResultadoDescarga con el resultado de cada URL intentada.
     """
     settings = get_settings()
+    limite = max_imagenes if max_imagenes is not None else settings.images_per_product
     resultados: list[ResultadoDescarga] = []
     imagenes_validas = 0
 
@@ -100,7 +104,7 @@ def descargar_imagenes_producto(
         for futuro in as_completed(futuros):
             url = futuros[futuro]
 
-            if imagenes_validas >= settings.images_per_product:
+            if imagenes_validas >= limite:
                 futuro.cancel()
                 continue
 
