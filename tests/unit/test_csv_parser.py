@@ -189,15 +189,21 @@ class TestParsear:
         assert resultado.productos[0].nombre == "Producto A"
 
     def test_columnas_extra_se_preservan_en_datos_extra(self) -> None:
-        """Columnas no reconocidas deben guardarse en el dict datos_extra del Producto."""
+        """Columnas no reconocidas deben guardarse en el dict datos_extra del Producto.
+
+        'categoria' es una columna mapeada por defecto, por lo que va a p.categoria.
+        Solo 'precio' (columna desconocida) debe aparecer en datos_extra.
+        """
         parser = _parser(ModosBusqueda.NOMBRE_MARCA)
 
         resultado = parser.parsear(_CSV_COLUMNAS_EXTRA)
 
         assert len(resultado.productos) == 1
         p = resultado.productos[0]
-        assert "categoria" in p.datos_extra
-        assert p.datos_extra["categoria"] == "Electronica"
+        # 'categoria' es columna conocida → va a p.categoria, NO a datos_extra
+        assert p.categoria == "Electronica"
+        assert "categoria" not in p.datos_extra
+        # 'precio' es columna desconocida → va a datos_extra
         assert "precio" in p.datos_extra
         assert p.datos_extra["precio"] == "99.99"
 
