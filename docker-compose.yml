@@ -1,0 +1,32 @@
+# Servicios de infraestructura para desarrollo local de Harvist.
+#
+# Uso:
+#   docker compose up -d        Arrancar Redis en segundo plano
+#   docker compose down         Parar y conservar los datos (volumen persiste)
+#   docker compose down -v      Parar Y borrar todos los datos
+#
+# Redis se configura con AOF (Append Only File): los datos sobreviven
+# reinicios del container. appendfsync everysec equilibra rendimiento
+# y durabilidad sin riesgo de pérdida de más de 1 segundo de escrituras.
+#
+# @author BenjaminDTS
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: harvist-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - harvist-redis-data:/data
+    command: redis-server --appendonly yes --appendfsync everysec
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  harvist-redis-data:
+    name: harvist-redis-data
