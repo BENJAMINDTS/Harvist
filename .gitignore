@@ -97,6 +97,7 @@ docker-compose.override.yml
 .agents/
 claude.md
 CLAUDE.md
+.githooks
 
 
 # ==========================================
