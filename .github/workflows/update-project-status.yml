@@ -1,0 +1,179 @@
+name: Update Project Status on PR Events
+
+on:
+  pull_request:
+    types: [opened, closed, reopened]
+  issues:
+    types: [opened, closed, reopened]
+
+jobs:
+  update-project:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      # Extrae información del evento
+      - name: Extract Event Info
+        id: event
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "type=pr" >> $GITHUB_OUTPUT
+            echo "number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+            echo "title=${{ github.event.pull_request.title }}" >> $GITHUB_OUTPUT
+            echo "status=${{ github.event.action }}" >> $GITHUB_OUTPUT
+            if [[ "${{ github.event.pull_request.merged }}" == "true" ]]; then
+              echo "merged=true" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "type=issue" >> $GITHUB_OUTPUT
+            echo "number=${{ github.event.issue.number }}" >> $GITHUB_OUTPUT
+            echo "title=${{ github.event.issue.title }}" >> $GITHUB_OUTPUT
+            echo "status=${{ github.event.action }}" >> $GITHUB_OUTPUT
+          fi
+
+      # Log event details
+      - name: Log Event
+        run: |
+          echo "Event Type: ${{ steps.event.outputs.type }}"
+          echo "Number: ${{ steps.event.outputs.number }}"
+          echo "Title: ${{ steps.event.outputs.title }}"
+          echo "Status: ${{ steps.event.outputs.status }}"
+          echo "Merged: ${{ steps.event.outputs.merged }}"
+
+      # Detecta Fase del título
+      - name: Detect Phase
+        id: phase
+        run: |
+          title="${{ steps.event.outputs.title }}"
+          if [[ $title =~ Fase\ ([0-9]+\.[0-9]+) ]]; then
+            echo "phase=${BASH_REMATCH[1]}" >> $GITHUB_OUTPUT
+            echo "detected=true" >> $GITHUB_OUTPUT
+          fi
+
+      # Crear un comentario de confirmación en issues resueltas
+      - name: Comment on PR Merge
+        if: steps.event.outputs.type == 'pr' && steps.event.outputs.merged == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const body = pr.body || '';
+
+            // Buscar referencias a issues
+            const issueRegex = /(fixes|closes|resolves|related to)\s+#(\d+)/gi;
+            let match;
+            const linkedIssues = [];
+
+            while ((match = issueRegex.exec(body)) !== null) {
+              linkedIssues.push(match[2]);
+            }
+
+            if (linkedIssues.length > 0) {
+              // Comentar en el PR que se han resuelto issues
+              await github.rest.pulls.createReview({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: pr.number,
+                event: 'COMMENT',
+                body: `✅ **Merged!** This PR closes the following issues:\n${linkedIssues.map(n => `- Fixes #${n}`).join('\n')}`
+              });
+
+              // Comentar en cada issue resuelta
+              for (const issueNum of linkedIssues) {
+                try {
+                  // Intentar cerrar la issue si tiene el prefijo "Fixes"
+                  const bodyLower = body.toLowerCase();
+                  if (bodyLower.includes('fixes') || bodyLower.includes('closes')) {
+                    await github.rest.issues.update({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      issue_number: parseInt(issueNum),
+                      state: 'closed',
+                      state_reason: 'completed'
+                    });
+                    console.log(`Closed issue #${issueNum}`);
+                  }
+
+                  // Comentar confirmación
+                  await github.rest.issues.createComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: parseInt(issueNum),
+                    body: `✅ **Done** — Resuelto en PR #${pr.number}\n\nLink: ${pr.html_url}`
+                  });
+                } catch (error) {
+                  console.log(`Could not update issue #${issueNum}: ${error.message}`);
+                }
+              }
+            }
+
+      # Auto-asignar a proyecto si se detecta fase
+      - name: Add PR to Project (if Phase detected)
+        if: steps.phase.outputs.detected == 'true' && steps.event.outputs.type == 'pr'
+        uses: actions/add-to-project@v0.5.0
+        with:
+          project-url: https://github.com/BENJAMINDTS/Harvist/projects/1
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          labeled: phase:${{ steps.phase.outputs.phase }}
+
+  # Workflow para marcar "En Progreso" cuando se abre un PR relacionado a una issue
+  mark-in-progress:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.event.action == 'opened'
+    permissions:
+      issues: write
+    steps:
+      - name: Find Linked Issues
+        id: linked
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const body = pr.body || '';
+
+            // Buscar referencias a issues
+            const issueRegex = /(fixes|closes|resolves|related to|#)(\d+)/gi;
+            let match;
+            const linkedIssues = [];
+
+            while ((match = issueRegex.exec(body)) !== null) {
+              linkedIssues.push(match[2]);
+            }
+
+            // Guardar para siguiente paso
+            core.setOutput('issues', JSON.stringify(linkedIssues));
+            console.log(`Found ${linkedIssues.length} linked issues`);
+
+      - name: Add "in-progress" label to linked issues
+        if: steps.linked.outputs.issues != '[]'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const linkedIssues = JSON.parse('${{ steps.linked.outputs.issues }}');
+
+            for (const issueNum of linkedIssues) {
+              try {
+                // Intentar agregar label "status:in-progress"
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: parseInt(issueNum),
+                  labels: ['status:in-progress', 'in-progress']
+                });
+                console.log(`Marked issue #${issueNum} as in-progress`);
+              } catch (error) {
+                // Si el label no existe, al menos comentar
+                try {
+                  await github.rest.issues.createComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: parseInt(issueNum),
+                    body: `🚀 **In Progress** — PR #${context.payload.pull_request.number} está trabajando en esto.\n\nLink: ${context.payload.pull_request.html_url}`
+                  });
+                } catch (commentError) {
+                  console.log(`Could not comment on issue #${issueNum}: ${commentError.message}`);
+                }
+              }
+            }

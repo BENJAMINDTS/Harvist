@@ -1,0 +1,162 @@
+name: Harvist Roadmap Automation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  pull_request_target:
+    types: [closed]
+
+jobs:
+  # Vincular PR a issues mencionadas en el body
+  link-issues:
+    runs-on: ubuntu-latest
+    if: github.event.action == 'opened' || github.event.action == 'synchronize' || github.event.action == 'reopened'
+    permissions:
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Link PR to issues
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const body = pr.body || '';
+
+            // Detectar referencias a issues (Fixes #123, Closes #456, etc)
+            const issueRegex = /(fixes|closes|resolves)\s+#(\d+)/gi;
+            let match;
+
+            while ((match = issueRegex.exec(body)) !== null) {
+              const issueNumber = match[2];
+              console.log(`Linking PR #${pr.number} to issue #${issueNumber}`);
+
+              // GitHub ya maneja esto automáticamente con Fixes/Closes,
+              // pero podemos agregar un comentario de confirmación
+            }
+
+  # Actualizar issue cuando PR se mergea
+  update-issue-on-merge:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
+    permissions:
+      issues: write
+      pull-requests: read
+    steps:
+      - name: Update linked issues
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const body = pr.body || '';
+
+            // Buscar issues mencionadas
+            const issueRegex = /(fixes|closes|resolves)\s+#(\d+)/gi;
+            let match;
+            const issueNumbers = [];
+
+            while ((match = issueRegex.exec(body)) !== null) {
+              issueNumbers.push(match[2]);
+            }
+
+            // Comentar en cada issue que fue resuelta por este PR
+            for (const issueNum of issueNumbers) {
+              try {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNum,
+                  body: `✅ Resuelto por PR #${pr.number} (${pr.title})\n\nLink: ${pr.html_url}`
+                });
+                console.log(`Updated issue #${issueNum}`);
+              } catch (error) {
+                console.log(`Could not update issue #${issueNum}: ${error.message}`);
+              }
+            }
+
+  # Auto-asignar a proyecto si el título contiene Fase X
+  add-to-project:
+    runs-on: ubuntu-latest
+    if: github.event.action == 'opened'
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Extract phase from PR title
+        id: extract-phase
+        run: |
+          title="${{ github.event.pull_request.title }}"
+          if [[ $title =~ "Fase "[0-9] ]]; then
+            phase=$(echo "$title" | grep -oE "Fase [0-9]+\.[0-9]+" | head -1)
+            echo "phase=$phase" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Add label from phase
+        if: steps.extract-phase.outputs.phase
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const phase = '${{ steps.extract-phase.outputs.phase }}';
+            if (phase) {
+              try {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.payload.pull_request.number,
+                  labels: [phase]
+                });
+                console.log(`Added label: ${phase}`);
+              } catch (error) {
+                console.log(`Could not add label: ${error.message}`);
+              }
+            }
+
+  # Comentar automáticamente cuando PR se abre
+  welcome-pr:
+    runs-on: ubuntu-latest
+    if: github.event.action == 'opened'
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const title = pr.title;
+
+            // Detectar qué tipo de PR es
+            let prType = 'PR';
+            if (title.includes('Fase')) {
+              prType = 'Roadmap Phase';
+            }
+            if (title.includes('fix:')) {
+              prType = 'Bug Fix';
+            }
+            if (title.includes('feat:')) {
+              prType = 'Feature';
+            }
+            if (title.includes('refactor:')) {
+              prType = 'Refactor';
+            }
+
+            const comment = `
+            🚀 **${prType}**: ${title}
+
+            **Checklist:**
+            - [ ] Tests añadidos/actualizados
+            - [ ] Documentación actualizada
+            - [ ] Linked to issue (si aplica)
+            - [ ] Conventional Commits en los commits
+            - [ ] Sin \`console.log\`, solo \`logger.*\`
+            - [ ] Variables de entorno via \`get_settings()\` (Python) o env (TS)
+
+            _Auto-generated by Harvist Roadmap Automation_
+            `;
+
+            await github.rest.pulls.createReview({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+              event: 'COMMENT',
+              body: comment
+            });
