@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: "📚 Documentación"
+    url: https://github.com/BENJAMINDTS/Harvist#readme
+    about: "Lee el README y CLAUDE.md"
+  - name: "🗺️ Roadmap"
+    url: https://github.com/BENJAMINDTS/Harvist/projects
+    about: "Ve el proyecto en GitHub Projects"
+  - name: "💬 Discusiones"
+    url: https://github.com/BENJAMINDTS/Harvist/discussions
+    about: "Abre una discusión para preguntas generales"
