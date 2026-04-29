@@ -10,14 +10,16 @@
  *
  * @author BenjaminDTS | Carlos Vico
  */
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { CsvUploader } from '@/components/CsvUploader'
 import { SearchConfig } from '@/components/SearchConfig'
 import { JobProgress } from '@/components/JobProgress'
 import { JobHistory } from '@/components/JobHistory'
 import { HomeScreen } from '@/components/HomeScreen'
+import { BrandsPanel } from '@/components/BrandsPanel'
 import { NsLogo } from '@/components/NsLogo'
-import { apiClient, resumeJob } from '@/api/client'
+import { apiClient, getBrands, resumeJob } from '@/api/client'
+import type { BrandEntry } from '@/api/client'
 import type { SearchConfigValues, TipoJob } from '@/components/SearchConfig'
 
 /** Estados posibles de la pantalla principal */
@@ -35,6 +37,8 @@ const App: React.FC = () => {
   const [tipoJobSeleccionado, setTipoJobSeleccionado] = useState<TipoJob | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [resumeLoading, setResumeLoading] = useState(false)
+  const [brandsData, setBrandsData] = useState<BrandEntry[] | null>(null)
+  const [brandsPanelOpen, setBrandsPanelOpen] = useState(true)
 
   // ── Handlers de HomeScreen ───────────────────────────────────────────────
 
@@ -115,6 +119,19 @@ const App: React.FC = () => {
     setAppState('done')
   }
 
+  // Cuando el job de marcas completa, cargamos los datos para el panel.
+  useEffect(() => {
+    if (appState !== 'done' || tipoJob !== 'marcas' || !jobId) return
+    getBrands(jobId)
+      .then((data) => {
+        setBrandsData(data)
+        setBrandsPanelOpen(data.some((b) => b.source !== 'not_found' && b.source !== 'ean_invalido'))
+      })
+      .catch(() => {
+        setBrandsData(null)
+      })
+  }, [appState, tipoJob, jobId])
+
   /** Reinicia el flujo completo a la pantalla de inicio */
   const handleReset = (): void => {
     setAppState('home')
@@ -125,6 +142,8 @@ const App: React.FC = () => {
     setTipoJobSeleccionado(null)
     setError(null)
     setTab('nuevo')
+    setBrandsData(null)
+    setBrandsPanelOpen(true)
   }
 
   /** Callback: desde el historial el usuario abre un job anterior */
@@ -241,6 +260,40 @@ const App: React.FC = () => {
                 onResume={resumeLoading ? undefined : handleResume}
               />
             )}
+
+            {/* Panel de marcas — visible cuando el job de marcas termina y hay datos */}
+            {appState === 'done' &&
+              tipoJob === 'marcas' &&
+              jobId !== null &&
+              brandsData !== null &&
+              (brandsData.length > 0) && (
+                <section className="w-full max-w-2xl mx-auto">
+                  <button
+                    type="button"
+                    onClick={() => setBrandsPanelOpen((o) => !o)}
+                    className="flex w-full items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-3 text-sm font-semibold text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
+                    aria-expanded={brandsPanelOpen}
+                  >
+                    <span>Resultados de marcas</span>
+                    <svg
+                      className={`h-4 w-4 text-gray-500 transition-transform duration-200 ${brandsPanelOpen ? 'rotate-180' : ''}`}
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      aria-hidden="true"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {brandsPanelOpen && (
+                    <div className="mt-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
+                      <BrandsPanel jobId={jobId} brandsData={brandsData} />
+                    </div>
+                  )}
+                </section>
+              )
+            }
           </>
         )}
 
