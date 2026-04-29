@@ -109,14 +109,13 @@ jobs:
               }
             }
 
-      # Auto-asignar a proyecto si se detecta fase
-      - name: Add PR to Project (if Phase detected)
-        if: steps.phase.outputs.detected == 'true' && steps.event.outputs.type == 'pr'
+      # Auto-asignar a proyecto nuevo (Roadmap Fases 6-10)
+      - name: Add PR to Project (Fases 6-10)
+        if: steps.event.outputs.type == 'pr' && steps.event.outputs.status == 'opened'
         uses: actions/add-to-project@v0.5.0
         with:
-          project-url: https://github.com/BENJAMINDTS/Harvist/projects/1
+          project-url: https://github.com/users/BENJAMINDTS/projects/14
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          labeled: phase:${{ steps.phase.outputs.phase }}
 
   # Workflow para marcar "En Progreso" cuando se abre un PR relacionado a una issue
   mark-in-progress:
