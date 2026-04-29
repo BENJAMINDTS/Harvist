@@ -302,3 +302,41 @@ class TestDescargarMarcasCsv:
                     f"brand_name debe estar vacío para source='{row['source']}', "
                     f"pero fue '{row['brand_name']}'"
                 )
+
+    @pytest.mark.asyncio
+    async def test_brands_csv_returns_404_when_file_missing(
+        self, async_client: AsyncClient, tmp_path: Path
+    ) -> None:
+        """
+        Verifica que el endpoint devuelve 404 cuando marcas.csv no existe.
+        """
+        job_id = str(uuid.uuid4())
+        storage = _storage_mock(tmp_path, job_id, csv_bytes=None)
+
+        with patch("api.v1.endpoints.files.get_storage_service", return_value=storage):
+            response = await async_client.get(f"/api/v1/files/{job_id}/brands")
+
+        assert response.status_code == 404
+        assert "detail" in response.json()
+
+    @pytest.mark.asyncio
+    async def test_brands_json_returns_404_when_csv_missing(
+        self, async_client: AsyncClient, tmp_path: Path
+    ) -> None:
+        """
+        Verifica que el endpoint JSON devuelve 404 cuando marcas.csv no existe
+        aunque el job esté COMPLETADO.
+        """
+        job_id = str(uuid.uuid4())
+        status = _build_job_status(job_id)
+        storage = _storage_mock(tmp_path, job_id, csv_bytes=None)
+        redis = _redis_mock(status.model_dump_json())
+
+        with (
+            patch("api.v1.endpoints.jobs._get_redis", return_value=redis),
+            patch("api.v1.endpoints.jobs.get_storage_service", return_value=storage),
+        ):
+            response = await async_client.get(f"/api/v1/jobs/{job_id}/brands")
+
+        assert response.status_code == 404
+        assert "detail" in response.json()
