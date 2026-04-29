@@ -195,6 +195,8 @@ class DescripcionPipeline:
             "descripciones_generadas": descripciones_ok,
             "descripciones_fallidas": descripciones_fail,
             "errores_csv": resultado_csv.errores,
+            "_productos": productos,
+            "_resultados": descripciones,
         }
 
         logger.info(
