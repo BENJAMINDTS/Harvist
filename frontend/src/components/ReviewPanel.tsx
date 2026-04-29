@@ -90,9 +90,11 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ jobId, onComplete }) =
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [editingCodigo, setEditingCodigo] = useState<string | null>(null)
   const [editingText, setEditingText] = useState('')
+  const [actionError, setActionError] = useState<string | null>(null)
   const [exportLoading, setExportLoading] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const confirmingRef = useRef(false)
 
   // ── Carga de datos ───────────────────────────────────────────────────────────
 
@@ -142,6 +144,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ jobId, onComplete }) =
       editedText?: string
     ): Promise<void> => {
       setActionLoading(codigo)
+      setActionError(null)
       try {
         const body: { action: string; edited_text?: string } = { action }
         if (action === 'edit' && editedText !== undefined) {
@@ -168,7 +171,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ jobId, onComplete }) =
           )
         )
       } catch {
-        // Error silencioso — estado no cambia
+        setActionError('No se pudo guardar la revisión. Inténtalo de nuevo.')
       } finally {
         setActionLoading(null)
       }
@@ -193,11 +196,17 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ jobId, onComplete }) =
 
   const handleConfirmEdit = useCallback(
     async (codigo: string) => {
-      if (editingText.trim()) {
-        await aplicarAccion(codigo, 'edit', editingText.trim())
+      if (confirmingRef.current) return
+      confirmingRef.current = true
+      try {
+        if (editingText.trim()) {
+          await aplicarAccion(codigo, 'edit', editingText.trim())
+        }
+        setEditingCodigo(null)
+        setEditingText('')
+      } finally {
+        confirmingRef.current = false
       }
-      setEditingCodigo(null)
-      setEditingText('')
     },
     [aplicarAccion, editingText]
   )
@@ -381,6 +390,10 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ jobId, onComplete }) =
 
       {exportError && (
         <p className="text-xs text-red-600 dark:text-red-400" role="alert">{exportError}</p>
+      )}
+
+      {actionError && (
+        <p className="text-xs text-red-600 dark:text-red-400" role="alert">{actionError}</p>
       )}
 
       {/* ── Tabs de filtro ── */}

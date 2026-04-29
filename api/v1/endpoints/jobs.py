@@ -24,6 +24,7 @@ import io
 import json
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Annotated
 
 import redis.asyncio as aioredis
@@ -54,6 +55,7 @@ from api.v1.schemas.job import (
     JobResponse,
     JobStatus,
     ModosBusqueda,
+    ReviewAction,
     ReviewStatus,
     SearchConfig,
     TipoJob,
@@ -649,8 +651,6 @@ async def revisar_descripcion(
 
     :author: Carlitos6712
     """
-    from pathlib import Path  # noqa: PLC0415
-
     redis = await _get_redis()
     try:
         job_status = await _get_job_status(redis, job_id)
@@ -696,7 +696,6 @@ async def revisar_descripcion(
             old_status = old_state.status
 
         # Construir nuevo estado según la acción
-        from api.v1.schemas.job import ReviewAction  # noqa: PLC0415
         if body.action == ReviewAction.APPROVE:
             new_status = ReviewStatus.APPROVED
             edited_text = None
@@ -789,8 +788,6 @@ async def obtener_estado_revisiones(
 
     :author: Carlitos6712
     """
-    from pathlib import Path  # noqa: PLC0415
-
     if not (1 <= limit <= 100):
         raise HTTPException(status_code=400, detail="limit debe estar entre 1 y 100.")
 
