@@ -49,6 +49,25 @@ _PROMPT_DEFAULT = (
     "}}]}}"
 )
 
+_PROMPT_TRADUCCION = (
+    "Eres un traductor experto en catálogos de productos de {store_type}. "
+    "Traduce las descripciones de los siguientes productos al idioma: {idioma_destino}.\n\n"
+    "{productos_json}\n\n"
+    "REGLAS ESTRICTAS:\n"
+    "1. Traduce SOLO los campos: descripcion_corta, descripcion_larga, keywords, meta_description.\n"
+    "2. NO traduzcas: id_interno, nombre, marca, categoria.\n"
+    "3. Mantén el mismo tono comercial y SEO del texto original.\n"
+    "4. keywords: lista separada por comas en el idioma destino.\n\n"
+    "RESPONDE EXCLUSIVAMENTE EN JSON, sin texto adicional, sin bloques de código markdown:\n"
+    "{{\"productos\": [{{"
+    "\"id_interno\": \"...\", "
+    "\"descripcion_corta\": \"...\", "
+    "\"descripcion_larga\": \"...\", "
+    "\"keywords\": \"...\", "
+    "\"meta_description\": \"...\""
+    "}}]}}"
+)
+
 _PROMPT_SEO = (
     "Eres un experto en SEO técnico especializado en {store_type}. "
     "Para cada producto genera meta_title y meta_description optimizados para "
@@ -108,6 +127,27 @@ class ResultadoSEO:
     marca: str
     categoria: str
     meta_title: str = ""
+    meta_description: str = ""
+    exitoso: bool = True
+    error: str = ""
+
+
+@dataclass
+class ResultadoTraduccion:
+    """
+    Resultado de la traducción automática de descripciones de un producto (Fase 7.2).
+
+    :author: BenjaminDTS
+    """
+
+    codigo: str
+    nombre: str
+    marca: str
+    categoria: str
+    idioma: str
+    descripcion_corta: str = ""
+    descripcion_larga: str = ""
+    keywords: str = ""
     meta_description: str = ""
     exitoso: bool = True
     error: str = ""
@@ -361,6 +401,165 @@ class DescriptionGenerator:
             },
         )
         return resultados
+
+    def translate_descriptions(
+        self,
+        productos: list[Producto],
+        descripciones: list[ResultadoDescripcion],
+        idioma_destino: str,
+    ) -> list[ResultadoTraduccion]:
+        """
+        Traduce las descripciones SEO generadas a un idioma destino en una sola llamada.
+
+        Combina los datos de Producto con los de ResultadoDescripcion para construir
+        el contexto de traducción. Solo traduce productos cuya descripción fue exitosa.
+        Productos con error en la descripción se marcan directamente como fallidos.
+
+        Args:
+            productos: lista de productos original (para nombre, marca, categoria).
+            descripciones: lista de ResultadoDescripcion ya generadas (mismo orden que productos).
+            idioma_destino: código ISO 639-1 del idioma destino (ej: "en", "fr").
+
+        Returns:
+            Lista de ResultadoTraduccion en el mismo orden que productos.
+            Los productos sin descripción exitosa o sin resultado de Claude se marcan con exitoso=False.
+
+        Raises:
+            No lanza excepciones — errores se capturan y devuelven en ResultadoTraduccion.error.
+        """
+        if not productos:
+            return []
+
+        # Separar exitosos y fallidos para solo llamar a Claude con los exitosos
+        mapa_desc: dict[str, ResultadoDescripcion] = {d.codigo: d for d in descripciones}
+
+        exitosos: list[Producto] = []
+        resultados_previos: list[ResultadoTraduccion] = []
+        for producto in productos:
+            desc = mapa_desc.get(producto.codigo)
+            if desc is not None and desc.exitoso:
+                exitosos.append(producto)
+            else:
+                resultados_previos.append(
+                    ResultadoTraduccion(
+                        codigo=producto.codigo,
+                        nombre=producto.nombre,
+                        marca=producto.marca,
+                        categoria=producto.categoria,
+                        idioma=idioma_destino,
+                        exitoso=False,
+                        error=desc.error if desc else "Sin descripción generada.",
+                    )
+                )
+
+        if not exitosos:
+            return resultados_previos
+
+        productos_input = [
+            {
+                "id_interno": p.codigo,
+                "nombre": p.nombre or p.codigo,
+                "marca": p.marca or "—",
+                "categoria": p.categoria or "- Sin Departamento -",
+                "descripcion_corta": mapa_desc[p.codigo].corta,
+                "descripcion_larga": mapa_desc[p.codigo].larga,
+                "keywords": "",
+                "meta_description": "",
+            }
+            for p in exitosos
+        ]
+
+        _NOMBRE_IDIOMA = {
+            "es": "español",
+            "en": "inglés",
+            "fr": "francés",
+            "de": "alemán",
+            "it": "italiano",
+            "pt": "portugués",
+        }
+        nombre_idioma = _NOMBRE_IDIOMA.get(idioma_destino, idioma_destino)
+
+        prompt = _PROMPT_TRADUCCION.format(
+            store_type=self._store_type,
+            idioma_destino=nombre_idioma,
+            productos_json=json.dumps(productos_input, ensure_ascii=False, indent=2),
+        )
+
+        try:
+            respuesta_raw = self._client.completar(prompt)
+            resultados_claude = self._parsear_respuesta(respuesta_raw)
+        except Exception as exc:
+            logger.error(
+                "Error en llamada batch de traducción a Claude",
+                exc_info=exc,
+                extra={"batch_size": len(exitosos), "idioma": idioma_destino},
+            )
+            fallidos = [
+                ResultadoTraduccion(
+                    codigo=p.codigo,
+                    nombre=p.nombre,
+                    marca=p.marca,
+                    categoria=p.categoria,
+                    idioma=idioma_destino,
+                    exitoso=False,
+                    error=str(exc),
+                )
+                for p in exitosos
+            ]
+            return resultados_previos + fallidos
+
+        mapa_claude: dict[str, dict] = {r["id_interno"]: r for r in resultados_claude}
+
+        resultados_exitosos: list[ResultadoTraduccion] = []
+        for producto in exitosos:
+            datos = mapa_claude.get(producto.codigo)
+            if datos is None:
+                logger.warning(
+                    "Claude no devolvió traducción para el producto",
+                    extra={"codigo": producto.codigo, "idioma": idioma_destino},
+                )
+                resultados_exitosos.append(
+                    ResultadoTraduccion(
+                        codigo=producto.codigo,
+                        nombre=producto.nombre,
+                        marca=producto.marca,
+                        categoria=producto.categoria,
+                        idioma=idioma_destino,
+                        exitoso=False,
+                        error="Sin resultado en la respuesta de Claude.",
+                    )
+                )
+            else:
+                resultados_exitosos.append(
+                    ResultadoTraduccion(
+                        codigo=producto.codigo,
+                        nombre=producto.nombre,
+                        marca=producto.marca,
+                        categoria=producto.categoria,
+                        idioma=idioma_destino,
+                        descripcion_corta=datos.get("descripcion_corta", ""),
+                        descripcion_larga=datos.get("descripcion_larga", ""),
+                        keywords=datos.get("keywords", ""),
+                        meta_description=datos.get("meta_description", ""),
+                        exitoso=True,
+                    )
+                )
+
+        # Reconstruir en el mismo orden que productos de entrada
+        mapa_resultado: dict[str, ResultadoTraduccion] = {
+            r.codigo: r for r in resultados_previos + resultados_exitosos
+        }
+        resultados_ordenados = [mapa_resultado[p.codigo] for p in productos]
+
+        logger.info(
+            "Batch de traducciones generado",
+            extra={
+                "batch_size": len(productos),
+                "idioma": idioma_destino,
+                "exitosos": sum(1 for r in resultados_ordenados if r.exitoso),
+            },
+        )
+        return resultados_ordenados
 
     # ------------------------------------------------------------------
     # Helpers privados
