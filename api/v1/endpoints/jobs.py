@@ -194,7 +194,6 @@ async def crear_job(
         "application/csv",
         "text/plain",
         "application/vnd.ms-excel",
-        "application/octet-stream",
     ):
         raise HTTPException(
             status_code=400,
