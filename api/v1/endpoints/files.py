@@ -4,8 +4,9 @@ Endpoints para la gestión de archivos generados por los trabajos de scraping.
 Rutas expuestas:
   GET    /api/v1/files/{job_id}        — Descargar el ZIP de imágenes (job fotos)
   GET    /api/v1/files/{job_id}/csv    — Descargar el CSV de descripciones (job descripciones)
-  DELETE /api/v1/files/{job_id}        — Eliminar los archivos de un job
+  GET    /api/v1/files/{job_id}/seo    — (Fase 7.1) Descargar CSV de textos SEO (meta_title + meta_description)
   GET    /api/v1/files/{job_id}/brands — (Fase 6) Descargar fichas de marca JSON
+  DELETE /api/v1/files/{job_id}        — Eliminar los archivos de un job
 
 Solo gestiona la capa HTTP. El acceso al sistema de archivos se delega
 a StorageService para mantener la arquitectura limpia.
@@ -156,6 +157,51 @@ async def descargar_csv(job_id: str) -> FileResponse:
         media_type="text/csv",
         filename=f"descripciones_{job_id}.csv",
         headers={"Content-Disposition": f'attachment; filename="descripciones_{job_id}.csv"'},
+    )
+
+
+@router.get(
+    "/{job_id}/seo",
+    summary="Descargar CSV de textos SEO (meta_title + meta_description)",
+    response_class=FileResponse,
+    include_in_schema=True,
+)
+async def descargar_seo(job_id: str) -> FileResponse:
+    """
+    Devuelve el archivo seo.csv generado por el pipeline de generación SEO (Fase 7.1).
+
+    El CSV contiene las columnas: codigo, nombre, meta_title, meta_description.
+    Meta_title máx 60 caracteres, meta_description máx 160 caracteres.
+
+    Args:
+        job_id: identificador UUID del trabajo.
+
+    Returns:
+        FileResponse con el CSV de textos SEO como adjunto descargable.
+
+    Raises:
+        HTTPException 404: si el CSV no existe o el job no ha completado.
+
+    :author: BenjaminDTS
+    """
+    storage = get_storage_service()
+    seo_path = storage.get_job_dir(job_id) / "seo.csv"
+
+    if not seo_path.exists():
+        logger.warning(
+            "seo.csv no encontrado",
+            extra={"job_id": job_id},
+        )
+        raise HTTPException(
+            status_code=404,
+            detail="El archivo de textos SEO no existe. El job puede no haber completado aún.",
+        )
+
+    return FileResponse(
+        path=str(seo_path),
+        media_type="text/csv",
+        filename=f"seo_{job_id}.csv",
+        headers={"Content-Disposition": f'attachment; filename="seo_{job_id}.csv"'},
     )
 
 
