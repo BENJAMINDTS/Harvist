@@ -1,42 +1,1002 @@
 [
-  {"prefix": "8413037", "company_name": "Amanova (Visán)", "country_code": "ES"},
-  {"prefix": "8480000", "company_name": "Hacendado (Mercadona)", "country_code": "ES"},
-  {"prefix": "8410500", "company_name": "Danone España", "country_code": "ES"},
-  {"prefix": "8411700", "company_name": "Puleva (Lactalis)", "country_code": "ES"},
-  {"prefix": "5449000", "company_name": "Coca-Cola Europacific Partners", "country_code": "BE"},
-  {"prefix": "8410023", "company_name": "Nestlé España", "country_code": "ES"},
-  {"prefix": "8712566", "company_name": "Royal Canin", "country_code": "NL"},
-  {"prefix": "9003579", "company_name": "Hill's Pet Nutrition", "country_code": "AT"},
-  {"prefix": "0011110", "company_name": "Purina (Nestlé)", "country_code": "US"},
-  {"prefix": "0038100", "company_name": "Kellogg's", "country_code": "US"},
-  {"prefix": "0037000", "company_name": "Procter & Gamble", "country_code": "US"},
-  {"prefix": "8710400", "company_name": "Unilever Netherlands", "country_code": "NL"},
-  {"prefix": "8001040", "company_name": "Procter & Gamble Italia", "country_code": "IT"},
-  {"prefix": "5000112", "company_name": "Heinz (Kraft Heinz)", "country_code": "GB"},
-  {"prefix": "5900259", "company_name": "Pedigree (Mars Petcare)", "country_code": "PL"},
-  {"prefix": "0023100", "company_name": "Del Monte Foods", "country_code": "US"},
-  {"prefix": "8410128", "company_name": "Campofrío Food Group", "country_code": "ES"},
-  {"prefix": "8410315", "company_name": "Calvo Conservas", "country_code": "ES"},
-  {"prefix": "8480017", "company_name": "Hacendado Bebidas (Mercadona)", "country_code": "ES"},
-  {"prefix": "4056489", "company_name": "Aldi Süd", "country_code": "DE"},
-  {"prefix": "4311596", "company_name": "Lidl Stiftung", "country_code": "DE"},
-  {"prefix": "0070113", "company_name": "Mars Inc.", "country_code": "US"},
-  {"prefix": "0054800", "company_name": "Colgate-Palmolive", "country_code": "US"},
-  {"prefix": "8410031", "company_name": "Leche Pascual", "country_code": "ES"},
-  {"prefix": "8424259", "company_name": "Affinity Petcare", "country_code": "ES"},
-  {"prefix": "8436010", "company_name": "Biopet Riber", "country_code": "ES"},
-  {"prefix": "3222472", "company_name": "Purina Pro Plan (Nestlé France)", "country_code": "FR"},
-  {"prefix": "0050000", "company_name": "Unilever USA", "country_code": "US"},
-  {"prefix": "8001120", "company_name": "Barilla", "country_code": "IT"},
-  {"prefix": "8076809", "company_name": "Ferrero", "country_code": "IT"},
-  {"prefix": "4005808", "company_name": "Henkel AG", "country_code": "DE"},
-  {"prefix": "4015400", "company_name": "Beiersdorf (NIVEA)", "country_code": "DE"},
-  {"prefix": "5000208", "company_name": "Cadbury (Mondelez UK)", "country_code": "GB"},
-  {"prefix": "8714100", "company_name": "Friskies (Nestlé Purina NL)", "country_code": "NL"},
-  {"prefix": "0041789", "company_name": "Natural Balance Pet Foods", "country_code": "US"},
-  {"prefix": "8435185", "company_name": "Orijen (Champion Petfoods ES)", "country_code": "ES"},
-  {"prefix": "5010663", "company_name": "Whiskas (Mars UK)", "country_code": "GB"},
-  {"prefix": "8410169", "company_name": "ElPozo Alimentación", "country_code": "ES"},
-  {"prefix": "8414405", "company_name": "Borges Agricultural & Industrial Nuts", "country_code": "ES"},
-  {"prefix": "3017620", "company_name": "Nutella (Ferrero France)", "country_code": "FR"}
+  {
+    "prefix": "8436559",
+    "company_name": "Eukanuba España (Mars)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436556",
+    "company_name": "Purina España (Nestlé)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436553",
+    "company_name": "Hill's España (Colgate-Palmolive)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436550",
+    "company_name": "Royal Canin España (Mars)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436553",
+    "company_name": "Hill's España (Colgate-Palmolive)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436556",
+    "company_name": "Purina España (Nestlé)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436559",
+    "company_name": "Eukanuba España (Mars)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436562",
+    "company_name": "Pro Plan España (Nestlé)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436565",
+    "company_name": "Orijen España (Champion Petfoods)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436568",
+    "company_name": "Acana España (Champion Petfoods)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436571",
+    "company_name": "Brit Care España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436592",
+    "company_name": "Nuvó (Sederma ES)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436612",
+    "company_name": "Ownat (Deucan)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436557",
+    "company_name": "Criadores (Affinity)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436581",
+    "company_name": "Indidog",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8435399",
+    "company_name": "Primordial",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436606",
+    "company_name": "Sanypet España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436595",
+    "company_name": "Black Canyon España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436598",
+    "company_name": "Almo Nature España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8435262",
+    "company_name": "Bellfor España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436031",
+    "company_name": "Nutro España (Mars)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436044",
+    "company_name": "Royal Pets España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436047",
+    "company_name": "Prolife España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8435268",
+    "company_name": "Purizon España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436573",
+    "company_name": "Taste of the Wild España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436059",
+    "company_name": "Carnilove España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436575",
+    "company_name": "N&D Farmina España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8435270",
+    "company_name": "Applaws España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8435494",
+    "company_name": "Forthglade España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8435416",
+    "company_name": "Lily's Kitchen España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8435386",
+    "company_name": "Canagan España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8435321",
+    "company_name": "Barkyn España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436048",
+    "company_name": "Specific (Dechra ES)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8435376",
+    "company_name": "Eukanuba España (Mars)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8435327",
+    "company_name": "Iams España (Mars)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436017",
+    "company_name": "Natra Pet España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8435280",
+    "company_name": "Wolfsblut España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436560",
+    "company_name": "Miglior Gatto España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8435292",
+    "company_name": "Alovéra España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436617",
+    "company_name": "Premio (Trixie ES)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436015",
+    "company_name": "Comfortis (Elanco ES)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8430552",
+    "company_name": "Frontline (Boehringer ES)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436552",
+    "company_name": "Seraquin España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436051",
+    "company_name": "Drontal España (Bayer)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436038",
+    "company_name": "Biocanil España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436079",
+    "company_name": "Vétoquinol España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8423858",
+    "company_name": "Dobar España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436563",
+    "company_name": "Caniverm España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8435462",
+    "company_name": "Equilibrio España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8435250",
+    "company_name": "Symbiosis España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8435498",
+    "company_name": "Kippy España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436584",
+    "company_name": "Petkit España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436609",
+    "company_name": "Catit España (Hagen)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8435502",
+    "company_name": "Flamingo Pet España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8435505",
+    "company_name": "Savic España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8435508",
+    "company_name": "Ferplast España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8435511",
+    "company_name": "Nobby España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8435514",
+    "company_name": "Zolux España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8435517",
+    "company_name": "Penn-Plax España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436620",
+    "company_name": "Rogz España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436623",
+    "company_name": "Company of Animals España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436626",
+    "company_name": "Hunter España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436629",
+    "company_name": "Julius-K9 España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8436632",
+    "company_name": "Ruffwear España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "4008239",
+    "company_name": "Trixie Heimtierbedarf (2)",
+    "country_code": "DE"
+  },
+  {
+    "prefix": "4022858",
+    "company_name": "Nobby Pet (Schecker)",
+    "country_code": "DE"
+  },
+  {
+    "prefix": "4039olean",
+    "company_name": "Knauer Tierbedarf",
+    "country_code": "DE"
+  },
+  {
+    "prefix": "4039165",
+    "company_name": "Knauer Tierbedarf",
+    "country_code": "DE"
+  },
+  {
+    "prefix": "4032633",
+    "company_name": "Dehner Tier GmbH",
+    "country_code": "DE"
+  },
+  {
+    "prefix": "4000587",
+    "company_name": "Animonda Petfood",
+    "country_code": "DE"
+  },
+  {
+    "prefix": "4047059",
+    "company_name": "Hunter International",
+    "country_code": "DE"
+  },
+  {
+    "prefix": "4048422",
+    "company_name": "Julius-K9 DE",
+    "country_code": "DE"
+  },
+  {
+    "prefix": "4250231",
+    "company_name": "Wolfsblut DE",
+    "country_code": "DE"
+  },
+  {
+    "prefix": "4260154",
+    "company_name": "Belcando (Bewital)",
+    "country_code": "DE"
+  },
+  {
+    "prefix": "4260361",
+    "company_name": "Bosch Tiernahrung",
+    "country_code": "DE"
+  },
+  {
+    "prefix": "4250237",
+    "company_name": "Herrmanns DE",
+    "country_code": "DE"
+  },
+  {
+    "prefix": "4260291",
+    "company_name": "Grau GmbH (Almo Nature DE)",
+    "country_code": "DE"
+  },
+  {
+    "prefix": "4260372",
+    "company_name": "Terra Canis",
+    "country_code": "DE"
+  },
+  {
+    "prefix": "4260336",
+    "company_name": "Platinum DE",
+    "country_code": "DE"
+  },
+  {
+    "prefix": "4260516",
+    "company_name": "MAC's Petfood",
+    "country_code": "DE"
+  },
+  {
+    "prefix": "4260201",
+    "company_name": "Hüttenhund",
+    "country_code": "DE"
+  },
+  {
+    "prefix": "4000158",
+    "company_name": "Dehner Premium",
+    "country_code": "DE"
+  },
+  {
+    "prefix": "4002064",
+    "company_name": "Vitakraft Werke",
+    "country_code": "DE"
+  },
+  {
+    "prefix": "4008888",
+    "company_name": "Söll GmbH (Estanque)",
+    "country_code": "DE"
+  },
+  {
+    "prefix": "4001615",
+    "company_name": "Eheim GmbH (Acuario)",
+    "country_code": "DE"
+  },
+  {
+    "prefix": "4011689",
+    "company_name": "Hobby Aquaristik",
+    "country_code": "DE"
+  },
+  {
+    "prefix": "4011821",
+    "company_name": "Rolf C. Hagen DE",
+    "country_code": "DE"
+  },
+  {
+    "prefix": "4016831",
+    "company_name": "Dupla Aquaristik",
+    "country_code": "DE"
+  },
+  {
+    "prefix": "4021787",
+    "company_name": "ADA Nature Aquarium DE",
+    "country_code": "DE"
+  },
+  {
+    "prefix": "8710729",
+    "company_name": "Versele-Laga",
+    "country_code": "NL"
+  },
+  {
+    "prefix": "8711728",
+    "company_name": "Prins Petfoods (2)",
+    "country_code": "NL"
+  },
+  {
+    "prefix": "8715897",
+    "company_name": "Rolf C. Hagen NL",
+    "country_code": "NL"
+  },
+  {
+    "prefix": "8716759",
+    "company_name": "Interquell NL",
+    "country_code": "NL"
+  },
+  {
+    "prefix": "8718274",
+    "company_name": "Tropifit NL",
+    "country_code": "NL"
+  },
+  {
+    "prefix": "8715418",
+    "company_name": "Gimborn NL (Cuidado Mascotas)",
+    "country_code": "NL"
+  },
+  {
+    "prefix": "8714696",
+    "company_name": "Aqua Medic NL",
+    "country_code": "NL"
+  },
+  {
+    "prefix": "8711731",
+    "company_name": "Prodac NL",
+    "country_code": "NL"
+  },
+  {
+    "prefix": "8718721",
+    "company_name": "Duvo+ NL",
+    "country_code": "NL"
+  },
+  {
+    "prefix": "8719189",
+    "company_name": "All For Paws NL",
+    "country_code": "NL"
+  },
+  {
+    "prefix": "8720245",
+    "company_name": "Bobby & Bella NL",
+    "country_code": "NL"
+  },
+  {
+    "prefix": "8710729",
+    "company_name": "Versele-Laga NL (semillas)",
+    "country_code": "NL"
+  },
+  {
+    "prefix": "8032605",
+    "company_name": "Almo Nature",
+    "country_code": "IT"
+  },
+  {
+    "prefix": "8010232",
+    "company_name": "Gemon Petfood",
+    "country_code": "IT"
+  },
+  {
+    "prefix": "8002239",
+    "company_name": "Purina Italia (Nestlé)",
+    "country_code": "IT"
+  },
+  {
+    "prefix": "8054329",
+    "company_name": "Trainer Petfood",
+    "country_code": "IT"
+  },
+  {
+    "prefix": "8057741",
+    "company_name": "Amity IT",
+    "country_code": "IT"
+  },
+  {
+    "prefix": "8032682",
+    "company_name": "Gheda Petfood",
+    "country_code": "IT"
+  },
+  {
+    "prefix": "8033224",
+    "company_name": "Camon IT",
+    "country_code": "IT"
+  },
+  {
+    "prefix": "8030315",
+    "company_name": "Record Mangimi IT",
+    "country_code": "IT"
+  },
+  {
+    "prefix": "8034055",
+    "company_name": "Natural Code IT",
+    "country_code": "IT"
+  },
+  {
+    "prefix": "8059073",
+    "company_name": "Forza10 IT",
+    "country_code": "IT"
+  },
+  {
+    "prefix": "8032491",
+    "company_name": "Affinity Italia",
+    "country_code": "IT"
+  },
+  {
+    "prefix": "8056010",
+    "company_name": "Haqihana IT",
+    "country_code": "IT"
+  },
+  {
+    "prefix": "3700469",
+    "company_name": "Croquettes.fr",
+    "country_code": "FR"
+  },
+  {
+    "prefix": "3760011",
+    "company_name": "Biofood FR",
+    "country_code": "FR"
+  },
+  {
+    "prefix": "3222470",
+    "company_name": "Purina ProPlan FR (Nestlé)",
+    "country_code": "FR"
+  },
+  {
+    "prefix": "3182556",
+    "company_name": "Hill's FR",
+    "country_code": "FR"
+  },
+  {
+    "prefix": "3760238",
+    "company_name": "Edgard & Cooper FR",
+    "country_code": "FR"
+  },
+  {
+    "prefix": "3760026",
+    "company_name": "Santé Vet FR",
+    "country_code": "FR"
+  },
+  {
+    "prefix": "3700217",
+    "company_name": "Versele-Laga FR",
+    "country_code": "FR"
+  },
+  {
+    "prefix": "3760127",
+    "company_name": "Oogarden FR (Acuario)",
+    "country_code": "FR"
+  },
+  {
+    "prefix": "3664689",
+    "company_name": "Tetra FR",
+    "country_code": "FR"
+  },
+  {
+    "prefix": "3661075",
+    "company_name": "Zolux FR",
+    "country_code": "FR"
+  },
+  {
+    "prefix": "3760108",
+    "company_name": "Caniland FR",
+    "country_code": "FR"
+  },
+  {
+    "prefix": "5010394",
+    "company_name": "James Wellbeloved (Mars UK)",
+    "country_code": "GB"
+  },
+  {
+    "prefix": "5060045",
+    "company_name": "Lily's Kitchen UK",
+    "country_code": "GB"
+  },
+  {
+    "prefix": "5060195",
+    "company_name": "Canagan UK",
+    "country_code": "GB"
+  },
+  {
+    "prefix": "5053990",
+    "company_name": "Burgess Pet Care UK",
+    "country_code": "GB"
+  },
+  {
+    "prefix": "5010557",
+    "company_name": "Butcher's Pet Care UK",
+    "country_code": "GB"
+  },
+  {
+    "prefix": "5000228",
+    "company_name": "Spillers (Nestlé UK)",
+    "country_code": "GB"
+  },
+  {
+    "prefix": "5060367",
+    "company_name": "Applaws UK",
+    "country_code": "GB"
+  },
+  {
+    "prefix": "5060451",
+    "company_name": "Forthglade UK",
+    "country_code": "GB"
+  },
+  {
+    "prefix": "5060183",
+    "company_name": "Naturo UK",
+    "country_code": "GB"
+  },
+  {
+    "prefix": "5010176",
+    "company_name": "Iams UK (Mars)",
+    "country_code": "GB"
+  },
+  {
+    "prefix": "5000587",
+    "company_name": "Eukanuba UK (Mars)",
+    "country_code": "GB"
+  },
+  {
+    "prefix": "5010029",
+    "company_name": "Bakers (Nestlé UK)",
+    "country_code": "GB"
+  },
+  {
+    "prefix": "5023923",
+    "company_name": "Science Plan UK (Hill's)",
+    "country_code": "GB"
+  },
+  {
+    "prefix": "5060632",
+    "company_name": "Scrumbles UK",
+    "country_code": "GB"
+  },
+  {
+    "prefix": "5060246",
+    "company_name": "Simpsons Premium UK",
+    "country_code": "GB"
+  },
+  {
+    "prefix": "5410340",
+    "company_name": "Saveur et Nature BE",
+    "country_code": "BE"
+  },
+  {
+    "prefix": "5410117",
+    "company_name": "Euro Premium BE",
+    "country_code": "BE"
+  },
+  {
+    "prefix": "5400585",
+    "company_name": "Ducat BE (Versele-Laga)",
+    "country_code": "BE"
+  },
+  {
+    "prefix": "5430001",
+    "company_name": "Taste of the Wild BE",
+    "country_code": "BE"
+  },
+  {
+    "prefix": "5413204",
+    "company_name": "Nulo BE",
+    "country_code": "BE"
+  },
+  {
+    "prefix": "9006411",
+    "company_name": "Dr. Clauder's AT",
+    "country_code": "AT"
+  },
+  {
+    "prefix": "9006010",
+    "company_name": "Mera Petfood AT",
+    "country_code": "AT"
+  },
+  {
+    "prefix": "7640128",
+    "company_name": "Profine CH",
+    "country_code": "CH"
+  },
+  {
+    "prefix": "7640167",
+    "company_name": "Yarrah CH",
+    "country_code": "CH"
+  },
+  {
+    "prefix": "7611788",
+    "company_name": "Iams CH (Mars)",
+    "country_code": "CH"
+  },
+  {
+    "prefix": "5901640",
+    "company_name": "Rafi PL",
+    "country_code": "PL"
+  },
+  {
+    "prefix": "5902050",
+    "company_name": "Tropifit PL",
+    "country_code": "PL"
+  },
+  {
+    "prefix": "5901761",
+    "company_name": "Vitapol PL",
+    "country_code": "PL"
+  },
+  {
+    "prefix": "5904479",
+    "company_name": "Chico PL (Maced)",
+    "country_code": "PL"
+  },
+  {
+    "prefix": "5907489",
+    "company_name": "Dolina Noteci PL",
+    "country_code": "PL"
+  },
+  {
+    "prefix": "5905397",
+    "company_name": "Baskerville PL",
+    "country_code": "PL"
+  },
+  {
+    "prefix": "8410182",
+    "company_name": "Pescanova",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8410290",
+    "company_name": "Gallina Blanca (Agrolimen)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8410349",
+    "company_name": "Panzani España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8410438",
+    "company_name": "Casa Tarradellas",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8410650",
+    "company_name": "Bimbo España (Grupo Bimbo)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8410719",
+    "company_name": "Dulcesol",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8410748",
+    "company_name": "Borges España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8414288",
+    "company_name": "Florette España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8414478",
+    "company_name": "Freixenet",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8412901",
+    "company_name": "Mahou-San Miguel",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8410793",
+    "company_name": "Estrella Damm",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8410791",
+    "company_name": "Heineken España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8480006",
+    "company_name": "Hacendado Bebidas 2 (Mercadona)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8480016",
+    "company_name": "Hacendado Charcutería (Mercadona)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8480003",
+    "company_name": "Hacendado Lácteos (Mercadona)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8437006",
+    "company_name": "El Corte Inglés Alimentación",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8420568",
+    "company_name": "Consum",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8413600",
+    "company_name": "Mercadona Droguería",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8414235",
+    "company_name": "Lidl Freeway",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8413800",
+    "company_name": "Auchan España (Alcampo)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8411372",
+    "company_name": "Babaria (Instituto Español)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8411361",
+    "company_name": "Deliplus (Mercadona)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8414719",
+    "company_name": "Agrado (Mercadona)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8428353",
+    "company_name": "Byly España",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8411200",
+    "company_name": "IFC España (Isdin)",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "8413895",
+    "company_name": "Laboratorios Maverick",
+    "country_code": "ES"
+  },
+  {
+    "prefix": "5000159",
+    "company_name": "Unilever UK (Domestos)",
+    "country_code": "GB"
+  },
+  {
+    "prefix": "8710847",
+    "company_name": "Unilever NL (Dove)",
+    "country_code": "NL"
+  },
+  {
+    "prefix": "3017760",
+    "company_name": "Nutella Ferrero FR (2)",
+    "country_code": "FR"
+  },
+  {
+    "prefix": "4000539",
+    "company_name": "Haribo",
+    "country_code": "DE"
+  },
+  {
+    "prefix": "4001686",
+    "company_name": "Storck (Werther's)",
+    "country_code": "DE"
+  },
+  {
+    "prefix": "4008400",
+    "company_name": "Ritter Sport",
+    "country_code": "DE"
+  },
+  {
+    "prefix": "4009900",
+    "company_name": "Wrigley DE (Mars)",
+    "country_code": "DE"
+  },
+  {
+    "prefix": "4260114",
+    "company_name": "Manner AT",
+    "country_code": "AT"
+  },
+  {
+    "prefix": "9002490",
+    "company_name": "Red Bull AT",
+    "country_code": "AT"
+  },
+  {
+    "prefix": "5000315",
+    "company_name": "Walkers (PepsiCo UK)",
+    "country_code": "GB"
+  },
+  {
+    "prefix": "5000116",
+    "company_name": "Cadbury Dairy Milk UK",
+    "country_code": "GB"
+  },
+  {
+    "prefix": "7622300",
+    "company_name": "Mondelez CH (Milka)",
+    "country_code": "CH"
+  },
+  {
+    "prefix": "7613034",
+    "company_name": "Nescafé (Nestlé CH)",
+    "country_code": "CH"
+  },
+  {
+    "prefix": "3229820",
+    "company_name": "Orangina Schweppes FR",
+    "country_code": "FR"
+  },
+  {
+    "prefix": "3155250",
+    "company_name": "Pernod Ricard FR",
+    "country_code": "FR"
+  },
+  {
+    "prefix": "3057640",
+    "company_name": "Danone FR",
+    "country_code": "FR"
+  },
+  {
+    "prefix": "3033710",
+    "company_name": "Candia (Lactalis FR)",
+    "country_code": "FR"
+  },
+  {
+    "prefix": "5010251",
+    "company_name": "McVitie's UK",
+    "country_code": "GB"
+  },
+  {
+    "prefix": "5000336",
+    "company_name": "Rowntree's (Nestlé UK)",
+    "country_code": "GB"
+  }
 ]
