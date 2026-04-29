@@ -58,6 +58,8 @@ export interface SearchConfigValues {
   groqApiKey: string;
   /** Tipo de tienda inyectado en el prompt (ej: 'tiendas de mascotas'). Vacío = usa el del servidor. */
   storeType: string;
+  /** Idiomas destino para traducción automática (Fase 7.2). Lista vacía = sin traducción. */
+  targetLanguages: string[];
 }
 
 /**
@@ -334,6 +336,7 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
   const [columnaNombreFoto, setColumnaNombreFoto] = useState<string>("");
   const [groqApiKey, setGroqApiKey] = useState<string>("");
   const [storeType, setStoreType] = useState<string>("");
+  const [targetLanguages, setTargetLanguages] = useState<string[]>([]);
 
   /** Indica si `onLaunch` está en curso para bloquear el botón y mostrar spinner. */
   const [launching, setLaunching] = useState<boolean>(false);
@@ -376,6 +379,7 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
         },
         groqApiKey,
         storeType,
+        targetLanguages,
       });
     } finally {
       // Siempre desbloquear, incluso si onLaunch lanza una excepción.
@@ -396,6 +400,7 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
     columnaNombreFoto,
     groqApiKey,
     storeType,
+    targetLanguages,
   ]);
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -834,6 +839,83 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
               Ejemplos: <em>tiendas de mascotas</em>, <em>ferreterías</em>, <em>ropa deportiva</em>.
               Vacío = usa el valor del servidor.
             </p>
+          </div>
+
+          {/* ── Traducción automática (Fase 7.2) ── */}
+          <div className="flex flex-col gap-2">
+            <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+              Traducción automática
+            </span>
+            <p className="text-xs text-gray-400 dark:text-gray-500">
+              Genera un CSV de traducciones por cada idioma seleccionado (además del español).
+            </p>
+            <div
+              role="group"
+              aria-label="Idiomas para traducción automática"
+              className="flex flex-wrap gap-2"
+            >
+              {(
+                [
+                  { code: "en", label: "Inglés" },
+                  { code: "fr", label: "Francés" },
+                  { code: "de", label: "Alemán" },
+                  { code: "it", label: "Italiano" },
+                  { code: "pt", label: "Portugués" },
+                ] as const
+              ).map(({ code, label }) => {
+                const checked = targetLanguages.includes(code);
+                return (
+                  <label
+                    key={code}
+                    className={
+                      "flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium cursor-pointer select-none transition-colors duration-150 " +
+                      (checked
+                        ? "bg-blue-50 dark:bg-blue-900/30 border-blue-400 dark:border-blue-500 text-blue-700 dark:text-blue-300"
+                        : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-blue-300 dark:hover:border-blue-600")
+                    }
+                  >
+                    <input
+                      type="checkbox"
+                      className="sr-only"
+                      checked={checked}
+                      onChange={() =>
+                        setTargetLanguages((prev) =>
+                          checked ? prev.filter((l) => l !== code) : [...prev, code]
+                        )
+                      }
+                      aria-label={`Traducir al ${label}`}
+                    />
+                    <span
+                      aria-hidden="true"
+                      className={
+                        "w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 " +
+                        (checked
+                          ? "bg-blue-500 border-blue-500"
+                          : "bg-white dark:bg-gray-700 border-gray-400 dark:border-gray-500")
+                      }
+                    >
+                      {checked && (
+                        <svg
+                          className="w-2.5 h-2.5 text-white"
+                          viewBox="0 0 10 8"
+                          fill="none"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M1 4l2.5 2.5L9 1"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      )}
+                    </span>
+                    {label}
+                  </label>
+                );
+              })}
+            </div>
           </div>
         </fieldset>
       )}

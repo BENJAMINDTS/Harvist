@@ -18,7 +18,7 @@ import { JobHistory } from '@/components/JobHistory'
 import { HomeScreen } from '@/components/HomeScreen'
 import { BrandsPanel } from '@/components/BrandsPanel'
 import { NsLogo } from '@/components/NsLogo'
-import { apiClient, getBrands, resumeJob } from '@/api/client'
+import { apiClient, getBrands, resumeJob, downloadTranslationCsv } from '@/api/client'
 import type { ApiError, BrandEntry } from '@/api/client'
 import type { SearchConfigValues, TipoJob } from '@/components/SearchConfig'
 
@@ -40,6 +40,7 @@ const App: React.FC = () => {
   const [brandsData, setBrandsData] = useState<BrandEntry[] | null>(null)
   const [brandsPanelOpen, setBrandsPanelOpen] = useState(true)
   const [brandsLoadError, setBrandsLoadError] = useState<string | null>(null)
+  const [targetLanguages, setTargetLanguages] = useState<string[]>([])
 
   // ── Handlers de HomeScreen ───────────────────────────────────────────────
 
@@ -99,6 +100,9 @@ const App: React.FC = () => {
       formData.append('columna_nombre_foto', config.columnMapping.columnaNombreFoto)
       formData.append('groq_api_key_usuario', config.groqApiKey)
       formData.append('store_type_usuario', config.storeType)
+      config.targetLanguages.forEach((lang) =>
+        formData.append('target_languages', lang)
+      )
 
       const response = await apiClient.post<{
         success: boolean
@@ -108,6 +112,7 @@ const App: React.FC = () => {
 
       setJobId(response.data.data.job_id)
       setTipoJob(config.tipoJob)
+      setTargetLanguages(config.targetLanguages)
       setAppState('running')
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error al iniciar el trabajo.'
@@ -265,6 +270,63 @@ const App: React.FC = () => {
                 onResume={resumeLoading ? undefined : handleResume}
               />
             )}
+
+            {/* Traducciones disponibles — visible cuando job de descripciones termina con idiomas seleccionados */}
+            {appState === 'done' &&
+              tipoJob === 'descripciones' &&
+              jobId !== null &&
+              targetLanguages.length > 0 && (
+                <section
+                  className="w-full max-w-2xl mx-auto rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4"
+                  aria-label="Descargar traducciones"
+                >
+                  <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+                    Traducciones generadas
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {(
+                      [
+                        { code: 'en', label: 'Inglés' },
+                        { code: 'fr', label: 'Francés' },
+                        { code: 'de', label: 'Alemán' },
+                        { code: 'it', label: 'Italiano' },
+                        { code: 'pt', label: 'Portugués' },
+                      ] as const
+                    )
+                      .filter(({ code }) => targetLanguages.includes(code))
+                      .map(({ code, label }) => (
+                        <button
+                          key={code}
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              const blob = await downloadTranslationCsv(jobId, code)
+                              const url = URL.createObjectURL(blob)
+                              const a = document.createElement('a')
+                              a.href = url
+                              a.download = `descripciones_${code}_${jobId.slice(0, 8)}.csv`
+                              a.click()
+                              URL.revokeObjectURL(url)
+                            } catch {
+                              // Error silencioso — el botón simplemente no descarga
+                            }
+                          }}
+                          className={
+                            "flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors duration-150 " +
+                            "bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700 " +
+                            "text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/40"
+                          }
+                          aria-label={`Descargar CSV en ${label}`}
+                        >
+                          <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                            <path d="M8 12l-4.5-4.5 1.06-1.06L7 9.38V2h2v7.38l2.44-2.94 1.06 1.06L8 12zM2 14h12v-2H2v2z" />
+                          </svg>
+                          {label}
+                        </button>
+                      ))}
+                  </div>
+                </section>
+              )}
 
             {/* Error al cargar marcas */}
             {appState === 'done' && tipoJob === 'marcas' && brandsLoadError !== null && (

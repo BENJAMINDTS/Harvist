@@ -167,6 +167,15 @@ async def crear_job(
         str,
         Form(description="Tipo de tienda para el prompt de IA (ej: 'tiendas de mascotas'). Vacío = usa el del .env."),
     ] = "",
+    target_languages: Annotated[
+        list[str],
+        Form(
+            description=(
+                "Idiomas destino para traducción automática (Fase 7.2). "
+                "Enviar un valor por idioma. Valores permitidos: es, en, fr, de, it, pt."
+            )
+        ),
+    ] = None,
 ) -> JSONResponse:
     """
     Recibe un CSV de inventario, encola el trabajo de scraping y devuelve el job_id.
@@ -217,6 +226,7 @@ async def crear_job(
         query_personalizada=query_personalizada or None,
         groq_api_key_usuario=groq_api_key_usuario,
         store_type_usuario=store_type_usuario,
+        target_languages=target_languages or [],
         column_mapping=ColumnMapping(
             columna_codigo=columna_codigo,
             columna_ean=columna_ean,

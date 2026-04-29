@@ -156,3 +156,18 @@ export async function downloadBrandsCsv(jobId: string): Promise<Blob> {
   )
   return response.data
 }
+
+/**
+ * Descarga el CSV de traducciones para un idioma destino (Fase 7.2).
+ *
+ * @param jobId - Identificador UUID del job.
+ * @param lang  - Código ISO 639-1 del idioma (ej: 'en', 'fr').
+ * @returns Blob con el contenido del CSV de traducciones.
+ */
+export async function downloadTranslationCsv(jobId: string, lang: string): Promise<Blob> {
+  const response = await apiClient.get<Blob>(
+    `/files/${jobId}/translations/${lang}`,
+    { responseType: 'blob' },
+  )
+  return response.data
+}
