@@ -2,18 +2,21 @@
 Endpoints HTTP y WebSocket para la gestión de trabajos de scraping.
 
 Rutas expuestas:
-  POST   /api/v1/jobs                  — Crear un nuevo job con CSV + configuración
-  GET    /api/v1/jobs/{job_id}         — Consultar el estado de un job
-  GET    /api/v1/jobs/{job_id}/brands  — Obtener marcas resueltas como JSON (Fase 6.4)
-  POST   /api/v1/jobs/{job_id}/cancel  — Cancelar un job en curso
-  POST   /api/v1/jobs/{job_id}/resume  — Reanudar un job cancelado o fallido
-  WS     /api/v1/jobs/{job_id}/ws      — Stream de progreso en tiempo real
+  POST   /api/v1/jobs                                          — Crear un nuevo job con CSV + configuración
+  GET    /api/v1/jobs/{job_id}                                 — Consultar el estado de un job
+  GET    /api/v1/jobs/{job_id}/brands                          — Obtener marcas resueltas como JSON (Fase 6.4)
+  POST   /api/v1/jobs/{job_id}/cancel                          — Cancelar un job en curso
+  POST   /api/v1/jobs/{job_id}/resume                          — Reanudar un job cancelado o fallido
+  PATCH  /api/v1/jobs/{job_id}/descriptions/{codigo}           — Revisar (aprobar/rechazar/editar) una descripción (Fase 7.3)
+  GET    /api/v1/jobs/{job_id}/descriptions/review             — Estado de revisión de todas las descripciones (Fase 7.3)
+  WS     /api/v1/jobs/{job_id}/ws                              — Stream de progreso en tiempo real
 
 Este módulo solo maneja HTTP: valida, delega a workers y devuelve respuesta.
 Ninguna lógica de negocio vive aquí.
 
 :author: BenjaminDTS
-:version: 1.2.0
+:author: Carlitos6712
+:version: 1.3.0
 """
 
 import csv
@@ -42,12 +45,15 @@ from api.core.security import limiter
 from services.storage_service import get_storage_service
 from api.v1.schemas.job import (
     ColumnMapping,
+    DescriptionReviewRequest,
+    DescriptionReviewState,
     EstadoJob,
     JobCreate,
     JobProgressEvent,
     JobResponse,
     JobStatus,
     ModosBusqueda,
+    ReviewStatus,
     SearchConfig,
     TipoJob,
 )
@@ -63,6 +69,8 @@ _JOB_CSV_KEY = "job:{job_id}:csv"
 _JOB_CONFIG_KEY = "job:{job_id}:config"
 # Tiempo de vida de la clave en Redis (igual al TTL de archivos)
 _KEY_TTL = settings.file_ttl_seconds
+# Clave Redis donde se almacena el estado de revisión de una descripción individual
+_JOB_REVIEW_KEY = "job:{job_id}:review:{codigo}"
 
 
 async def _get_redis() -> aioredis.Redis:
@@ -608,6 +616,232 @@ async def reanudar_job(job_id: str) -> JSONResponse:
             "message": f"Trabajo reanudado desde el producto {offset_productos + 1}.",
         },
     )
+
+
+@router.patch(
+    "/{job_id}/descriptions/{codigo}",
+    response_model=dict,
+    summary="Revisar una descripción generada por IA (aprobar / rechazar / editar)",
+)
+async def revisar_descripcion(
+    job_id: str,
+    codigo: str,
+    body: DescriptionReviewRequest,
+) -> JSONResponse:
+    """
+    Aplica una acción de revisión (approve / reject / edit) sobre una descripción individual.
+
+    La acción se persiste en Redis bajo job:{job_id}:review:{codigo} con el mismo TTL
+    que el job. Los contadores de revisión en JobStatus se actualizan en consecuencia.
+
+    Args:
+        job_id: identificador UUID del trabajo.
+        codigo: código del producto cuya descripción se revisa.
+        body: acción a aplicar y, si action='edit', el texto editado.
+
+    Returns:
+        JSONResponse con el DescriptionReviewState actualizado.
+
+    Raises:
+        HTTPException 404: si el job o el producto no existen.
+        HTTPException 409: si el job no está en estado COMPLETADO.
+
+    :author: Carlitos6712
+    """
+    from pathlib import Path  # noqa: PLC0415
+
+    redis = await _get_redis()
+    try:
+        job_status = await _get_job_status(redis, job_id)
+
+        if job_status.estado != EstadoJob.COMPLETADO:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"El job '{job_id}' no está COMPLETADO (estado actual: {job_status.estado.value}). "
+                    "Solo se pueden revisar descripciones de jobs completados."
+                ),
+            )
+
+        # Verificar que el producto existe en descripciones.csv
+        storage = get_storage_service()
+        csv_path: Path = storage.get_job_dir(job_id) / "descripciones.csv"
+        if not csv_path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"No se encontraron descripciones para el job '{job_id}'.",
+            )
+
+        codigos_en_csv: set[str] = set()
+        with open(csv_path, encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row.get("codigo"):
+                    codigos_en_csv.add(row["codigo"])
+
+        if codigo not in codigos_en_csv:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Producto '{codigo}' no encontrado en las descripciones del job '{job_id}'.",
+            )
+
+        review_key = _JOB_REVIEW_KEY.format(job_id=job_id, codigo=codigo)
+
+        # Leer estado previo para ajustar contadores
+        raw_review = await redis.get(review_key)
+        old_status = ReviewStatus.PENDING
+        if raw_review:
+            old_state = DescriptionReviewState.model_validate_json(raw_review)
+            old_status = old_state.status
+
+        # Construir nuevo estado según la acción
+        from api.v1.schemas.job import ReviewAction  # noqa: PLC0415
+        if body.action == ReviewAction.APPROVE:
+            new_status = ReviewStatus.APPROVED
+            edited_text = None
+        elif body.action == ReviewAction.REJECT:
+            new_status = ReviewStatus.REJECTED
+            edited_text = None
+        else:  # EDIT
+            new_status = ReviewStatus.APPROVED
+            edited_text = body.edited_text
+
+        new_review_state = DescriptionReviewState(
+            codigo=codigo,
+            status=new_status,
+            edited_text=edited_text,
+        )
+
+        # Persistir en Redis con TTL
+        await redis.set(review_key, new_review_state.model_dump_json(), ex=_KEY_TTL)
+
+        # Actualizar contadores en JobStatus
+        raw_job = await redis.get(_JOB_KEY.format(job_id=job_id))
+        if raw_job:
+            job_status = JobStatus.model_validate_json(raw_job)
+
+            # Revertir contadores del estado anterior
+            if old_status == ReviewStatus.PENDING:
+                job_status.revisiones_pendientes = max(0, job_status.revisiones_pendientes - 1)
+            elif old_status == ReviewStatus.APPROVED:
+                job_status.revisiones_aprobadas = max(0, job_status.revisiones_aprobadas - 1)
+            elif old_status == ReviewStatus.REJECTED:
+                job_status.revisiones_rechazadas = max(0, job_status.revisiones_rechazadas - 1)
+
+            # Aplicar nuevo estado
+            if new_status == ReviewStatus.APPROVED:
+                job_status.revisiones_aprobadas += 1
+            elif new_status == ReviewStatus.REJECTED:
+                job_status.revisiones_rechazadas += 1
+
+            job_status.actualizado_en = datetime.utcnow()
+            await redis.set(
+                _JOB_KEY.format(job_id=job_id),
+                job_status.model_dump_json(),
+                ex=_KEY_TTL,
+            )
+
+        logger.info(
+            "Descripción revisada",
+            extra={"job_id": job_id, "codigo": codigo, "action": body.action.value},
+        )
+
+        return JSONResponse(
+            content={
+                "success": True,
+                "data": new_review_state.model_dump(),
+                "message": f"Descripción '{codigo}' marcada como {new_status.value}.",
+            }
+        )
+
+    finally:
+        await redis.aclose()
+
+
+@router.get(
+    "/{job_id}/descriptions/review",
+    response_model=dict,
+    summary="Obtener estado de revisión de todas las descripciones (paginado)",
+)
+async def obtener_estado_revisiones(
+    job_id: str,
+    limit: int = 25,
+    offset: int = 0,
+) -> JSONResponse:
+    """
+    Devuelve el estado de revisión de todas las descripciones de un job, paginado.
+
+    Las descripciones sin entrada en Redis se devuelven con status=pending por defecto.
+    Requiere que descripciones.csv exista en el storage del job.
+
+    Args:
+        job_id: identificador UUID del trabajo.
+        limit: máximo de registros por página (1-100, por defecto 25).
+        offset: número de registros a saltar (por defecto 0).
+
+    Returns:
+        JSONResponse con lista paginada de DescriptionReviewState.
+
+    Raises:
+        HTTPException 400: si limit > 100 o < 1.
+        HTTPException 404: si el job no existe o no tiene descripciones.
+
+    :author: Carlitos6712
+    """
+    from pathlib import Path  # noqa: PLC0415
+
+    if not (1 <= limit <= 100):
+        raise HTTPException(status_code=400, detail="limit debe estar entre 1 y 100.")
+
+    redis = await _get_redis()
+    try:
+        await _get_job_status(redis, job_id)  # 404 si no existe
+
+        storage = get_storage_service()
+        csv_path: Path = storage.get_job_dir(job_id) / "descripciones.csv"
+        if not csv_path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"No se encontraron descripciones para el job '{job_id}'.",
+            )
+
+        # Leer todos los productos del CSV
+        codigos: list[str] = []
+        with open(csv_path, encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row.get("codigo"):
+                    codigos.append(row["codigo"])
+
+        total = len(codigos)
+        pagina = codigos[offset:offset + limit]
+
+        # Obtener estado de revisión para cada producto de la página
+        revisiones: list[dict] = []
+        for cod in pagina:
+            review_key = _JOB_REVIEW_KEY.format(job_id=job_id, codigo=cod)
+            raw_review = await redis.get(review_key)
+            if raw_review:
+                state = DescriptionReviewState.model_validate_json(raw_review)
+            else:
+                state = DescriptionReviewState(codigo=cod)
+            revisiones.append(state.model_dump())
+
+        return JSONResponse(
+            content={
+                "success": True,
+                "data": {
+                    "items": revisiones,
+                    "total": total,
+                    "limit": limit,
+                    "offset": offset,
+                },
+                "message": f"{len(revisiones)} revisiones devueltas.",
+            }
+        )
+
+    finally:
+        await redis.aclose()
 
 
 @router.websocket("/{job_id}/ws")
