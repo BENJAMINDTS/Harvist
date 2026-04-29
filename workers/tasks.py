@@ -225,6 +225,40 @@ def ejecutar_scraping(
         )
         _actualizar_estado(redis_client, job_status)
 
+    def _callback_seo(
+        jid: str,
+        procesados: int,
+        total: int,
+        seo_ok: int,
+    ) -> None:
+        """
+        Actualiza el estado del job de SEO en Redis tras procesar cada producto.
+
+        Args:
+            jid: job_id.
+            procesados: productos procesados hasta ahora.
+            total: total de productos del CSV.
+            seo_ok: textos SEO generados exitosamente.
+
+        Raises:
+            JobCancelledError: si el job fue cancelado desde la API.
+        """
+        raw = redis_client.get(_JOB_KEY.format(job_id=jid))
+        if raw:
+            current = JobStatus.model_validate_json(raw)
+            if current.estado == EstadoJob.CANCELADO:
+                raise JobCancelledError(f"Job {jid} cancelado por el usuario.")
+
+        job_status.total_productos = total
+        job_status.productos_procesados = procesados
+        job_status.seo_generados = seo_ok
+        job_status.actualizado_en = datetime.utcnow()
+        job_status.mensaje = (
+            f"Generando SEO {procesados}/{total} — "
+            f"{seo_ok} completados."
+        )
+        _actualizar_estado(redis_client, job_status)
+
     try:
         if config.tipo_job == TipoJob.DESCRIPCIONES:
             from services.ai.description_pipeline import DescripcionPipeline  # noqa: PLC0415
@@ -232,6 +266,14 @@ def ejecutar_scraping(
             resumen = pipeline_desc.ejecutar(
                 contenido_csv=contenido_csv,
                 callback=_callback_descripciones,
+                offset_productos=offset_productos,
+            )
+        elif config.tipo_job == TipoJob.SEO:
+            from services.ai.seo_pipeline import SeoPipeline  # noqa: PLC0415
+            pipeline_seo = SeoPipeline(job_id=job_id, config=config, carpeta_job_id=carpeta_job_id)
+            resumen = pipeline_seo.ejecutar(
+                contenido_csv=contenido_csv,
+                callback=_callback_seo,
                 offset_productos=offset_productos,
             )
         elif config.tipo_job == TipoJob.MARCAS:
@@ -259,6 +301,15 @@ def ejecutar_scraping(
             job_status.descripciones_generadas = resumen.get("descripciones_generadas", 0)
             job_status.mensaje = (
                 f"Completado: {resumen.get('descripciones_generadas', 0)} descripciones generadas "
+                f"de {resumen['total_productos']} productos."
+            )
+        elif config.tipo_job == TipoJob.SEO:
+            job_status.total_productos = resumen["total_productos"]
+            job_status.productos_procesados = resumen["total_productos"]
+            job_status.seo_generados = resumen.get("seo_generados", 0)
+            job_status.seo_errores = resumen.get("seo_errores", 0)
+            job_status.mensaje = (
+                f"Completado: {resumen.get('seo_generados', 0)} textos SEO generados "
                 f"de {resumen['total_productos']} productos."
             )
         elif config.tipo_job == TipoJob.MARCAS:
