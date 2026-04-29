@@ -224,6 +224,72 @@ paths:
                     data: null
                     message: El trabajo con ID especificado no existe.
 
+  /api/v1/jobs/{job_id}/brands:
+    get:
+      tags:
+        - jobs
+      summary: "(Fase 6.4) Obtener marcas resueltas como JSON"
+      description: |
+        Devuelve el listado de marcas resueltas para un job completado.
+        Lee marcas.csv del storage y lo serializa como JSON, incluyendo
+        contadores de marcas resueltas y sin resolver.
+      operationId: getJobBrands
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Lista de marcas obtenida correctamente.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      brands:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            codigo:
+                              type: string
+                            ean:
+                              type: string
+                            brand_name:
+                              type: string
+                              nullable: true
+                            manufacturer:
+                              type: string
+                              nullable: true
+                            source:
+                              type: string
+                              enum: [amazon, cache_gs1, open_data_api, google_dorking, bing_search, not_found, ean_invalido]
+                            confidence:
+                              type: string
+                              enum: [high, medium, low]
+                      brands_resolved:
+                        type: integer
+                      brands_not_found:
+                        type: integer
+                  message:
+                    type: string
+        '404':
+          description: El job no existe o marcas.csv no encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: El job no está en estado COMPLETADO.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/v1/jobs/{job_id}/ws:
     get:
       tags:

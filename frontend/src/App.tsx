@@ -39,6 +39,7 @@ const App: React.FC = () => {
   const [resumeLoading, setResumeLoading] = useState(false)
   const [brandsData, setBrandsData] = useState<BrandEntry[] | null>(null)
   const [brandsPanelOpen, setBrandsPanelOpen] = useState(true)
+  const [brandsLoadError, setBrandsLoadError] = useState<string | null>(null)
 
   // ── Handlers de HomeScreen ───────────────────────────────────────────────
 
@@ -122,13 +123,16 @@ const App: React.FC = () => {
   // Cuando el job de marcas completa, cargamos los datos para el panel.
   useEffect(() => {
     if (appState !== 'done' || tipoJob !== 'marcas' || !jobId) return
+    setBrandsLoadError(null)
     getBrands(jobId)
       .then((data) => {
         setBrandsData(data)
         setBrandsPanelOpen(data.some((b) => b.source !== 'not_found' && b.source !== 'ean_invalido'))
       })
-      .catch(() => {
+      .catch((err: unknown) => {
         setBrandsData(null)
+        const msg = err instanceof Error ? err.message : 'No se pudieron cargar las marcas.'
+        setBrandsLoadError(msg)
       })
   }, [appState, tipoJob, jobId])
 
@@ -144,6 +148,7 @@ const App: React.FC = () => {
     setTab('nuevo')
     setBrandsData(null)
     setBrandsPanelOpen(true)
+    setBrandsLoadError(null)
   }
 
   /** Callback: desde el historial el usuario abre un job anterior */
@@ -259,6 +264,13 @@ const App: React.FC = () => {
                 onReset={handleReset}
                 onResume={resumeLoading ? undefined : handleResume}
               />
+            )}
+
+            {/* Error al cargar marcas */}
+            {appState === 'done' && tipoJob === 'marcas' && brandsLoadError !== null && (
+              <div className="w-full max-w-2xl mx-auto rounded-lg border border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-950 px-4 py-3 text-sm text-yellow-700 dark:text-yellow-400" role="alert">
+                No se pudo cargar el panel de marcas: {brandsLoadError}
+              </div>
             )}
 
             {/* Panel de marcas — visible cuando el job de marcas termina y hay datos */}

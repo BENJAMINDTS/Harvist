@@ -364,7 +364,7 @@ async def obtener_marcas_job(job_id: str) -> JSONResponse:
     try:
         raw = marcas_path.read_bytes().decode("utf-8-sig", errors="replace")
         reader = csv.DictReader(io.StringIO(raw))
-        brands: list[dict] = []
+        brands: list[dict[str, str | None]] = []
         brands_resolved = 0
         brands_not_found = 0
 
