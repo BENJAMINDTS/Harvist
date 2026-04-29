@@ -34,8 +34,8 @@ export interface ColumnMapping {
   columnaNombreFoto: string;
 }
 
-/** Tipo de trabajo: descarga de fotos, generación de descripciones o extracción de fichas de marca. Mutuamente excluyentes. */
-export type TipoJob = "fotos" | "descripciones" | "marcas";
+/** Tipo de trabajo: descarga de fotos, generación de descripciones, generación de SEO o extracción de fichas de marca. Mutuamente excluyentes. */
+export type TipoJob = "fotos" | "descripciones" | "seo" | "marcas";
 
 /**
  * Valores de configuración de búsqueda que se envían al padre al lanzar el job.

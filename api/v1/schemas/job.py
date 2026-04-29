@@ -47,16 +47,18 @@ class ModosBusqueda(str, Enum):
 
 class TipoJob(str, Enum):
     """
-    Tipo de trabajo a ejecutar: descarga de fotos, generación de descripciones con IA
-    o scraping de información de marca.
+    Tipo de trabajo a ejecutar: descarga de fotos, generación de descripciones con IA,
+    generación de textos SEO o scraping de información de marca.
 
-    Son mutuamente excluyentes: un job solo puede hacer uno de los tres.
+    Son mutuamente excluyentes: un job solo puede hacer uno de los tipos.
 
     :author: Carlitos6712
+    :author: BenjaminDTS
     """
 
     FOTOS = "fotos"                         # Scraping y descarga de imágenes
     DESCRIPCIONES = "descripciones"         # Generación de descripciones con Claude API
+    SEO = "seo"                             # Generación de meta_title + meta_description (Fase 7.1)
     MARCAS = "marcas"                       # Scraping de información de marca (Fase 6)
 
 
@@ -143,6 +145,11 @@ class SearchConfig(BaseModel):
         description="Tipo de tienda introducido por el usuario (ej: 'tiendas de mascotas'). "
                     "Si está relleno, tiene prioridad sobre CLAUDE_STORE_TYPE del .env.",
     )
+    generate_seo: bool = Field(
+        default=False,
+        description="Activa generación de textos SEO (meta_title + meta_description) con Groq (Fase 7.1). "
+                    "Independiente de tipo_job, puede combinarse con FOTOS o DESCRIPCIONES.",
+    )
     column_mapping: ColumnMapping = Field(
         default_factory=ColumnMapping,
         description="Mapeo de columnas del CSV del usuario a los campos internos del parser.",
@@ -189,6 +196,16 @@ class JobStatus(BaseModel):
         default=0,
         ge=0,
         description="Contador de descripciones generadas por IA (Fase 5).",
+    )
+    seo_generados: int = Field(
+        default=0,
+        ge=0,
+        description="Contador de textos SEO (meta_title + meta_description) generados (Fase 7.1).",
+    )
+    seo_errores: int = Field(
+        default=0,
+        ge=0,
+        description="Contador de errores durante generación SEO (Fase 7.1).",
     )
     marcas_procesadas: int = Field(
         default=0,
@@ -240,6 +257,7 @@ class JobProgressEvent(BaseModel):
     imagenes_descargadas: int
     imagenes_fallidas: int
     descripciones_generadas: int
+    seo_generados: int = 0
     marcas_procesadas: int = 0
     mensaje: str
     error: str | None = None
