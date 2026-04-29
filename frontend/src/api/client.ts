@@ -100,3 +100,59 @@ export async function resumeJob(jobId: string): Promise<ResumeJobData> {
   )
   return response.data.data
 }
+
+/** Fuentes posibles de resolución EAN→marca (valores del backend). */
+export type BrandSource =
+  | 'amazon'
+  | 'cache_gs1'
+  | 'open_data_api'
+  | 'google_dorking'
+  | 'bing_search'
+  | 'not_found'
+  | 'ean_invalido'
+
+/** Entrada de marca resuelta para un producto. */
+export interface BrandEntry {
+  codigo: string
+  ean: string
+  brand_name: string | null
+  manufacturer: string | null
+  source: BrandSource
+  confidence: 'high' | 'medium' | 'low'
+}
+
+/** Respuesta del endpoint GET /jobs/{jobId}/brands. */
+export interface BrandsData {
+  brands: BrandEntry[]
+  brands_resolved: number
+  brands_not_found: number
+}
+
+/**
+ * Obtiene la lista de marcas resueltas para un job.
+ *
+ * @author BenjaminDTS
+ * @param jobId - ID del job.
+ * @returns Array de BrandEntry con todas las marcas procesadas.
+ */
+export async function getBrands(jobId: string): Promise<BrandEntry[]> {
+  const response = await apiClient.get<ApiResponse<BrandsData>>(
+    `/jobs/${jobId}/brands`,
+  )
+  return response.data.data.brands
+}
+
+/**
+ * Descarga el CSV de marcas para un job como Blob.
+ *
+ * @author BenjaminDTS
+ * @param jobId - ID del job.
+ * @returns Blob con el contenido del CSV.
+ */
+export async function downloadBrandsCsv(jobId: string): Promise<Blob> {
+  const response = await apiClient.get<Blob>(
+    `/files/${jobId}/brands`,
+    { responseType: 'blob' },
+  )
+  return response.data
+}

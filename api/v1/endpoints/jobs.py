@@ -4,6 +4,7 @@ Endpoints HTTP y WebSocket para la gestión de trabajos de scraping.
 Rutas expuestas:
   POST   /api/v1/jobs                  — Crear un nuevo job con CSV + configuración
   GET    /api/v1/jobs/{job_id}         — Consultar el estado de un job
+  GET    /api/v1/jobs/{job_id}/brands  — Obtener marcas resueltas como JSON (Fase 6.4)
   POST   /api/v1/jobs/{job_id}/cancel  — Cancelar un job en curso
   POST   /api/v1/jobs/{job_id}/resume  — Reanudar un job cancelado o fallido
   WS     /api/v1/jobs/{job_id}/ws      — Stream de progreso en tiempo real
@@ -12,9 +13,11 @@ Este módulo solo maneja HTTP: valida, delega a workers y devuelve respuesta.
 Ninguna lógica de negocio vive aquí.
 
 :author: BenjaminDTS
-:version: 1.1.0
+:version: 1.2.0
 """
 
+import csv
+import io
 import json
 import uuid
 from datetime import datetime
@@ -36,6 +39,7 @@ from loguru import logger
 
 from api.core.config import get_settings
 from api.core.security import limiter
+from services.storage_service import get_storage_service
 from api.v1.schemas.job import (
     ColumnMapping,
     EstadoJob,
@@ -194,7 +198,6 @@ async def crear_job(
         "application/csv",
         "text/plain",
         "application/vnd.ms-excel",
-        "application/octet-stream",
     ):
         raise HTTPException(
             status_code=400,
@@ -306,6 +309,104 @@ async def obtener_estado_job(job_id: str) -> JSONResponse:
             "success": True,
             "data": json.loads(status.model_dump_json()),
             "message": status.mensaje,
+        }
+    )
+
+
+@router.get(
+    "/{job_id}/brands",
+    response_model=JobResponse,
+    summary="(Fase 6.4) Obtener marcas resueltas como JSON",
+)
+async def obtener_marcas_job(job_id: str) -> JSONResponse:
+    """
+    Devuelve el listado de marcas resueltas para un job completado.
+
+    Lee marcas.csv del storage y lo serializa como JSON, incluyendo contadores
+    de marcas resueltas y sin resolver para el panel de visualización.
+
+    Args:
+        job_id: identificador UUID del trabajo.
+
+    Returns:
+        JSONResponse con brands (list), brands_resolved (int) y brands_not_found (int).
+
+    Raises:
+        HTTPException 404: si el job no existe en Redis.
+        HTTPException 409: si el job no ha completado aún.
+        HTTPException 404: si marcas.csv no existe en storage.
+    """
+    redis = await _get_redis()
+    try:
+        status = await _get_job_status(redis, job_id)
+    finally:
+        await redis.aclose()
+
+    if status.estado != EstadoJob.COMPLETADO:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"El job aún no ha completado (estado: '{status.estado.value}'). "
+                "Las marcas solo están disponibles cuando el job está COMPLETADO."
+            ),
+        )
+
+    storage = get_storage_service()
+    marcas_path = storage.get_job_dir(job_id) / "marcas.csv"
+
+    if not marcas_path.exists():
+        logger.warning("marcas.csv no encontrado para job", extra={"job_id": job_id})
+        raise HTTPException(
+            status_code=404,
+            detail="El archivo de marcas no existe. El job puede no haber procesado marcas.",
+        )
+
+    try:
+        raw = marcas_path.read_bytes().decode("utf-8-sig", errors="replace")
+        reader = csv.DictReader(io.StringIO(raw))
+        brands: list[dict[str, str | None]] = []
+        brands_resolved = 0
+        brands_not_found = 0
+
+        for row in reader:
+            brands.append({
+                "codigo": row.get("codigo", ""),
+                "ean": row.get("ean", ""),
+                "brand_name": row.get("brand_name") or None,
+                "manufacturer": row.get("manufacturer") or None,
+                "source": row.get("source", "not_found"),
+                "confidence": row.get("confidence", "low"),
+            })
+            if row.get("source") not in ("not_found", "ean_invalido"):
+                brands_resolved += 1
+            else:
+                brands_not_found += 1
+
+    except Exception as exc:
+        logger.error(
+            "Error leyendo marcas.csv",
+            exc_info=exc,
+            extra={"job_id": job_id},
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Error interno al leer el archivo de marcas.",
+        ) from exc
+
+    logger.info(
+        "Marcas leídas",
+        extra={"job_id": job_id, "total": len(brands), "resolved": brands_resolved},
+    )
+
+    return JSONResponse(
+        content={
+            "success": True,
+            "data": {
+                "brands": brands,
+                "brands_resolved": brands_resolved,
+                "brands_not_found": brands_not_found,
+            },
+            "message": f"{len(brands)} marcas procesadas: {brands_resolved} resueltas, {brands_not_found} sin resolver.",
         }
     )
 
