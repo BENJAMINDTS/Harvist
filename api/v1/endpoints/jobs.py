@@ -45,6 +45,7 @@ from api.core.security import limiter
 from services.storage_service import get_storage_service
 from api.v1.schemas.job import (
     ColumnMapping,
+    DescriptionReviewEntry,
     DescriptionReviewRequest,
     DescriptionReviewState,
     EstadoJob,
@@ -805,27 +806,36 @@ async def obtener_estado_revisiones(
                 detail=f"No se encontraron descripciones para el job '{job_id}'.",
             )
 
-        # Leer todos los productos del CSV
-        codigos: list[str] = []
+        # Leer todos los productos del CSV (con contenido de descripción)
+        filas: list[dict] = []
         with open(csv_path, encoding="utf-8-sig") as f:
             reader = csv.DictReader(f)
             for row in reader:
                 if row.get("codigo"):
-                    codigos.append(row["codigo"])
+                    filas.append(row)
 
-        total = len(codigos)
-        pagina = codigos[offset:offset + limit]
+        total = len(filas)
+        pagina = filas[offset:offset + limit]
 
         # Obtener estado de revisión para cada producto de la página
         revisiones: list[dict] = []
-        for cod in pagina:
+        for fila in pagina:
+            cod = fila["codigo"]
             review_key = _JOB_REVIEW_KEY.format(job_id=job_id, codigo=cod)
             raw_review = await redis.get(review_key)
             if raw_review:
-                state = DescriptionReviewState.model_validate_json(raw_review)
+                base_state = DescriptionReviewState.model_validate_json(raw_review)
             else:
-                state = DescriptionReviewState(codigo=cod)
-            revisiones.append(state.model_dump())
+                base_state = DescriptionReviewState(codigo=cod)
+            entry = DescriptionReviewEntry(
+                codigo=cod,
+                status=base_state.status,
+                edited_text=base_state.edited_text,
+                nombre=fila.get("nombre", ""),
+                descripcion_corta=fila.get("corta", ""),
+                descripcion_larga=fila.get("larga", ""),
+            )
+            revisiones.append(entry.model_dump())
 
         return JSONResponse(
             content={

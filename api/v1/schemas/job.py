@@ -140,6 +140,21 @@ class DescriptionReviewState(BaseModel):
     )
 
 
+class DescriptionReviewEntry(DescriptionReviewState):
+    """
+    Entrada de revisión enriquecida con el contenido de la descripción.
+
+    Combina el estado de revisión de Redis con los datos del CSV de descripciones,
+    para devolver al frontend toda la información necesaria en un solo objeto.
+
+    :author: Carlitos6712
+    """
+
+    nombre: str = Field(default="", description="Nombre del producto.")
+    descripcion_corta: str = Field(default="", description="Descripción corta generada por IA.")
+    descripcion_larga: str = Field(default="", description="Descripción larga generada por IA.")
+
+
 # ── Configuración de búsqueda ─────────────────────────────────────────────────
 
 class ColumnMapping(BaseModel):
