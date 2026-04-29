@@ -266,3 +266,4 @@ class BrandPipeline:
                 exc_info=exc,
                 extra={"job_id": self._job_id},
             )
+            raise

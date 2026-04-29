@@ -19,7 +19,7 @@ import { HomeScreen } from '@/components/HomeScreen'
 import { BrandsPanel } from '@/components/BrandsPanel'
 import { NsLogo } from '@/components/NsLogo'
 import { apiClient, getBrands, resumeJob } from '@/api/client'
-import type { BrandEntry } from '@/api/client'
+import type { ApiError, BrandEntry } from '@/api/client'
 import type { SearchConfigValues, TipoJob } from '@/components/SearchConfig'
 
 /** Estados posibles de la pantalla principal */
@@ -131,7 +131,7 @@ const App: React.FC = () => {
       })
       .catch((err: unknown) => {
         setBrandsData(null)
-        const msg = err instanceof Error ? err.message : 'No se pudieron cargar las marcas.'
+        const msg = (err as ApiError).message ?? 'No se pudieron cargar las marcas.'
         setBrandsLoadError(msg)
       })
   }, [appState, tipoJob, jobId])

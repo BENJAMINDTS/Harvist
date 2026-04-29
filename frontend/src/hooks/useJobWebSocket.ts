@@ -67,6 +67,8 @@ export function useJobWebSocket(jobId: string | null): UseJobWebSocketReturn {
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Flag para saber si el desmontaje fue intencional (evita reconexión)
   const unmountedRef = useRef(false)
+  // Ref sincrónico de isFinished para evitar closure obsoleta en onclose
+  const isFinishedRef = useRef(false)
 
   const connect = useCallback(() => {
     if (!jobId || unmountedRef.current) return
@@ -88,6 +90,7 @@ export function useJobWebSocket(jobId: string | null): UseJobWebSocketReturn {
 
         // El backend puede enviar un objeto de error no tipado como JobProgressEvent
         if ('error' in data && typeof (data as { error?: string }).error === 'string' && !data.job_id) {
+          isFinishedRef.current = true
           setWsStatus('error')
           setIsFinished(true)
           ws.close()
@@ -97,6 +100,7 @@ export function useJobWebSocket(jobId: string | null): UseJobWebSocketReturn {
         setProgress(data)
 
         if (FINISHED_STATES.includes(data.estado)) {
+          isFinishedRef.current = true
           setIsFinished(true)
           setWsStatus('closed')
           ws.close()
@@ -111,7 +115,7 @@ export function useJobWebSocket(jobId: string | null): UseJobWebSocketReturn {
     }
 
     ws.onclose = () => {
-      if (unmountedRef.current || isFinished) return
+      if (unmountedRef.current || isFinishedRef.current) return
 
       if (retriesRef.current < MAX_RETRIES) {
         // Backoff exponencial: 1s, 2s, 4s, 8s, 16s
@@ -123,7 +127,7 @@ export function useJobWebSocket(jobId: string | null): UseJobWebSocketReturn {
         setWsStatus('error')
       }
     }
-  }, [jobId, isFinished])
+  }, [jobId])
 
   useEffect(() => {
     unmountedRef.current = false
