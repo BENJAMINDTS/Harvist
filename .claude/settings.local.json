@@ -23,7 +23,9 @@
       "Bash(pkill -f \"uvicorn api.main\")",
       "Bash(pkill -f \"celery.*worker\")",
       "PowerShell(Get-Process *)",
-      "Bash(gh label *)"
+      "Bash(gh label *)",
+      "Bash(gh api *)",
+      "PowerShell(gh api *)"
     ]
   }
 }
