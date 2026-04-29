@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker compose *)",
+      "Bash(findstr \":6379\")",
+      "Bash(tasklist /FI \"PID eq 24600\" /FO LIST)",
+      "Bash(tasklist /FI \"PID eq 23436\" /FO LIST)",
+      "Bash(tasklist)",
+      "Bash(docker rm *)",
+      "Bash(docker network *)",
+      "Bash(.venv/Scripts/activate)",
+      "Bash(celery -A workers.celery_app worker --loglevel=info --pool=solo)",
+      "Bash(uvicorn api.main:app --reload --host 0.0.0.0 --port 8000)",
+      "Bash(gh repo *)",
+      "Bash(gh project *)",
+      "Bash(gh auth *)",
+      "Bash(cat)",
+      "Bash(chmod +x /tmp/create_issues.sh)",
+      "Bash(bash /tmp/create_issues.sh)",
+      "Bash(bash /tmp/create_integration_issues.sh)",
+      "Bash(gh issue *)",
+      "Bash(pkill -f \"npm run dev\")",
+      "Bash(pkill -f \"uvicorn api.main\")",
+      "Bash(pkill -f \"celery.*worker\")",
+      "PowerShell(Get-Process *)",
+      "Bash(gh label *)"
+    ]
+  }
+}

@@ -1,0 +1,14 @@
+#!/bin/bash
+# @author BenjaminDTS
+# Commit-msg hook: elimina líneas Co-Authored-By generadas por IA (Claude, Copilot, etc.)
+
+COMMIT_FILE="$1"
+
+# Eliminar cualquier línea Co-Authored-By que mencione IA
+sed -i '/^Co-Authored-By:.*[Cc]laude/d' "$COMMIT_FILE"
+sed -i '/^Co-Authored-By:.*[Aa]nthrop/d' "$COMMIT_FILE"
+sed -i '/^Co-Authored-By:.*[Cc]opilot/d' "$COMMIT_FILE"
+sed -i '/^Co-Authored-By:.*noreply@anthropic/d' "$COMMIT_FILE"
+sed -i '/^Creado por: Claude Code (Caveman Mode)/d' "$COMMIT_FILE"
+sed -i '/^Creado por: Copilot/d' "$COMMIT_FILE"
+

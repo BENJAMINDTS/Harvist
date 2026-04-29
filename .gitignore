@@ -92,12 +92,7 @@ docker-compose.override.yml
 # ==========================================
 # 7. CLAUDE AI
 # ==========================================
-.claude/
-.claudeai/
-.agents/
-claude.md
-CLAUDE.md
-.githooks
+
 
 
 # ==========================================
@@ -118,5 +113,3 @@ $RECYCLE.BIN/
 .idea/
 *.suo
 *.sw?
-
-.githooks

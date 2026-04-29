@@ -1,0 +1,18 @@
+#!/bin/bash
+# @author BenjaminDTS
+# Pre-commit hook: bloquea commits directamente en la rama 'main'.
+# Para instalar: git config core.hooksPath .githooks
+
+branch=$(git symbolic-ref --short HEAD 2>/dev/null)
+
+if [ "$branch" = "main" ]; then
+  echo ""
+  echo "  COMMIT BLOQUEADO"
+  echo "  No puedes hacer commits directamente en 'main'."
+  echo ""
+  echo "  Crea una rama antes de continuar:"
+  echo "    git checkout -b feat/nombre-descriptivo"
+  echo "    git checkout -b fix/nombre-descriptivo"
+  echo ""
+  exit 1
+fi
