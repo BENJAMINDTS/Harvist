@@ -2,24 +2,26 @@
 Endpoints para la gestión de archivos generados por los trabajos de scraping.
 
 Rutas expuestas:
-  GET    /api/v1/files/{job_id}        — Descargar el ZIP de imágenes (job fotos)
-  GET    /api/v1/files/{job_id}/csv    — Descargar el CSV de descripciones (job descripciones)
-  GET    /api/v1/files/{job_id}/seo    — (Fase 7.1) Descargar CSV de textos SEO (meta_title + meta_description)
-  GET    /api/v1/files/{job_id}/brands — (Fase 6) Descargar fichas de marca JSON
-  DELETE /api/v1/files/{job_id}        — Eliminar los archivos de un job
+  GET    /api/v1/files/{job_id}                        — Descargar el ZIP de imágenes (job fotos)
+  GET    /api/v1/files/{job_id}/csv                    — Descargar el CSV de descripciones (job descripciones)
+  GET    /api/v1/files/{job_id}/seo                    — (Fase 7.1) Descargar CSV de textos SEO (meta_title + meta_description)
+  GET    /api/v1/files/{job_id}/brands                 — (Fase 6) Descargar fichas de marca JSON
+  GET    /api/v1/files/{job_id}/translations/{lang}    — (Fase 7.2) Descargar CSV de traducciones por idioma
+  DELETE /api/v1/files/{job_id}                        — Eliminar los archivos de un job
 
 Solo gestiona la capa HTTP. El acceso al sistema de archivos se delega
 a StorageService para mantener la arquitectura limpia.
 
 :author: BenjaminDTS
-:version: 1.0.0
+:version: 1.1.0
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Path
 from fastapi.responses import FileResponse, JSONResponse
 from loguru import logger
 
 from api.core.config import get_settings
+from api.v1.schemas.job import SUPPORTED_LANGUAGES
 from services.storage_service import get_storage_service
 
 router = APIRouter(prefix="/files", tags=["Files"])
@@ -244,4 +246,70 @@ async def descargar_fichas_marca(job_id: str) -> FileResponse:
         media_type="text/csv",
         filename=f"marcas_{job_id}.csv",
         headers={"Content-Disposition": f'attachment; filename="marcas_{job_id}.csv"'},
+    )
+
+
+@router.get(
+    "/{job_id}/translations/{lang}",
+    summary="Descargar CSV de traducciones de descripciones por idioma",
+    response_class=FileResponse,
+    include_in_schema=True,
+)
+async def descargar_traducciones(
+    job_id: str,
+    lang: str = Path(
+        description=f"Código ISO 639-1 del idioma destino. Valores permitidos: {SUPPORTED_LANGUAGES}.",
+        examples=["en", "fr", "de"],
+    ),
+) -> FileResponse:
+    """
+    Devuelve el CSV de traducciones para el idioma especificado (Fase 7.2).
+
+    El CSV contiene: codigo, nombre, marca, categoria,
+    descripcion_corta, descripcion_larga, keywords, meta_description.
+
+    Args:
+        job_id: identificador UUID del trabajo.
+        lang: código ISO 639-1 del idioma destino (ej: 'en', 'fr', 'de', 'it', 'pt').
+
+    Returns:
+        FileResponse con el CSV de traducciones como adjunto descargable.
+
+    Raises:
+        HTTPException 400: si el idioma no está soportado.
+        HTTPException 404: si el CSV no existe o el job no ha completado.
+
+    :author: BenjaminDTS
+    """
+    if lang not in SUPPORTED_LANGUAGES:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Idioma '{lang}' no soportado. "
+                f"Idiomas válidos: {list(SUPPORTED_LANGUAGES)}."
+            ),
+        )
+
+    storage = get_storage_service()
+    csv_path = storage.get_job_dir(job_id) / f"traducciones_{lang}.csv"
+
+    if not csv_path.exists():
+        logger.warning(
+            "CSV de traducciones no encontrado",
+            extra={"job_id": job_id, "lang": lang},
+        )
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"El archivo de traducciones para '{lang}' no existe. "
+                "El job puede no haber completado aún o no se solicitó ese idioma."
+            ),
+        )
+
+    filename = f"descripciones_{lang}_{job_id[:8]}.csv"
+    return FileResponse(
+        path=str(csv_path),
+        media_type="text/csv; charset=utf-8",
+        filename=filename,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

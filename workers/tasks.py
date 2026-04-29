@@ -225,6 +225,37 @@ def ejecutar_scraping(
         )
         _actualizar_estado(redis_client, job_status)
 
+    def _callback_traducciones(
+        jid: str,
+        idioma: str,
+        total: int,
+        traducciones_ok: int,
+    ) -> None:
+        """
+        Actualiza el estado del job de traducciones en Redis tras procesar cada idioma.
+
+        Args:
+            jid: job_id.
+            idioma: código ISO 639-1 del idioma destino.
+            total: total de productos a traducir.
+            traducciones_ok: traducciones generadas exitosamente en este idioma.
+
+        Raises:
+            JobCancelledError: si el job fue cancelado desde la API.
+        """
+        raw = redis_client.get(_JOB_KEY.format(job_id=jid))
+        if raw:
+            current = JobStatus.model_validate_json(raw)
+            if current.estado == EstadoJob.CANCELADO:
+                raise JobCancelledError(f"Job {jid} cancelado por el usuario.")
+
+        job_status.traducciones_generadas[idioma] = traducciones_ok
+        job_status.actualizado_en = datetime.utcnow()
+        job_status.mensaje = (
+            f"Traduciendo al {idioma}: {traducciones_ok}/{total} completadas."
+        )
+        _actualizar_estado(redis_client, job_status)
+
     def _callback_seo(
         jid: str,
         procesados: int,
@@ -268,6 +299,30 @@ def ejecutar_scraping(
                 callback=_callback_descripciones,
                 offset_productos=offset_productos,
             )
+
+            # ── Fase 7.2: traducciones automáticas ───────────────────────────
+            if config.target_languages:
+                from services.ai.translation_pipeline import TranslationPipeline  # noqa: PLC0415
+                _productos_desc = resumen.get("_productos", [])
+                _resultados_desc = resumen.get("_resultados", [])
+
+                for idioma in config.target_languages:
+                    pipeline_trad = TranslationPipeline(
+                        job_id=job_id,
+                        config=config,
+                        carpeta_job_id=carpeta_job_id,
+                    )
+                    resumen_trad = pipeline_trad.ejecutar(
+                        productos=_productos_desc,
+                        descripciones=_resultados_desc,
+                        idioma_destino=idioma,
+                    )
+                    _callback_traducciones(
+                        job_id,
+                        idioma,
+                        resumen_trad["total_productos"],
+                        resumen_trad["traducciones_generadas"],
+                    )
         elif config.tipo_job == TipoJob.SEO:
             from services.ai.seo_pipeline import SeoPipeline  # noqa: PLC0415
             pipeline_seo = SeoPipeline(job_id=job_id, config=config, carpeta_job_id=carpeta_job_id)
@@ -299,10 +354,17 @@ def ejecutar_scraping(
         if config.tipo_job == TipoJob.DESCRIPCIONES:
             job_status.total_productos = resumen["total_productos"]
             job_status.descripciones_generadas = resumen.get("descripciones_generadas", 0)
-            job_status.mensaje = (
-                f"Completado: {resumen.get('descripciones_generadas', 0)} descripciones generadas "
-                f"de {resumen['total_productos']} productos."
-            )
+            if config.target_languages:
+                job_status.mensaje = (
+                    f"Completado: {resumen.get('descripciones_generadas', 0)} descripciones generadas "
+                    f"de {resumen['total_productos']} productos. "
+                    f"Idiomas traducidos: {', '.join(config.target_languages)}."
+                )
+            else:
+                job_status.mensaje = (
+                    f"Completado: {resumen.get('descripciones_generadas', 0)} descripciones generadas "
+                    f"de {resumen['total_productos']} productos."
+                )
         elif config.tipo_job == TipoJob.SEO:
             job_status.total_productos = resumen["total_productos"]
             job_status.productos_procesados = resumen["total_productos"]
