@@ -49,6 +49,28 @@ _PROMPT_DEFAULT = (
     "}}]}}"
 )
 
+_PROMPT_SEO = (
+    "Eres un experto en SEO técnico especializado en {store_type}. "
+    "Para cada producto genera meta_title y meta_description optimizados para "
+    "posicionamiento en Google SERP, basándote en nombre, marca y categoría:\n\n"
+    "{productos_json}\n\n"
+    "REGLAS ESTRICTAS:\n"
+    "1. meta_title: MÁXIMO 60 caracteres (incluyendo espacios). "
+    "   Incluye el nombre del producto o keyword principal de alto volumen. "
+    "   Legible, sin caracteres especiales, sin emojis, sin markdown.\n"
+    "2. meta_description: MÁXIMO 160 caracteres (incluyendo espacios). "
+    "   Persuasiva, clara, incluye un beneficio principal. "
+    "   Sin emojis, sin markdown, sin caracteres especiales.\n"
+    "3. Si el meta_title o meta_description exceden el límite, trunca de forma inteligente "
+    "   cortando por palabra completa (nunca a mitad de palabra).\n\n"
+    "RESPONDE EXCLUSIVAMENTE EN JSON, sin texto adicional, sin bloques de código markdown:\n"
+    "{{\"productos\": [{{"
+    "\"id_interno\": \"...\", "
+    "\"meta_title\": \"...\", "
+    "\"meta_description\": \"...\""
+    "}}]}}"
+)
+
 
 # ---------------------------------------------------------------------------
 # Modelos de datos
@@ -69,6 +91,24 @@ class ResultadoDescripcion:
     categoria: str
     corta: str = ""
     larga: str = ""
+    exitoso: bool = True
+    error: str = ""
+
+
+@dataclass
+class ResultadoSEO:
+    """
+    Resultado de la generación de textos SEO (meta_title + meta_description) para un producto.
+
+    :author: BenjaminDTS
+    """
+
+    codigo: str
+    nombre: str
+    marca: str
+    categoria: str
+    meta_title: str = ""
+    meta_description: str = ""
     exitoso: bool = True
     error: str = ""
 
@@ -216,6 +256,112 @@ class DescriptionGenerator:
         )
         return resultados
 
+    def generate_seo_texts(self, productos: list[Producto]) -> list[ResultadoSEO]:
+        """
+        Genera meta_title (≤60 chars) y meta_description (≤160 chars) SEO para un lote de productos.
+
+        Procesa múltiples productos en una sola llamada a Claude para minimizar latencia
+        y coste. Respeta estrictamente los límites de caracteres truncando de forma
+        inteligente (sin cortar palabras a mitad).
+
+        Args:
+            productos: lista de productos a procesar en este batch.
+
+        Returns:
+            Lista de ResultadoSEO con meta_title y meta_description optimizados para SERP.
+            Los productos sin resultado se marcan con exitoso=False.
+
+        Raises:
+            No lanza excepciones — errores se capturan y devuelven en ResultadoSEO.error.
+        """
+        if not productos:
+            return []
+
+        productos_input = [
+            {
+                "id_interno": p.codigo,
+                "nombre": p.nombre or p.codigo,
+                "marca": p.marca or "—",
+                "categoria": p.categoria or "- Sin Departamento -",
+            }
+            for p in productos
+        ]
+
+        prompt = _PROMPT_SEO.format(
+            store_type=self._store_type,
+            productos_json=json.dumps(productos_input, ensure_ascii=False, indent=2),
+        )
+
+        try:
+            respuesta_raw = self._client.completar(prompt)
+            resultados_claude = self._parsear_respuesta(respuesta_raw)
+        except Exception as exc:
+            logger.error(
+                "Error en llamada batch de SEO a Claude",
+                exc_info=exc,
+                extra={"batch_size": len(productos)},
+            )
+            return [
+                ResultadoSEO(
+                    codigo=p.codigo,
+                    nombre=p.nombre,
+                    marca=p.marca,
+                    categoria=p.categoria,
+                    exitoso=False,
+                    error=str(exc),
+                )
+                for p in productos
+            ]
+
+        mapa: dict[str, dict] = {r["id_interno"]: r for r in resultados_claude}
+
+        resultados: list[ResultadoSEO] = []
+        for producto in productos:
+            datos = mapa.get(producto.codigo)
+            if datos is None:
+                logger.warning(
+                    "Claude no devolvió resultado SEO para el producto",
+                    extra={"codigo": producto.codigo},
+                )
+                resultados.append(
+                    ResultadoSEO(
+                        codigo=producto.codigo,
+                        nombre=producto.nombre,
+                        marca=producto.marca,
+                        categoria=producto.categoria,
+                        exitoso=False,
+                        error="Sin resultado en la respuesta de Claude.",
+                    )
+                )
+            else:
+                meta_title = datos.get("meta_title", "")
+                meta_description = datos.get("meta_description", "")
+
+                # Truncar inteligentemente si excede límites
+                meta_title = self._truncar_respetando_palabras(meta_title, 60)
+                meta_description = self._truncar_respetando_palabras(meta_description, 160)
+
+                resultados.append(
+                    ResultadoSEO(
+                        codigo=producto.codigo,
+                        nombre=producto.nombre,
+                        marca=producto.marca,
+                        categoria=producto.categoria,
+                        meta_title=meta_title,
+                        meta_description=meta_description,
+                        exitoso=True,
+                    )
+                )
+
+        logger.info(
+            "Batch de SEO generado",
+            extra={
+                "batch_size": len(productos),
+                "exitosos": sum(1 for r in resultados if r.exitoso),
+            },
+        )
+        return resultados
+
     # ------------------------------------------------------------------
     # Helpers privados
     # ------------------------------------------------------------------
@@ -289,3 +435,26 @@ class DescriptionGenerator:
             )
 
         return productos
+
+    def _truncar_respetando_palabras(self, texto: str, max_chars: int) -> str:
+        """
+        Trunca un texto a un máximo de caracteres, respetando límites de palabras.
+
+        No corta palabras a mitad; siempre termina en un espacio o fin de texto.
+
+        Args:
+            texto: texto a truncar.
+            max_chars: máximo de caracteres permitidos.
+
+        Returns:
+            Texto truncado a max_chars, sin cortar palabras.
+        """
+        if len(texto) <= max_chars:
+            return texto
+
+        truncado = texto[:max_chars]
+        ultima_espacio = truncado.rfind(" ")
+
+        if ultima_espacio > 0:
+            return truncado[:ultima_espacio].rstrip()
+        return truncado
