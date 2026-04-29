@@ -14,8 +14,10 @@ from enum import Enum
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
+
+SUPPORTED_LANGUAGES = ("es", "en", "fr", "de", "it", "pt")
 
 # ── Enums ─────────────────────────────────────────────────────────────────────
 
@@ -150,10 +152,42 @@ class SearchConfig(BaseModel):
         description="Activa generación de textos SEO (meta_title + meta_description) con Groq (Fase 7.1). "
                     "Independiente de tipo_job, puede combinarse con FOTOS o DESCRIPCIONES.",
     )
+    target_languages: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Idiomas destino para traducción automática (Fase 7.2). "
+            f"Valores permitidos: {SUPPORTED_LANGUAGES}. "
+            "Lista vacía = sin traducción."
+        ),
+        examples=[["en", "fr"]],
+    )
     column_mapping: ColumnMapping = Field(
         default_factory=ColumnMapping,
         description="Mapeo de columnas del CSV del usuario a los campos internos del parser.",
     )
+
+    @field_validator("target_languages")
+    @classmethod
+    def validar_idiomas(cls, v: list[str]) -> list[str]:
+        """
+        Valida que todos los idiomas estén en SUPPORTED_LANGUAGES y elimina duplicados.
+
+        Args:
+            v: lista de códigos de idioma.
+
+        Returns:
+            Lista deduplicada de idiomas válidos.
+
+        Raises:
+            ValueError: si algún idioma no está soportado.
+        """
+        invalidos = [lang for lang in v if lang not in SUPPORTED_LANGUAGES]
+        if invalidos:
+            raise ValueError(
+                f"Idiomas no soportados: {invalidos}. "
+                f"Idiomas válidos: {list(SUPPORTED_LANGUAGES)}"
+            )
+        return list(dict.fromkeys(v))
 
 
 # ── Schemas de entrada ────────────────────────────────────────────────────────
@@ -207,6 +241,13 @@ class JobStatus(BaseModel):
         ge=0,
         description="Contador de errores durante generación SEO (Fase 7.1).",
     )
+    traducciones_generadas: dict[str, int] = Field(
+        default_factory=dict,
+        description=(
+            "Contador de traducciones generadas por idioma (Fase 7.2). "
+            "Ejemplo: {'en': 42, 'fr': 42}."
+        ),
+    )
     marcas_procesadas: int = Field(
         default=0,
         ge=0,
@@ -258,6 +299,7 @@ class JobProgressEvent(BaseModel):
     imagenes_fallidas: int
     descripciones_generadas: int
     seo_generados: int = 0
+    traducciones_generadas: dict[str, int] = Field(default_factory=dict)
     marcas_procesadas: int = 0
     mensaje: str
     error: str | None = None
