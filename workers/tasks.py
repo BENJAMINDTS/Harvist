@@ -354,6 +354,7 @@ def ejecutar_scraping(
         if config.tipo_job == TipoJob.DESCRIPCIONES:
             job_status.total_productos = resumen["total_productos"]
             job_status.descripciones_generadas = resumen.get("descripciones_generadas", 0)
+            job_status.revisiones_pendientes = resumen.get("descripciones_generadas", 0)
             if config.target_languages:
                 job_status.mensaje = (
                     f"Completado: {resumen.get('descripciones_generadas', 0)} descripciones generadas "

@@ -17,6 +17,7 @@ import { JobProgress } from '@/components/JobProgress'
 import { JobHistory } from '@/components/JobHistory'
 import { HomeScreen } from '@/components/HomeScreen'
 import { BrandsPanel } from '@/components/BrandsPanel'
+import { ReviewPanel } from '@/components/ReviewPanel'
 import { NsLogo } from '@/components/NsLogo'
 import { apiClient, getBrands, resumeJob, downloadTranslationCsv } from '@/api/client'
 import type { ApiError, BrandEntry } from '@/api/client'
@@ -41,6 +42,8 @@ const App: React.FC = () => {
   const [brandsPanelOpen, setBrandsPanelOpen] = useState(true)
   const [brandsLoadError, setBrandsLoadError] = useState<string | null>(null)
   const [targetLanguages, setTargetLanguages] = useState<string[]>([])
+  const [reviewPanelOpen, setReviewPanelOpen] = useState(true)
+  const [descripcionesGeneradas, setDescripcionesGeneradas] = useState(0)
 
   // ── Handlers de HomeScreen ───────────────────────────────────────────────
 
@@ -125,6 +128,23 @@ const App: React.FC = () => {
     setAppState('done')
   }
 
+  // Cuando un job de descripciones completa, cargamos el contador para el ReviewPanel.
+  useEffect(() => {
+    if (appState !== 'done' || tipoJob !== 'descripciones' || !jobId) return
+    apiClient
+      .get<{ success: boolean; data: { descripciones_generadas: number } }>(
+        `/jobs/${jobId}`
+      )
+      .then((res) => {
+        const count = res.data.data.descripciones_generadas ?? 0
+        setDescripcionesGeneradas(count)
+        setReviewPanelOpen(count > 0)
+      })
+      .catch(() => {
+        setDescripcionesGeneradas(0)
+      })
+  }, [appState, tipoJob, jobId])
+
   // Cuando el job de marcas completa, cargamos los datos para el panel.
   useEffect(() => {
     if (appState !== 'done' || tipoJob !== 'marcas' || !jobId) return
@@ -154,6 +174,8 @@ const App: React.FC = () => {
     setBrandsData(null)
     setBrandsPanelOpen(true)
     setBrandsLoadError(null)
+    setReviewPanelOpen(true)
+    setDescripcionesGeneradas(0)
   }
 
   /** Callback: desde el historial el usuario abre un job anterior */
@@ -325,6 +347,38 @@ const App: React.FC = () => {
                         </button>
                       ))}
                   </div>
+                </section>
+              )}
+
+            {/* Panel de revisión de descripciones — visible cuando job de descripciones termina */}
+            {appState === 'done' &&
+              tipoJob === 'descripciones' &&
+              jobId !== null &&
+              descripcionesGeneradas > 0 && (
+                <section className="w-full max-w-2xl mx-auto">
+                  <button
+                    type="button"
+                    onClick={() => setReviewPanelOpen((o) => !o)}
+                    className="flex w-full items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-3 text-sm font-semibold text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
+                    aria-expanded={reviewPanelOpen}
+                  >
+                    <span>Revisar descripciones generadas</span>
+                    <svg
+                      className={`h-4 w-4 text-gray-500 transition-transform duration-200 ${reviewPanelOpen ? 'rotate-180' : ''}`}
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      aria-hidden="true"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {reviewPanelOpen && (
+                    <div className="mt-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
+                      <ReviewPanel jobId={jobId} onComplete={handleReset} />
+                    </div>
+                  )}
                 </section>
               )}
 

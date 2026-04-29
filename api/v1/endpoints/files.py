@@ -3,7 +3,7 @@ Endpoints para la gestión de archivos generados por los trabajos de scraping.
 
 Rutas expuestas:
   GET    /api/v1/files/{job_id}                        — Descargar el ZIP de imágenes (job fotos)
-  GET    /api/v1/files/{job_id}/csv                    — Descargar el CSV de descripciones (job descripciones)
+  GET    /api/v1/files/{job_id}/csv                    — Descargar el CSV de descripciones (?only_approved=true para solo aprobadas, Fase 7.3)
   GET    /api/v1/files/{job_id}/seo                    — (Fase 7.1) Descargar CSV de textos SEO (meta_title + meta_description)
   GET    /api/v1/files/{job_id}/brands                 — (Fase 6) Descargar fichas de marca JSON
   GET    /api/v1/files/{job_id}/translations/{lang}    — (Fase 7.2) Descargar CSV de traducciones por idioma
@@ -13,15 +13,20 @@ Solo gestiona la capa HTTP. El acceso al sistema de archivos se delega
 a StorageService para mantener la arquitectura limpia.
 
 :author: BenjaminDTS
-:version: 1.1.0
+:author: Carlitos6712
+:version: 1.2.0
 """
 
-from fastapi import APIRouter, HTTPException, Path
-from fastapi.responses import FileResponse, JSONResponse
+import csv
+import io
+
+import redis.asyncio as aioredis
+from fastapi import APIRouter, HTTPException, Path, Query
+from fastapi.responses import FileResponse, JSONResponse, Response
 from loguru import logger
 
 from api.core.config import get_settings
-from api.v1.schemas.job import SUPPORTED_LANGUAGES
+from api.v1.schemas.job import SUPPORTED_LANGUAGES, DescriptionReviewState, ReviewStatus
 from services.storage_service import get_storage_service
 
 router = APIRouter(prefix="/files", tags=["Files"])
@@ -126,20 +131,39 @@ async def eliminar_archivos_job(job_id: str) -> JSONResponse:
 @router.get(
     "/{job_id}/csv",
     summary="Descargar el CSV de descripciones de un trabajo",
-    response_class=FileResponse,
+    include_in_schema=True,
 )
-async def descargar_csv(job_id: str) -> FileResponse:
+async def descargar_csv(
+    job_id: str,
+    only_approved: bool = Query(
+        default=False,
+        description=(
+            "Si True, devuelve solo las descripciones con estado de revisión 'approved' (Fase 7.3). "
+            "Devuelve 204 si no hay ninguna aprobada. "
+            "Si False (por defecto), devuelve todas las descripciones sin filtrar."
+        ),
+    ),
+) -> Response:
     """
     Devuelve el archivo descripciones.csv generado por el pipeline de IA.
 
+    Con ?only_approved=true filtra las filas por estado de revisión en Redis,
+    devolviendo solo las descripciones que el usuario ha aprobado (Fase 7.3).
+    Sin el parámetro (o con only_approved=false), el comportamiento es idéntico
+    al original: devuelve el CSV completo sin filtrar.
+
     Args:
         job_id: identificador UUID del trabajo.
+        only_approved: si True, filtra por status=approved en Redis.
 
     Returns:
-        FileResponse con el CSV de descripciones como adjunto descargable.
+        FileResponse con el CSV completo, o Response con CSV filtrado en memoria,
+        o Response 204 si only_approved=True y no hay descripciones aprobadas.
 
     Raises:
         HTTPException 404: si el CSV no existe o el job no ha completado.
+
+    :author: Carlitos6712
     """
     storage = get_storage_service()
     csv_path = storage.get_job_dir(job_id) / "descripciones.csv"
@@ -154,12 +178,62 @@ async def descargar_csv(job_id: str) -> FileResponse:
             detail="El CSV no existe. El job puede no haber completado aún.",
         )
 
-    return FileResponse(
-        path=str(csv_path),
-        media_type="text/csv",
-        filename=f"descripciones_{job_id}.csv",
-        headers={"Content-Disposition": f'attachment; filename="descripciones_{job_id}.csv"'},
-    )
+    # Comportamiento original: sin filtro
+    if not only_approved:
+        return FileResponse(
+            path=str(csv_path),
+            media_type="text/csv",
+            filename=f"descripciones_{job_id}.csv",
+            headers={"Content-Disposition": f'attachment; filename="descripciones_{job_id}.csv"'},
+        )
+
+    # Filtrado por estado de revisión approved
+    redis: aioredis.Redis | None = None
+    try:
+        redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+
+        rows_aprobadas: list[dict] = []
+        fieldnames: list[str] = []
+
+        with open(csv_path, encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            fieldnames = reader.fieldnames or []
+            for row in reader:
+                codigo = row.get("codigo", "")
+                if not codigo:
+                    continue
+                review_key = f"job:{job_id}:review:{codigo}"
+                raw_review = await redis.get(review_key)
+                if raw_review:
+                    state = DescriptionReviewState.model_validate_json(raw_review)
+                    if state.status == ReviewStatus.APPROVED:
+                        if state.edited_text:
+                            row["corta"] = state.edited_text
+                        rows_aprobadas.append(row)
+
+        if not rows_aprobadas:
+            logger.info(
+                "No hay descripciones aprobadas para exportar",
+                extra={"job_id": job_id},
+            )
+            return Response(status_code=204)
+
+        buffer = io.StringIO()
+        writer = csv.DictWriter(buffer, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows_aprobadas)
+
+        csv_bytes = buffer.getvalue().encode("utf-8-sig")
+        filename = f"descripciones_aprobadas_{job_id}.csv"
+        return Response(
+            content=csv_bytes,
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    finally:
+        if redis:
+            await redis.aclose()
 
 
 @router.get(

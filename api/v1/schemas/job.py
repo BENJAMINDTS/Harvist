@@ -6,7 +6,8 @@ del pipeline. Estos tipos son el único punto de verdad compartido entre
 la capa HTTP (api/) y la capa de servicios (services/).
 
 :author: BenjaminDTS
-:version: 1.0.0
+:author: Carlitos6712
+:version: 2.0.0
 """
 
 from datetime import datetime
@@ -14,7 +15,7 @@ from enum import Enum
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 SUPPORTED_LANGUAGES = ("es", "en", "fr", "de", "it", "pt")
@@ -62,6 +63,96 @@ class TipoJob(str, Enum):
     DESCRIPCIONES = "descripciones"         # Generación de descripciones con Claude API
     SEO = "seo"                             # Generación de meta_title + meta_description (Fase 7.1)
     MARCAS = "marcas"                       # Scraping de información de marca (Fase 6)
+
+
+# ── Revisión manual de descripciones (Fase 7.3) ──────────────────────────────
+
+class ReviewAction(str, Enum):
+    """
+    Acción que el usuario aplica sobre una descripción en revisión.
+
+    :author: Carlitos6712
+    """
+
+    APPROVE = "approve"
+    REJECT = "reject"
+    EDIT = "edit"
+
+
+class ReviewStatus(str, Enum):
+    """
+    Estado de revisión de una descripción individual.
+
+    :author: Carlitos6712
+    """
+
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class DescriptionReviewRequest(BaseModel):
+    """
+    Body de la petición PATCH para revisar una descripción.
+
+    :author: Carlitos6712
+    """
+
+    action: ReviewAction = Field(description="Acción a aplicar: approve, reject o edit.")
+    edited_text: str | None = Field(
+        default=None,
+        description="Requerido si action es 'edit'. Texto editado por el usuario.",
+    )
+
+    @model_validator(mode="after")
+    def edited_text_required_when_edit(self) -> "DescriptionReviewRequest":
+        """
+        Valida que edited_text esté presente cuando action es 'edit'.
+
+        Returns:
+            La instancia validada.
+
+        Raises:
+            ValueError: si action es 'edit' y edited_text está ausente o vacío.
+        """
+        if self.action == ReviewAction.EDIT and not self.edited_text:
+            raise ValueError("edited_text es requerido cuando action es 'edit'")
+        return self
+
+
+class DescriptionReviewState(BaseModel):
+    """
+    Estado de revisión almacenado en Redis para cada descripción individual.
+
+    Clave Redis: job:{job_id}:review:{codigo}
+
+    :author: Carlitos6712
+    """
+
+    codigo: str = Field(description="Código del producto.")
+    status: ReviewStatus = Field(
+        default=ReviewStatus.PENDING,
+        description="Estado de revisión de la descripción.",
+    )
+    edited_text: str | None = Field(
+        default=None,
+        description="Texto editado por el usuario (solo cuando action='edit').",
+    )
+
+
+class DescriptionReviewEntry(DescriptionReviewState):
+    """
+    Entrada de revisión enriquecida con el contenido de la descripción.
+
+    Combina el estado de revisión de Redis con los datos del CSV de descripciones,
+    para devolver al frontend toda la información necesaria en un solo objeto.
+
+    :author: Carlitos6712
+    """
+
+    nombre: str = Field(default="", description="Nombre del producto.")
+    descripcion_corta: str = Field(default="", description="Descripción corta generada por IA.")
+    descripcion_larga: str = Field(default="", description="Descripción larga generada por IA.")
 
 
 # ── Configuración de búsqueda ─────────────────────────────────────────────────
@@ -218,6 +309,7 @@ class JobStatus(BaseModel):
     El WebSocket de progreso emite actualizaciones de este modelo.
 
     :author: BenjaminDTS
+    :author: Carlitos6712
     """
 
     job_id: UUID = Field(description="Identificador único del trabajo.")
@@ -252,6 +344,21 @@ class JobStatus(BaseModel):
         default=0,
         ge=0,
         description="Contador de marcas procesadas (Fase 6).",
+    )
+    revisiones_pendientes: int = Field(
+        default=0,
+        ge=0,
+        description="Contador de descripciones pendientes de revisión (Fase 7.3).",
+    )
+    revisiones_aprobadas: int = Field(
+        default=0,
+        ge=0,
+        description="Contador de descripciones aprobadas por el usuario (Fase 7.3).",
+    )
+    revisiones_rechazadas: int = Field(
+        default=0,
+        ge=0,
+        description="Contador de descripciones rechazadas por el usuario (Fase 7.3).",
     )
     mensaje: str = Field(default="", description="Mensaje de estado legible por humanos.")
     error: str | None = Field(default=None, description="Detalle del error si estado=FALLIDO.")

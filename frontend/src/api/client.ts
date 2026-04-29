@@ -171,3 +171,105 @@ export async function downloadTranslationCsv(jobId: string, lang: string): Promi
   )
   return response.data
 }
+
+// ─── Revisión de descripciones (Fase 7.3) ────────────────────────────────────
+
+/** Acción de revisión aplicada a una descripción. */
+export type ReviewAction = 'approve' | 'reject' | 'edit'
+
+/** Estado de revisión de una descripción. */
+export type ReviewStatus = 'pending' | 'approved' | 'rejected'
+
+/** Body de la petición PATCH para revisar una descripción. */
+export interface DescriptionReviewRequest {
+  action: ReviewAction
+  edited_text?: string
+}
+
+/** Estado de revisión devuelto por el endpoint PATCH. */
+export interface DescriptionReviewState {
+  codigo: string
+  status: ReviewStatus
+  edited_text: string | null
+}
+
+/** Entrada enriquecida devuelta por GET /jobs/{jobId}/descriptions/review. */
+export interface DescriptionReviewEntry extends DescriptionReviewState {
+  nombre: string
+  descripcion_corta: string
+  descripcion_larga: string
+}
+
+/** Respuesta paginada del endpoint GET /jobs/{jobId}/descriptions/review. */
+export interface DescriptionReviewPage {
+  items: DescriptionReviewEntry[]
+  total: number
+  limit: number
+  offset: number
+}
+
+/**
+ * Envía acción de revisión para una descripción individual.
+ *
+ * Llama a `PATCH /api/v1/jobs/{jobId}/descriptions/{codigo}` con la acción
+ * y, opcionalmente, el texto editado (requerido cuando action='edit').
+ *
+ * @author Carlitos6712
+ * @param jobId   - UUID del job.
+ * @param codigo  - Código del producto a revisar.
+ * @param request - Acción y texto editado.
+ * @returns Estado de revisión actualizado.
+ */
+export async function reviewDescription(
+  jobId: string,
+  codigo: string,
+  request: DescriptionReviewRequest,
+): Promise<DescriptionReviewState> {
+  const response = await apiClient.patch<ApiResponse<DescriptionReviewState>>(
+    `/jobs/${jobId}/descriptions/${encodeURIComponent(codigo)}`,
+    request,
+  )
+  return response.data.data
+}
+
+/**
+ * Obtiene estado de revisión de todas las descripciones de un job (paginado).
+ *
+ * Llama a `GET /api/v1/jobs/{jobId}/descriptions/review`.
+ *
+ * @author Carlitos6712
+ * @param jobId  - UUID del job.
+ * @param limit  - Máximo de registros por página (1-100, por defecto 25).
+ * @param offset - Registros a saltar (por defecto 0).
+ * @returns Página de DescriptionReviewEntry.
+ */
+export async function getReviewStatus(
+  jobId: string,
+  limit = 25,
+  offset = 0,
+): Promise<DescriptionReviewPage> {
+  const response = await apiClient.get<ApiResponse<DescriptionReviewPage>>(
+    `/jobs/${jobId}/descriptions/review`,
+    { params: { limit, offset } },
+  )
+  return response.data.data
+}
+
+/**
+ * Descarga CSV con solo las descripciones aprobadas (Fase 7.3).
+ *
+ * Llama a `GET /api/v1/files/{jobId}/csv?only_approved=true`.
+ * Devuelve null si el backend responde 204 (sin aprobadas).
+ *
+ * @author Carlitos6712
+ * @param jobId - UUID del job.
+ * @returns Blob con el CSV filtrado, o null si no hay aprobadas.
+ */
+export async function downloadApprovedCsv(jobId: string): Promise<Blob | null> {
+  const response = await apiClient.get<Blob>(
+    `/files/${jobId}/csv`,
+    { params: { only_approved: true }, responseType: 'blob' },
+  )
+  if (response.status === 204) return null
+  return response.data
+}
