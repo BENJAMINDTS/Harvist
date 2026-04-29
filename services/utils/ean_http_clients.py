@@ -504,6 +504,37 @@ class UPCItemDbClient:
 
 # ── Clientes de búsqueda web ──────────────────────────────────────────────────
 
+_TAG_OUTER: dict[str, re.Pattern[str]] = {}
+_STRIP_TAGS: re.Pattern[str] = re.compile(r'<[^>]+>')
+_WHITESPACE: re.Pattern[str] = re.compile(r'\s+')
+
+
+def _extraer_titulos_html(html: str, tag: str) -> list[str]:
+    """
+    Extrae y limpia textos de elementos ``<tag>`` del HTML, manejando contenido anidado.
+
+    Usa regex en dos pasos: primero extrae el contenido interno de cada elemento
+    (permitiendo tags anidados), luego elimina los tags internos para obtener texto plano.
+    Necesario porque los motores de búsqueda modernos envuelven los títulos en
+    ``<span>`` o ``<a>`` — el patrón anterior ``[^<]+`` fallaba ante cualquier tag anidado.
+
+    Args:
+        html: HTML crudo de la SERP.
+        tag: nombre del tag a extraer (``h2``, ``h3``…).
+
+    Returns:
+        Lista de textos limpios con longitud 3–100 caracteres.
+    """
+    if tag not in _TAG_OUTER:
+        _TAG_OUTER[tag] = re.compile(rf'<{tag}[^>]*>(.*?)</{tag}>', re.DOTALL | re.IGNORECASE)
+    result: list[str] = []
+    for inner_html in _TAG_OUTER[tag].findall(html):
+        text = _STRIP_TAGS.sub('', inner_html)
+        text = _WHITESPACE.sub(' ', text).strip()
+        if 3 <= len(text) <= 100:
+            result.append(text)
+    return result
+
 
 class GoogleDorkClient:
     """
@@ -523,7 +554,6 @@ class GoogleDorkClient:
     """
 
     _SEARCH_URL: str = "https://www.google.com/search?q=%22{ean}%22&hl=es"
-    _H3_PATTERN: re.Pattern[str] = re.compile(r'<h3[^>]*>([^<]{3,100})</h3>')
 
     def __init__(self, timeout: int = 10, max_retries: int = 3) -> None:
         """
@@ -601,7 +631,7 @@ class GoogleDorkClient:
                         response=response,
                     )
 
-                titulos = self._H3_PATTERN.findall(response.text)
+                titulos = _extraer_titulos_html(response.text, "h3")
 
                 if not titulos:
                     logger.debug(
@@ -669,7 +699,6 @@ class BingSearchClient:
     """
 
     _SEARCH_URL: str = "https://www.bing.com/search?q=%22{ean}%22&setlang=es"
-    _H3_PATTERN: re.Pattern[str] = re.compile(r'<h3[^>]*>([^<]{3,100})</h3>')
 
     def __init__(self, timeout: int = 10, max_retries: int = 3) -> None:
         """
@@ -746,11 +775,14 @@ class BingSearchClient:
                         response=response,
                     )
 
-                titulos = self._H3_PATTERN.findall(response.text)
+                titulos = (
+                    _extraer_titulos_html(response.text, "h2")
+                    + _extraer_titulos_html(response.text, "h3")
+                )
 
                 if not titulos:
                     logger.debug(
-                        "BingSearch: sin títulos h3 en SERP",
+                        "BingSearch: sin títulos h2/h3 en SERP",
                         extra={"ean": ean},
                     )
                     return None
