@@ -11,6 +11,7 @@ todas las variables de entorno centralizadas en api/core/config.py.
 """
 
 from celery import Celery
+from celery.schedules import crontab
 from celery.signals import worker_process_init
 
 from api.core.config import get_settings
@@ -53,4 +54,12 @@ celery_app.conf.update(
 
     # Resultados
     result_expires=settings.file_ttl_seconds,
+
+    # Beat schedule — tareas periódicas
+    beat_schedule={
+        "cleanup_stale_candidates": {
+            "task": "cleanup_stale_candidates",
+            "schedule": crontab(minute=7),  # Cada hora a :07
+        },
+    },
 )

@@ -550,3 +550,83 @@ def ejecutar_scraping(
 
     finally:
         redis_client.close()
+
+
+@celery_app.task(name="cleanup_stale_candidates")
+def cleanup_stale_candidates() -> dict:
+    """
+    Limpia directorios candidates/ de jobs que han expirado por TTL.
+
+    Se ejecuta cada hora (beat schedule).
+    Busca en storage todos los directorios job_*/candidates/ y valida:
+    - Si el job aún existe en Redis y no ha expirado el TTL
+    - Si no, llamar storage.cleanup_candidates() para eliminar
+
+    Returns:
+        Dict con jobs_cleaned y files_deleted.
+
+    :author: BenjaminDTS
+    """
+    from pathlib import Path
+
+    redis_client = _get_redis_client()
+    settings = get_settings()
+    storage = get_storage_service()
+
+    jobs_cleaned = 0
+    files_deleted = 0
+
+    try:
+        # Iterar directorios bajo base_dir buscando candidates/
+        base = Path(settings.output_dir)
+        if not base.exists():
+            return {"jobs_cleaned": 0, "files_deleted": 0}
+
+        for job_dir in base.iterdir():
+            if not job_dir.is_dir():
+                continue
+
+            job_id = job_dir.name
+            candidates_dir = job_dir / "candidates"
+
+            if not candidates_dir.exists():
+                continue
+
+            # Verificar si el job aún está en Redis y en PENDIENTE_SELECCION_FOTOS
+            job_key = f"job:{job_id}"
+            job_json = redis_client.get(job_key)
+
+            if job_json:
+                try:
+                    job_data = json.loads(job_json)
+                    estado = job_data.get("estado")
+                    # Si aún está en PENDIENTE_SELECCION_FOTOS, no limpiar
+                    if estado == "pendiente_seleccion_fotos":
+                        continue
+                except Exception:
+                    pass
+
+            # Job expirado o no en state correcto — limpiar
+            try:
+                count = storage.cleanup_candidates(job_id)
+                jobs_cleaned += 1
+                files_deleted += count
+                logger.info(
+                    "Directorio candidates/ limpiado por TTL",
+                    extra={"job_id": job_id, "files": count},
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Error limpiando candidates/ del job",
+                    exc_info=exc,
+                    extra={"job_id": job_id},
+                )
+
+        logger.info(
+            "Limpieza de candidates/ completada",
+            extra={"jobs_cleaned": jobs_cleaned, "files_deleted": files_deleted},
+        )
+        return {"jobs_cleaned": jobs_cleaned, "files_deleted": files_deleted}
+
+    finally:
+        redis_client.close()
