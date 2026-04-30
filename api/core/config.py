@@ -196,6 +196,30 @@ class Settings(BaseSettings):
     azure_blob_prefix: str = Field(default="harvist")
     azure_connection_string: str = Field(default="")
 
+    # ── Integración Dolibarr ────────────────────────────────────────────────
+    dolibarr_url: str = Field(
+        default="",
+        description=(
+            "URL base de la instancia Dolibarr. "
+            "Ejemplo: https://mi-dolibarr.com"
+        ),
+    )
+    dolibarr_api_key: str = Field(
+        default="",
+        description=(
+            "API Key de Dolibarr. "
+            "Obtener en: Inicio → Configuración → API/REST → Generar clave."
+        ),
+    )
+
+    @property
+    def dolibarr_configured(self) -> bool:
+        """True si Dolibarr tiene URL y API key definidas y no vacías."""
+        return bool(
+            self.dolibarr_url.strip()
+            and self.dolibarr_api_key.strip()
+        )
+
     # ── Logging ───────────────────────────────────────────────────────────────
     log_level: Literal["ERROR", "WARN", "INFO", "DEBUG"] = Field(default="INFO")
     log_dir: str = Field(default="logs")
