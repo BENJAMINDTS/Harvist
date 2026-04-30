@@ -5,6 +5,7 @@ Rutas expuestas:
   POST   /api/v1/jobs                                          — Crear un nuevo job con CSV + configuración
   GET    /api/v1/jobs/{job_id}                                 — Consultar el estado de un job
   GET    /api/v1/jobs/{job_id}/brands                          — Obtener marcas resueltas como JSON (Fase 6.4)
+  POST   /api/v1/jobs/{job_id}/brands/validate                 — Validar marcas nuevas (Fase 7.4)
   POST   /api/v1/jobs/{job_id}/cancel                          — Cancelar un job en curso
   POST   /api/v1/jobs/{job_id}/resume                          — Reanudar un job cancelado o fallido
   PATCH  /api/v1/jobs/{job_id}/descriptions/{codigo}           — Revisar (aprobar/rechazar/editar) una descripción (Fase 7.3)
@@ -16,12 +17,13 @@ Ninguna lógica de negocio vive aquí.
 
 :author: BenjaminDTS
 :author: Carlitos6712
-:version: 1.3.0
+:version: 1.4.0
 """
 
 import csv
 import io
 import json
+import threading as _threading
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -45,6 +47,8 @@ from api.core.config import get_settings
 from api.core.security import limiter
 from services.storage_service import get_storage_service
 from api.v1.schemas.job import (
+    BrandValidationAction,
+    BrandValidationRequest,
     ColumnMapping,
     DescriptionReviewEntry,
     DescriptionReviewRequest,
@@ -74,6 +78,10 @@ _JOB_CONFIG_KEY = "job:{job_id}:config"
 _KEY_TTL = settings.file_ttl_seconds
 # Clave Redis donde se almacena el estado de revisión de una descripción individual
 _JOB_REVIEW_KEY = "job:{job_id}:review:{codigo}"
+# Clave Redis donde se almacenan las marcas pendientes de validación (Fase 7.4)
+_BRANDS_PENDING_KEY = "job:{job_id}:brands_pending"
+# Lock a nivel de módulo para proteger escrituras concurrentes en brand_cache.json
+_BRAND_CACHE_WRITE_LOCK: _threading.Lock = _threading.Lock()
 
 
 async def _get_redis() -> aioredis.Redis:
@@ -187,6 +195,15 @@ async def crear_job(
             )
         ),
     ] = None,
+    validate_brands: Annotated[
+        bool,
+        Form(
+            description=(
+                "Si True, el job espera validación manual de marcas nuevas antes de escribirlas "
+                "en brand_cache.json (Fase 7.4). Solo aplica con tipo_job=marcas."
+            )
+        ),
+    ] = False,
 ) -> JSONResponse:
     """
     Recibe un CSV de inventario, encola el trabajo de scraping y devuelve el job_id.
@@ -238,6 +255,7 @@ async def crear_job(
         groq_api_key_usuario=groq_api_key_usuario,
         store_type_usuario=store_type_usuario,
         target_languages=target_languages or [],
+        validate_brands=validate_brands,
         column_mapping=ColumnMapping(
             columna_codigo=columna_codigo,
             columna_ean=columna_ean,
@@ -430,6 +448,182 @@ async def obtener_marcas_job(job_id: str) -> JSONResponse:
             "message": f"{len(brands)} marcas procesadas: {brands_resolved} resueltas, {brands_not_found} sin resolver.",
         }
     )
+
+
+@router.post(
+    "/{job_id}/brands/validate",
+    response_model=JobResponse,
+    summary="Validar marcas nuevas y persistirlas en brand_cache.json (Fase 7.4)",
+)
+async def validar_marcas(
+    job_id: str,
+    body: BrandValidationRequest,
+) -> JSONResponse:
+    """
+    Procesa la decisión del usuario sobre las marcas nuevas detectadas en el job.
+
+    Solo los items con action != 'reject' se escriben en brand_cache.json.
+    Tras la validación, el job pasa a estado COMPLETADO.
+
+    Args:
+        job_id: identificador UUID del job en estado PENDIENTE_VALIDACION_MARCAS.
+        body: lista de marcas con la decisión del usuario por cada una.
+
+    Returns:
+        JSONResponse con el resumen de marcas aceptadas, rechazadas y editadas.
+
+    Raises:
+        HTTPException 404: si el job no existe.
+        HTTPException 409: si el job no está en PENDIENTE_VALIDACION_MARCAS.
+        HTTPException 422: si el body es inválido (validado automáticamente por FastAPI).
+    """
+    redis = await _get_redis()
+    try:
+        job_status = await _get_job_status(redis, job_id)
+
+        if job_status.estado != EstadoJob.PENDIENTE_VALIDACION_MARCAS:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"El job '{job_id}' no está en estado "
+                    f"'{EstadoJob.PENDIENTE_VALIDACION_MARCAS.value}'. "
+                    f"Estado actual: '{job_status.estado.value}'."
+                ),
+            )
+
+        # Leer las marcas pendientes de Redis
+        pending_raw = await redis.get(_BRANDS_PENDING_KEY.format(job_id=job_id))
+        pending: dict[str, str] = json.loads(pending_raw) if pending_raw else {}
+
+        # Procesar las decisiones del usuario
+        accepted = 0
+        rejected = 0
+        edited = 0
+        entries_to_write: dict[str, str] = {}
+
+        for item in body.items:
+            prefijo = item.ean[:7] if len(item.ean) >= 7 else item.ean
+
+            if item.action == BrandValidationAction.REJECT:
+                rejected += 1
+                logger.info(
+                    "Marca rechazada — no se escribe en brand_cache.json",
+                    extra={
+                        "job_id": job_id,
+                        "ean": item.ean,
+                        "prefijo": prefijo,
+                        "brand_name": item.brand_name,
+                        "action": item.action.value,
+                    },
+                )
+            elif item.action == BrandValidationAction.EDIT:
+                nombre_final = item.edited_name or item.brand_name
+                entries_to_write[prefijo] = nombre_final
+                edited += 1
+                logger.info(
+                    "Marca editada — se escribe en brand_cache.json",
+                    extra={
+                        "job_id": job_id,
+                        "ean": item.ean,
+                        "prefijo": prefijo,
+                        "brand_name_original": item.brand_name,
+                        "brand_name_editado": nombre_final,
+                        "action": item.action.value,
+                    },
+                )
+            else:  # ACCEPT
+                entries_to_write[prefijo] = item.brand_name
+                accepted += 1
+                logger.info(
+                    "Marca aceptada — se escribe en brand_cache.json",
+                    extra={
+                        "job_id": job_id,
+                        "ean": item.ean,
+                        "prefijo": prefijo,
+                        "brand_name": item.brand_name,
+                        "action": item.action.value,
+                    },
+                )
+
+        # Persistir las entradas aceptadas/editadas en brand_cache.json
+        merged: dict[str, str] = {}
+        if entries_to_write:
+            brand_cache_path = Path(settings.brand_cache_path)
+
+            with _BRAND_CACHE_WRITE_LOCK:
+                existing: dict[str, str] = {}
+                if brand_cache_path.exists():
+                    try:
+                        existing = json.loads(
+                            brand_cache_path.read_text(encoding="utf-8")
+                        )
+                    except (json.JSONDecodeError, OSError) as exc:
+                        logger.error(
+                            "Error leyendo brand_cache.json; se sobreescribirá",
+                            exc_info=exc,
+                            extra={"job_id": job_id},
+                        )
+
+                merged = {**existing, **entries_to_write}
+                brand_cache_path.parent.mkdir(parents=True, exist_ok=True)
+                brand_cache_path.write_text(
+                    json.dumps(merged, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+
+            logger.info(
+                "brand_cache.json actualizado tras validación",
+                extra={
+                    "job_id": job_id,
+                    "entradas_nuevas": len(entries_to_write),
+                    "total_en_cache": len(merged),
+                },
+            )
+
+        # Eliminar la clave de marcas pendientes de Redis
+        await redis.delete(_BRANDS_PENDING_KEY.format(job_id=job_id))
+
+        # Actualizar estado del job a COMPLETADO
+        job_status.estado = EstadoJob.COMPLETADO
+        job_status.completado_en = datetime.utcnow()
+        job_status.actualizado_en = datetime.utcnow()
+        job_status.marcas_pendientes_validacion = 0
+        job_status.mensaje = (
+            f"Validación de marcas completada: {accepted} aceptadas, "
+            f"{edited} editadas, {rejected} rechazadas."
+        )
+        await redis.set(
+            _JOB_KEY.format(job_id=job_id),
+            job_status.model_dump_json(),
+            ex=_KEY_TTL,
+        )
+
+        logger.info(
+            "Validación de marcas completada",
+            extra={
+                "job_id": job_id,
+                "accepted": accepted,
+                "rejected": rejected,
+                "edited": edited,
+            },
+        )
+
+        return JSONResponse(
+            content={
+                "success": True,
+                "data": {
+                    "accepted": accepted,
+                    "rejected": rejected,
+                    "edited": edited,
+                },
+                "message": (
+                    f"Validación completada: {accepted} marcas guardadas, "
+                    f"{edited} editadas, {rejected} rechazadas."
+                ),
+            }
+        )
+    finally:
+        await redis.aclose()
 
 
 @router.post(
@@ -901,8 +1095,13 @@ async def websocket_progreso(websocket: WebSocket, job_id: str) -> None:
             )
             await websocket.send_json(event.model_dump())
 
-            # Cerrar cuando el job ha terminado
-            if status.estado in (EstadoJob.COMPLETADO, EstadoJob.FALLIDO, EstadoJob.CANCELADO):
+            # Cerrar cuando el job ha terminado o queda en espera de validación manual
+            if status.estado in (
+                EstadoJob.COMPLETADO,
+                EstadoJob.FALLIDO,
+                EstadoJob.CANCELADO,
+                EstadoJob.PENDIENTE_VALIDACION_MARCAS,
+            ):
                 break
 
             await asyncio.sleep(1)
