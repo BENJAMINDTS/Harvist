@@ -382,3 +382,111 @@ class TestDolibarrClientHealthCheck:
             result = await client.health_check()
 
         assert result is False
+
+
+# ---------------------------------------------------------------------------
+# T19 — T26: CRUD completo, health_check 500 y context manager
+# ---------------------------------------------------------------------------
+
+
+def _make_client_with_mock_request(
+    mock_response_status: int,
+    mock_response_json: dict | list | None = None,
+) -> tuple["DolibarrClient", AsyncMock]:
+    """
+    Construye un DolibarrClient cuyo método ``_request`` está mockeado.
+
+    Args:
+        mock_response_status: código HTTP que devolverá el mock de ``_request``.
+        mock_response_json:   cuerpo JSON que devolverá ``response.json()``.
+
+    Returns:
+        Tupla ``(client, mock_request)`` donde ``mock_request`` es el AsyncMock
+        asignado a ``client._request``.
+    """
+    s = _make_settings()
+    with patch("httpx.AsyncClient"):
+        client = DolibarrClient(s)
+    mock_resp = MagicMock()
+    mock_resp.status_code = mock_response_status
+    mock_resp.json.return_value = mock_response_json or {}
+    mock_req = AsyncMock(return_value=mock_resp)
+    return client, mock_req
+
+
+class TestDolibarrClientCRUD:
+    """Tests de cobertura para create, update, delete y context manager."""
+
+    async def test_create_returns_dict_on_success(self):
+        """T19: create() devuelve el dict del recurso creado ante status 201."""
+        client, mock_req = _make_client_with_mock_request(
+            201, {"id": 42, "ref": "PROD-001"}
+        )
+        with patch.object(client, "_request", new=mock_req):
+            result = await client.create("products", {"ref": "PROD-001"})
+        assert result == {"id": 42, "ref": "PROD-001"}
+
+    async def test_create_raises_on_4xx(self):
+        """T20: create() lanza IntegrationError cuando Dolibarr devuelve 400."""
+        client, mock_req = _make_client_with_mock_request(400)
+        with patch.object(client, "_request", new=mock_req):
+            with pytest.raises(IntegrationError):
+                await client.create("products", {})
+
+    async def test_update_returns_dict_on_success(self):
+        """T21: update() devuelve el dict actualizado ante status 200."""
+        client, mock_req = _make_client_with_mock_request(
+            200, {"id": 1, "ref": "PROD-UPD"}
+        )
+        with patch.object(client, "_request", new=mock_req):
+            result = await client.update("products", 1, {"ref": "PROD-UPD"})
+        assert result == {"id": 1, "ref": "PROD-UPD"}
+
+    async def test_delete_returns_true_on_200(self):
+        """T22: delete() devuelve True cuando Dolibarr responde 200."""
+        client, mock_req = _make_client_with_mock_request(200)
+        with patch.object(client, "_request", new=mock_req):
+            result = await client.delete("products", 1)
+        assert result is True
+
+    async def test_delete_returns_true_on_204(self):
+        """T23: delete() devuelve True cuando Dolibarr responde 204."""
+        client, mock_req = _make_client_with_mock_request(204)
+        with patch.object(client, "_request", new=mock_req):
+            result = await client.delete("products", 1)
+        assert result is True
+
+    async def test_delete_raises_on_error(self):
+        """T24: delete() lanza IntegrationError con status_code=409 ante conflicto."""
+        client, mock_req = _make_client_with_mock_request(409)
+        with patch.object(client, "_request", new=mock_req):
+            with pytest.raises(IntegrationError) as exc_info:
+                await client.delete("products", 1)
+        assert exc_info.value.status_code == 409
+
+    async def test_health_check_false_on_500(self):
+        """T25: health_check devuelve False cuando _request agota reintentos con 500."""
+        s = _make_settings()
+        mock_resp = MagicMock()
+        mock_resp.status_code = 500
+
+        with patch("httpx.AsyncClient") as mock_cls:
+            mock_instance = AsyncMock()
+            mock_instance.request = AsyncMock(return_value=mock_resp)
+            mock_cls.return_value = mock_instance
+            client = DolibarrClient(s)
+
+        with patch("asyncio.sleep", new=AsyncMock()):
+            result = await client.health_check()
+
+        assert result is False
+
+    async def test_context_manager(self):
+        """T26: el context manager async cierra el cliente HTTP al salir del bloque."""
+        s = _make_settings()
+        with patch("httpx.AsyncClient") as mock_cls:
+            mock_instance = AsyncMock()
+            mock_cls.return_value = mock_instance
+            async with DolibarrClient(s) as client:
+                assert client is not None
+        mock_instance.aclose.assert_called_once()
