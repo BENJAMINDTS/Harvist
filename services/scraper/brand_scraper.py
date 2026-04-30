@@ -268,4 +268,7 @@ class EanBrandResolver:
             prefix=prefijo,
             company_name=company_name,
             country_code="",  # Desconocido al aprender desde web/API
+            source=resultado.source,
+            confidence=resultado.confidence,
+            ean=ean,
         )
