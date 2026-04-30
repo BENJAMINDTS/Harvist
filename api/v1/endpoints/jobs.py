@@ -5,6 +5,7 @@ Rutas expuestas:
   POST   /api/v1/jobs                                          — Crear un nuevo job con CSV + configuración
   GET    /api/v1/jobs/{job_id}                                 — Consultar el estado de un job
   GET    /api/v1/jobs/{job_id}/brands                          — Obtener marcas resueltas como JSON (Fase 6.4)
+  GET    /api/v1/jobs/{job_id}/brands/pending                  — Obtener marcas pendientes de validación (Fase 7.4)
   POST   /api/v1/jobs/{job_id}/brands/validate                 — Validar marcas nuevas (Fase 7.4)
   POST   /api/v1/jobs/{job_id}/cancel                          — Cancelar un job en curso
   POST   /api/v1/jobs/{job_id}/resume                          — Reanudar un job cancelado o fallido
@@ -448,6 +449,73 @@ async def obtener_marcas_job(job_id: str) -> JSONResponse:
             "message": f"{len(brands)} marcas procesadas: {brands_resolved} resueltas, {brands_not_found} sin resolver.",
         }
     )
+
+
+@router.get(
+    "/{job_id}/brands/pending",
+    response_model=JobResponse,
+    summary="Obtener marcas pendientes de validación (Fase 7.4)",
+)
+async def obtener_marcas_pendientes(job_id: str) -> JSONResponse:
+    """
+    Devuelve la lista de marcas nuevas pendientes de validación para un job.
+
+    Args:
+        job_id: identificador UUID del job en estado PENDIENTE_VALIDACION_MARCAS.
+
+    Returns:
+        JSONResponse con la lista de marcas pendientes.
+
+    Raises:
+        HTTPException 404: si el job no existe o no tiene marcas pendientes.
+        HTTPException 409: si el job no está en PENDIENTE_VALIDACION_MARCAS.
+    """
+    redis = await _get_redis()
+    try:
+        job_status = await _get_job_status(redis, job_id)
+
+        if job_status.estado != EstadoJob.PENDIENTE_VALIDACION_MARCAS:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"El job '{job_id}' no está en estado "
+                    f"'{EstadoJob.PENDIENTE_VALIDACION_MARCAS.value}'."
+                ),
+            )
+
+        pending_raw = await redis.get(_BRANDS_PENDING_KEY.format(job_id=job_id))
+        if pending_raw is None:
+            return JSONResponse(
+                content={
+                    "success": True,
+                    "data": {"items": []},
+                    "message": "Sin marcas pendientes.",
+                }
+            )
+
+        # brands_pending is dict[str, dict[str, str]] = {prefijo: {brand_name, ean, source, confidence}}
+        pending: dict[str, dict[str, str]] = json.loads(pending_raw)
+
+        items = [
+            {
+                "prefijo": prefijo,
+                "brand_name": entry.get("brand_name", ""),
+                "ean": entry.get("ean", prefijo),
+                "source": entry.get("source", ""),
+                "confidence": entry.get("confidence", "low"),
+            }
+            for prefijo, entry in pending.items()
+        ]
+
+        return JSONResponse(
+            content={
+                "success": True,
+                "data": {"items": items},
+                "message": f"{len(items)} marcas pendientes de validación.",
+            }
+        )
+    finally:
+        await redis.aclose()
 
 
 @router.post(
