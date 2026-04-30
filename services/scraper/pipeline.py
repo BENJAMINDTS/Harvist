@@ -58,6 +58,8 @@ class ScrapingPipeline:
             carpeta_job_id: job_id cuya carpeta de almacenamiento se reutiliza.
                 Al reanudar un job se pasa el job_id original para que las
                 imágenes se escriban en la misma carpeta. Si None se usa job_id.
+
+        :author: BenjaminDTS
         """
         self._job_id = job_id
         self._carpeta_id = carpeta_job_id or job_id
@@ -69,6 +71,7 @@ class ScrapingPipeline:
         contenido_csv: str,
         callback: ProgressCallback | None = None,
         offset_productos: int = 0,
+        save_all_candidates: bool = False,
     ) -> dict:
         """
         Ejecuta el pipeline completo y devuelve un resumen del resultado.
@@ -81,13 +84,18 @@ class ScrapingPipeline:
                 la lista antes de comenzar a procesar. Se usa al reanudar un
                 job cancelado o fallido. Por defecto 0 (procesar desde el
                 principio).
+            save_all_candidates: si True, descarga TODAS las candidatas válidas
+                                sin límite al directorio candidates/. Si False,
+                                comportamiento por defecto (hasta max_imagenes).
 
         Returns:
             Diccionario con el resumen: total_productos, imagenes_descargadas,
-            imagenes_fallidas, errores_csv, ruta_zip.
+            imagenes_fallidas, errores_csv, ruta_zip, _productos.
 
         Raises:
             CsvParserError: si el CSV es inválido estructuralmente.
+
+        :author: BenjaminDTS
         """
         logger.info(
             "Pipeline iniciado",
@@ -135,7 +143,10 @@ class ScrapingPipeline:
         imagenes_fail = 0
 
         for idx, producto in enumerate(productos_pendientes, start=offset_productos + 1):
-            producto_ok, producto_fail = self._procesar_producto(producto)
+            producto_ok, producto_fail = self._procesar_producto(
+                producto,
+                save_all_candidates=save_all_candidates,
+            )
             imagenes_ok += producto_ok
             imagenes_fail += producto_fail
 
@@ -171,6 +182,7 @@ class ScrapingPipeline:
             "imagenes_fallidas": imagenes_fail,
             "errores_csv": resultado_csv.errores,
             "ruta_zip": ruta_zip,
+            "_productos": productos,  # Lista de productos para acceso posterior (Fase 7.5)
         }
 
         logger.info(
@@ -179,15 +191,20 @@ class ScrapingPipeline:
         )
         return resumen
 
-    def _procesar_producto(self, producto: Producto) -> tuple[int, int]:
+    def _procesar_producto(self, producto: Producto, save_all_candidates: bool = False) -> tuple[int, int]:
         """
         Ejecuta el ciclo Productor→Consumidor para un producto individual.
 
         Args:
             producto: producto con su query ya construida.
+            save_all_candidates: si True, descarga TODAS las candidatas válidas
+                                sin límite al directorio candidates/. Si False,
+                                comportamiento por defecto (hasta max_imagenes).
 
         Returns:
             Tupla (imagenes_ok, imagenes_fail) para el producto.
+
+        :author: BenjaminDTS
         """
         # Productor: obtener URLs de Bing
         try:
@@ -217,6 +234,7 @@ class ScrapingPipeline:
             urls=urls,
             storage=self._storage,
             max_imagenes=self._config.imagenes_por_producto,
+            save_all_candidates=save_all_candidates,
         )
 
         ok = sum(1 for r in resultados if r.exitoso)

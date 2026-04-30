@@ -29,6 +29,7 @@ task_logger = get_task_logger(__name__)
 
 _JOB_KEY = "job:{job_id}"
 _BRANDS_PENDING_KEY = "job:{job_id}:brands_pending"
+_PHOTOS_PENDING_KEY = "job:{job_id}:photos_pending"
 
 
 class JobCancelledError(Exception):
@@ -352,7 +353,68 @@ def ejecutar_scraping(
                 contenido_csv=contenido_csv,
                 callback=_callback_fotos,
                 offset_productos=offset_productos,
+                save_all_candidates=config.select_photos,
             )
+
+            # ── Fase 7.5: Pausa si select_photos=True ────────────────────────────
+            if config.select_photos:
+                from services.storage_service import get_storage_service  # noqa: PLC0415
+                storage = get_storage_service()
+                productos = resumen.get("_productos", [])
+
+                # Contar candidatas por producto
+                photos_pending: dict[str, int] = {}
+                productos_con_candidatas = 0
+
+                for producto in productos:
+                    candidates = storage.list_candidates(
+                        carpeta_job_id or job_id,
+                        producto.codigo
+                    )
+                    if candidates:
+                        photos_pending[producto.codigo] = len(candidates)
+                        productos_con_candidatas += 1
+
+                if productos_con_candidatas > 0:
+                    # Guardar en Redis las fotos pendientes
+                    redis_client.set(
+                        _PHOTOS_PENDING_KEY.format(job_id=job_id),
+                        json.dumps(photos_pending, ensure_ascii=False),
+                        ex=settings.file_ttl_seconds,
+                    )
+
+                    job_status.estado = EstadoJob.PENDIENTE_SELECCION_FOTOS
+                    job_status.fotos_pendientes_seleccion = productos_con_candidatas
+                    job_status.actualizado_en = datetime.utcnow()
+                    job_status.mensaje = (
+                        f"Imágenes descargadas: {resumen.get('imagenes_descargadas', 0)} de "
+                        f"{resumen['total_productos']}. "
+                        f"{productos_con_candidatas} productos pendientes de seleccionar foto."
+                    )
+                    _actualizar_estado(redis_client, job_status)
+
+                    logger.info(
+                        "Job pausado en PENDIENTE_SELECCION_FOTOS",
+                        extra={
+                            "job_id": job_id,
+                            "productos_con_candidatas": productos_con_candidatas,
+                        },
+                    )
+                    logger.info(
+                        "Fotos pendientes guardadas en Redis",
+                        extra={
+                            "job_id": job_id,
+                            "fotos_por_producto": photos_pending,
+                        },
+                    )
+
+                    return {
+                        "total_productos": resumen["total_productos"],
+                        "imagenes_descargadas": resumen.get("imagenes_descargadas", 0),
+                        "imagenes_fallidas": resumen.get("imagenes_fallidas", 0),
+                        "fotos_pendientes_seleccion": productos_con_candidatas,
+                        "estado": EstadoJob.PENDIENTE_SELECCION_FOTOS,
+                    }
 
         # Actualizar estado final: COMPLETADO
         job_status.estado = EstadoJob.COMPLETADO
