@@ -268,6 +268,24 @@ class TestDolibarrClientNoRetryOn4xx:
 
         assert mock_instance.request.call_count == 1
 
+    async def test_get_raises_on_non_404_4xx(self):
+        """T27: get() raises IntegrationError on 401 without retrying."""
+        s = _make_settings()
+        mock_resp = MagicMock()
+        mock_resp.status_code = 401
+
+        with patch("httpx.AsyncClient") as mock_cls:
+            mock_instance = AsyncMock()
+            mock_instance.request = AsyncMock(return_value=mock_resp)
+            mock_cls.return_value = mock_instance
+            client = DolibarrClient(s)
+
+        with pytest.raises(IntegrationError) as exc_info:
+            await client.get("products", 1)
+
+        assert exc_info.value.status_code == 401
+        assert mock_instance.request.call_count == 1
+
 
 # ---------------------------------------------------------------------------
 # T14: IntegrationError con atributo platform
