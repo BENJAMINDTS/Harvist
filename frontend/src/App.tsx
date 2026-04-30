@@ -144,8 +144,9 @@ const App: React.FC = () => {
         const brands = await getBrandsPending(jobId)
         setPendingBrands(brands)
       }
-    } catch {
-      // Fall through to done regardless
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al comprobar el estado del job.'
+      setError(msg)
     }
     setAppState('done')
   }, [jobId, tipoJob])
@@ -173,9 +174,9 @@ const App: React.FC = () => {
       })
   }, [appState, tipoJob, jobId])
 
-  // Cuando el job de marcas completa, cargamos los datos para el panel.
+  // Cuando el job de marcas completa (sin validación pendiente), cargamos los datos para el panel.
   useEffect(() => {
-    if (appState !== 'done' || tipoJob !== 'marcas' || !jobId) return
+    if (appState !== 'done' || tipoJob !== 'marcas' || !jobId || pendingBrands.length > 0) return
     setBrandsLoadError(null)
     getBrands(jobId)
       .then((data) => {
@@ -187,7 +188,7 @@ const App: React.FC = () => {
         const msg = (err as ApiError).message ?? 'No se pudieron cargar las marcas.'
         setBrandsLoadError(msg)
       })
-  }, [appState, tipoJob, jobId])
+  }, [appState, tipoJob, jobId, pendingBrands.length])
 
   /** Reinicia el flujo completo a la pantalla de inicio */
   const handleReset = (): void => {
