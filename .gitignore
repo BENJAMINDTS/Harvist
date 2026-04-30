@@ -49,6 +49,10 @@ imagenes_descargadas/
 # Logs rotativos de loguru
 logs/
 
+# Batería local de prefijos GS1 (aprendidos en runtime — no subir al repo)
+data/brand_cache.json
+data/gs1_prefixes.db
+
 # Archivos de control del scraper
 registro_miniaturas.txt
 productos_sin_imagen.txt
