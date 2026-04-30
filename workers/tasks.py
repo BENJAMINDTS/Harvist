@@ -6,6 +6,7 @@ No contiene lógica de dominio — solo integración con Celery y actualización
 del estado del job en Redis.
 
 :author: BenjaminDTS
+:author: Carlitos6712
 :version: 1.0.0
 """
 
@@ -27,6 +28,7 @@ from workers.celery_app import celery_app
 task_logger = get_task_logger(__name__)
 
 _JOB_KEY = "job:{job_id}"
+_BRANDS_PENDING_KEY = "job:{job_id}:brands_pending"
 
 
 class JobCancelledError(Exception):
@@ -333,7 +335,12 @@ def ejecutar_scraping(
             )
         elif config.tipo_job == TipoJob.MARCAS:
             from services.scraper.brand_pipeline import BrandPipeline  # noqa: PLC0415
-            pipeline_marcas = BrandPipeline(job_id=job_id, config=config, carpeta_job_id=carpeta_job_id)
+            pipeline_marcas = BrandPipeline(
+                job_id=job_id,
+                config=config,
+                carpeta_job_id=carpeta_job_id,
+                write_cache=not config.validate_brands,
+            )
             resumen = pipeline_marcas.ejecutar(
                 contenido_csv=contenido_csv,
                 callback=_callback_marcas,
@@ -379,10 +386,48 @@ def ejecutar_scraping(
             job_status.total_productos = resumen["total_productos"]
             job_status.productos_procesados = resumen["total_productos"]
             job_status.marcas_procesadas = resumen.get("marcas_exitosas", 0)
-            job_status.mensaje = (
-                f"Completado: {resumen.get('marcas_exitosas', 0)} marcas procesadas "
-                f"de {resumen['total_productos']}."
-            )
+
+            new_entries: dict[str, str] = resumen.get("new_cache_entries", {})
+
+            if config.validate_brands and new_entries:
+                # Hay marcas nuevas pendientes de validación: guardar en Redis y
+                # dejar el job en estado intermedio (no COMPLETADO todavía).
+                redis_client.set(
+                    _BRANDS_PENDING_KEY.format(job_id=job_id),
+                    json.dumps(new_entries, ensure_ascii=False),
+                    ex=settings.file_ttl_seconds,
+                )
+                job_status.estado = EstadoJob.PENDIENTE_VALIDACION_MARCAS
+                job_status.completado_en = None  # No completado aún
+                job_status.marcas_pendientes_validacion = len(new_entries)
+                job_status.mensaje = (
+                    f"Marcas procesadas: {resumen.get('marcas_exitosas', 0)} de "
+                    f"{resumen['total_productos']}. "
+                    f"{len(new_entries)} marcas nuevas pendientes de validación."
+                )
+                logger.info(
+                    "Job en espera de validación de marcas",
+                    extra={
+                        "job_id": job_id,
+                        "marcas_nuevas": len(new_entries),
+                    },
+                )
+            elif config.validate_brands and not new_entries:
+                # validate_brands=True pero no hay marcas nuevas: completar directamente
+                job_status.estado = EstadoJob.COMPLETADO
+                job_status.completado_en = datetime.utcnow()
+                job_status.mensaje = (
+                    f"Completado: {resumen.get('marcas_exitosas', 0)} marcas procesadas "
+                    f"de {resumen['total_productos']}. Sin marcas nuevas para validar."
+                )
+            else:
+                # validate_brands=False (comportamiento por defecto)
+                job_status.estado = EstadoJob.COMPLETADO
+                job_status.completado_en = datetime.utcnow()
+                job_status.mensaje = (
+                    f"Completado: {resumen.get('marcas_exitosas', 0)} marcas procesadas "
+                    f"de {resumen['total_productos']}."
+                )
         else:
             job_status.total_productos = resumen["total_productos"]
             job_status.imagenes_descargadas = resumen.get("imagenes_descargadas", 0)
