@@ -117,15 +117,7 @@ class DolibarrClient(IntegrationClient):
 
                 return response
 
-            except httpx.TimeoutException as exc:
-                last_exc = exc
-                logger.warning(
-                    "Reintentando Dolibarr",
-                    extra={"attempt": attempt, "path": path},
-                )
-                await asyncio.sleep(2 ** attempt)
-
-            except httpx.ConnectError as exc:
+            except (httpx.TimeoutException, httpx.ConnectError) as exc:
                 last_exc = exc
                 logger.warning(
                     "Reintentando Dolibarr",
@@ -181,7 +173,14 @@ class DolibarrClient(IntegrationClient):
             params.update(filters)
 
         response = await self._request("GET", resource, params=params)
-        return response.json()  # type: ignore[return-value]
+        if response.status_code >= 400:
+            raise IntegrationError(
+                f"Dolibarr {resource} devolvió error",
+                platform="dolibarr",
+                status_code=response.status_code,
+            )
+        result: list[dict[str, Any]] = response.json()
+        return result
 
     async def get(
         self,
@@ -210,7 +209,8 @@ class DolibarrClient(IntegrationClient):
                 status_code=404,
             )
 
-        return response.json()  # type: ignore[return-value]
+        result: dict[str, Any] = response.json()
+        return result
 
     async def create(
         self,
@@ -228,7 +228,14 @@ class DolibarrClient(IntegrationClient):
             Dict con el recurso creado, incluyendo el ID asignado por Dolibarr.
         """
         response = await self._request("POST", resource, json=data)
-        return response.json()  # type: ignore[return-value]
+        if response.status_code >= 400:
+            raise IntegrationError(
+                f"Error al crear {resource} en Dolibarr",
+                platform="dolibarr",
+                status_code=response.status_code,
+            )
+        result: dict[str, Any] = response.json()
+        return result
 
     async def update(
         self,
@@ -248,7 +255,14 @@ class DolibarrClient(IntegrationClient):
             Dict con el recurso actualizado.
         """
         response = await self._request("PUT", f"{resource}/{resource_id}", json=data)
-        return response.json()  # type: ignore[return-value]
+        if response.status_code >= 400:
+            raise IntegrationError(
+                f"Error al actualizar {resource}/{resource_id} en Dolibarr",
+                platform="dolibarr",
+                status_code=response.status_code,
+            )
+        result: dict[str, Any] = response.json()
+        return result
 
     async def delete(
         self,
@@ -306,6 +320,7 @@ class DolibarrClient(IntegrationClient):
             logger.warning(
                 "Dolibarr health falló",
                 extra={"base_url": self._base_url},
+                exc_info=True,
             )
             return False
 
