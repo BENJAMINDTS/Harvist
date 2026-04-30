@@ -126,6 +126,88 @@ class StorageService(ABC):
             FileNotFoundError: si no existen archivos para ese job.
         """
 
+    @abstractmethod
+    def candidates_dir(self, job_id: str) -> Path:
+        """
+        Devuelve la ruta del directorio temporal de candidatas para un job.
+
+        Args:
+            job_id: identificador del job.
+
+        Returns:
+            Path del directorio candidates/ (puede no existir).
+        """
+
+    @abstractmethod
+    def candidate_path(self, job_id: str, codigo: str, n: int) -> Path:
+        """
+        Devuelve la ruta de una candidata específica.
+
+        Args:
+            job_id: identificador del job.
+            codigo: código del producto.
+            n: índice de la candidata (0-based).
+
+        Returns:
+            Path de la candidata.
+        """
+
+    @abstractmethod
+    def list_candidates(self, job_id: str, codigo: str) -> list[int]:
+        """
+        Lista los índices de candidatas disponibles para un producto.
+
+        Args:
+            job_id: identificador del job.
+            codigo: código del producto.
+
+        Returns:
+            Lista de índices ordenada (ej: [0, 1, 2]). Vacía si no hay candidatas.
+        """
+
+    @abstractmethod
+    def get_candidate_info(self, job_id: str, codigo: str, n: int) -> dict:
+        """
+        Devuelve metadatos de una candidata.
+
+        Args:
+            job_id: identificador del job.
+            codigo: código del producto.
+            n: índice de la candidata.
+
+        Returns:
+            Dict con width, height, size_bytes.
+
+        Raises:
+            FileNotFoundError: si la candidata no existe.
+        """
+
+    @abstractmethod
+    def confirm_selection(self, job_id: str, selections: dict[str, int]) -> None:
+        """
+        Confirma selección: renombra elegidas a {codigo}.jpg y elimina el resto.
+        Borra el directorio candidates/ al finalizar.
+
+        Args:
+            job_id: identificador del job.
+            selections: dict con {codigo: selected_index}.
+
+        Raises:
+            FileNotFoundError: si alguna candidata seleccionada no existe.
+        """
+
+    @abstractmethod
+    def cleanup_candidates(self, job_id: str) -> int:
+        """
+        Elimina el directorio candidates/ del job completamente.
+
+        Args:
+            job_id: identificador del job.
+
+        Returns:
+            Número de archivos eliminados.
+        """
+
 
 # ---------------------------------------------------------------------------
 # Implementación local
@@ -283,6 +365,166 @@ class LocalStorageService(StorageService):
         if zip_path.exists():
             zip_path.unlink()
             logger.info("ZIP local eliminado", extra={"job_id": job_id})
+
+    def candidates_dir(self, job_id: str) -> Path:
+        """
+        Devuelve la ruta del directorio temporal de candidatas para un job.
+
+        Args:
+            job_id: identificador del job.
+
+        Returns:
+            Path del directorio candidates/ bajo job_dir.
+        """
+        return self.get_job_dir(job_id) / "candidates"
+
+    def candidate_path(self, job_id: str, codigo: str, n: int) -> Path:
+        """
+        Devuelve la ruta de una candidata específica.
+
+        Args:
+            job_id: identificador del job.
+            codigo: código del producto.
+            n: índice de la candidata (0-based).
+
+        Returns:
+            Path: {job_dir}/candidates/{codigo}_candidate_{n}.jpg
+        """
+        return self.candidates_dir(job_id) / f"{codigo}_candidate_{n}.jpg"
+
+    def list_candidates(self, job_id: str, codigo: str) -> list[int]:
+        """
+        Lista los índices de candidatas disponibles para un producto.
+
+        Args:
+            job_id: identificador del job.
+            codigo: código del producto.
+
+        Returns:
+            Lista de índices ordenada. Vacía si no hay candidatas.
+        """
+        cand_dir = self.candidates_dir(job_id)
+        if not cand_dir.exists():
+            return []
+
+        indices = []
+        pattern = f"{codigo}_candidate_"
+        for file in cand_dir.iterdir():
+            if file.name.startswith(pattern) and file.name.endswith(".jpg"):
+                try:
+                    idx_str = file.name[len(pattern):-4]  # remove prefix and .jpg
+                    indices.append(int(idx_str))
+                except ValueError:
+                    continue
+        return sorted(indices)
+
+    def get_candidate_info(self, job_id: str, codigo: str, n: int) -> dict:
+        """
+        Devuelve metadatos de una candidata.
+
+        Args:
+            job_id: identificador del job.
+            codigo: código del producto.
+            n: índice de la candidata.
+
+        Returns:
+            Dict con width, height, size_bytes.
+
+        Raises:
+            FileNotFoundError: si la candidata no existe.
+        """
+        cand_path = self.candidate_path(job_id, codigo, n)
+        if not cand_path.exists():
+            raise FileNotFoundError(
+                f"Candidata {codigo}_{n} no encontrada en job {job_id}."
+            )
+
+        from PIL import Image
+
+        try:
+            with Image.open(cand_path) as img:
+                width, height = img.size
+        except Exception as e:
+            logger.error(
+                "Error al leer dimensiones de candidata",
+                exc_info=e,
+                extra={"job_id": job_id, "codigo": codigo, "n": n},
+            )
+            width, height = 0, 0
+
+        size_bytes = cand_path.stat().st_size
+
+        return {"width": width, "height": height, "size_bytes": size_bytes}
+
+    def confirm_selection(self, job_id: str, selections: dict[str, int]) -> None:
+        """
+        Confirma la selección de fotos: renombra elegidas a {codigo}.jpg
+        y elimina el resto. Borra candidates/ al finalizar.
+
+        Args:
+            job_id: identificador del job.
+            selections: dict con {codigo: selected_index}.
+
+        Raises:
+            FileNotFoundError: si alguna candidata seleccionada no existe.
+        """
+        job_dir = self.ensure_job_dir(job_id)
+        cand_dir = self.candidates_dir(job_id)
+
+        if not cand_dir.exists():
+            raise FileNotFoundError(f"No hay candidatas para el job {job_id}.")
+
+        for codigo, selected_idx in selections.items():
+            selected_path = self.candidate_path(job_id, codigo, selected_idx)
+            if not selected_path.exists():
+                raise FileNotFoundError(
+                    f"Candidata seleccionada no existe: {codigo}_{selected_idx}."
+                )
+
+            final_path = job_dir / f"{codigo}.jpg"
+            selected_path.rename(final_path)
+            logger.debug(
+                "Candidata confirmada",
+                extra={"job_id": job_id, "codigo": codigo, "index": selected_idx},
+            )
+
+        # Eliminar candidatas no seleccionadas
+        for file in cand_dir.glob("*_candidate_*.jpg"):
+            file.unlink()
+            logger.debug(
+                "Candidata rechazada eliminada",
+                extra={"job_id": job_id, "filename": file.name},
+            )
+
+        # Eliminar directorio candidates/
+        if cand_dir.exists():
+            shutil.rmtree(cand_dir)
+            logger.info(
+                "Directorio candidates/ eliminado tras confirmación",
+                extra={"job_id": job_id},
+            )
+
+    def cleanup_candidates(self, job_id: str) -> int:
+        """
+        Elimina el directorio candidates/ del job completamente.
+
+        Args:
+            job_id: identificador del job.
+
+        Returns:
+            Número de archivos eliminados.
+        """
+        cand_dir = self.candidates_dir(job_id)
+        if not cand_dir.exists():
+            return 0
+
+        count = len(list(cand_dir.glob("**/*")))
+        shutil.rmtree(cand_dir)
+        logger.info(
+            "Directorio candidates/ limpiado por TTL",
+            extra={"job_id": job_id, "files_deleted": count},
+        )
+        return count
 
 
 # ---------------------------------------------------------------------------
@@ -600,6 +842,30 @@ class S3StorageService(StorageService):
             extra={"job_id": job_id, "total": len(keys_to_delete)},
         )
 
+    def candidates_dir(self, job_id: str) -> Path:
+        """S3: candidatas no soportadas aún (Fase 7.5 local only)."""
+        raise NotImplementedError("Selección de fotos no soportada en S3 aún.")
+
+    def candidate_path(self, job_id: str, codigo: str, n: int) -> Path:
+        """S3: candidatas no soportadas aún."""
+        raise NotImplementedError("Selección de fotos no soportada en S3 aún.")
+
+    def list_candidates(self, job_id: str, codigo: str) -> list[int]:
+        """S3: candidatas no soportadas aún."""
+        raise NotImplementedError("Selección de fotos no soportada en S3 aún.")
+
+    def get_candidate_info(self, job_id: str, codigo: str, n: int) -> dict:
+        """S3: candidatas no soportadas aún."""
+        raise NotImplementedError("Selección de fotos no soportada en S3 aún.")
+
+    def confirm_selection(self, job_id: str, selections: dict[str, int]) -> None:
+        """S3: candidatas no soportadas aún."""
+        raise NotImplementedError("Selección de fotos no soportada en S3 aún.")
+
+    def cleanup_candidates(self, job_id: str) -> int:
+        """S3: candidatas no soportadas aún."""
+        raise NotImplementedError("Selección de fotos no soportada en S3 aún.")
+
 
 # ---------------------------------------------------------------------------
 # Implementación Azure Blob Storage
@@ -903,6 +1169,30 @@ class AzureBlobStorageService(StorageService):
             "Todos los blobs de Azure del job eliminados",
             extra={"job_id": job_id, "total": len(blob_names)},
         )
+
+    def candidates_dir(self, job_id: str) -> Path:
+        """Azure: candidatas no soportadas aún (Fase 7.5 local only)."""
+        raise NotImplementedError("Selección de fotos no soportada en Azure aún.")
+
+    def candidate_path(self, job_id: str, codigo: str, n: int) -> Path:
+        """Azure: candidatas no soportadas aún."""
+        raise NotImplementedError("Selección de fotos no soportada en Azure aún.")
+
+    def list_candidates(self, job_id: str, codigo: str) -> list[int]:
+        """Azure: candidatas no soportadas aún."""
+        raise NotImplementedError("Selección de fotos no soportada en Azure aún.")
+
+    def get_candidate_info(self, job_id: str, codigo: str, n: int) -> dict:
+        """Azure: candidatas no soportadas aún."""
+        raise NotImplementedError("Selección de fotos no soportada en Azure aún.")
+
+    def confirm_selection(self, job_id: str, selections: dict[str, int]) -> None:
+        """Azure: candidatas no soportadas aún."""
+        raise NotImplementedError("Selección de fotos no soportada en Azure aún.")
+
+    def cleanup_candidates(self, job_id: str) -> int:
+        """Azure: candidatas no soportadas aún."""
+        raise NotImplementedError("Selección de fotos no soportada en Azure aún.")
 
 
 # ---------------------------------------------------------------------------
