@@ -124,6 +124,34 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ── Batería local de marcas — Fase 7.4 ───────────────────────────────────────
+    brand_cache_path: str = Field(
+        default="data/brand_cache.json",
+        description=(
+            "Ruta al JSON de batería local de prefijos GS1 conocidos "
+            "(brand_cache.json). Relativa al directorio raíz del proyecto."
+        ),
+    )
+
+    @field_validator("brand_cache_path")
+    @classmethod
+    def brand_cache_path_not_empty(cls, v: str) -> str:
+        """
+        Valida que la ruta al brand_cache.json no esté vacía.
+
+        Args:
+            v: valor del campo brand_cache_path.
+
+        Returns:
+            Ruta limpia (strip).
+
+        Raises:
+            ValueError: si la ruta está vacía o solo contiene espacios.
+        """
+        if not v or not v.strip():
+            raise ValueError("brand_cache_path no puede estar vacío.")
+        return v.strip()
+
     # ── Scraper — motor de búsqueda ───────────────────────────────────────────
     search_engine: Literal["bing", "google", "duckduckgo"] = Field(
         default="bing",
