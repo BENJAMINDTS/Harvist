@@ -61,13 +61,19 @@ def descargar_imagenes_producto(
     storage: StorageService,
     max_imagenes: int | None = None,
     callback_imagen: Callable[[bool], None] | None = None,
+    save_all_candidates: bool = False,
 ) -> list[ResultadoDescarga]:
     """
     Descarga, valida y guarda las imágenes de un producto usando un thread pool.
 
-    Intenta descargar las URLs recibidas en paralelo hasta obtener ``max_imagenes``
-    imágenes válidas. Los turls de Bing actúan como fallback si los murls fallan:
-    en cuanto se alcanza el límite, el resto de futures se descarta.
+    Si save_all_candidates=False (por defecto): intenta descargar las URLs recibidas
+    en paralelo hasta obtener ``max_imagenes`` imágenes válidas. Los urls de Bing
+    actúan como fallback si los anteriores fallan: en cuanto se alcanza el límite,
+    el resto de futures se descarta.
+
+    Si save_all_candidates=True: descarga TODOS los candidatos válidos sin límite,
+    guardándolos como {nombre_base}_candidate_{n}.jpg en storage.candidates_dir(),
+    continuando aunque haya errores. Retorna la lista completa de ResultadoDescarga.
 
     Args:
         job_id: identificador del job (para nombrar los archivos).
@@ -76,15 +82,115 @@ def descargar_imagenes_producto(
         storage: servicio de almacenamiento donde guardar las imágenes.
         max_imagenes: número máximo de imágenes válidas a guardar. Si None, usa
                       ``settings.images_per_product`` como valor por defecto.
+                      Ignorado si save_all_candidates=True.
         callback_imagen: función opcional invocada con (exitoso: bool)
                          tras procesar cada imagen, para actualizar contadores.
+        save_all_candidates: si True, descarga TODOS los candidatos válidos
+                            sin límite al directorio candidates/. Si False,
+                            comportamiento por defecto (hasta max_imagenes).
 
     Returns:
         Lista de ResultadoDescarga con el resultado de cada URL intentada.
+
+    :author: BenjaminDTS
     """
     settings = get_settings()
-    limite = max_imagenes if max_imagenes is not None else settings.images_per_product
     resultados: list[ResultadoDescarga] = []
+    nombre_base = producto.nombre_foto or producto.codigo
+    # Reemplazar caracteres inválidos en nombres de archivo por guion bajo
+    nombre_base = "".join(
+        c if c.isalnum() or c in "-_." else "_" for c in nombre_base
+    ).strip("_") or producto.codigo
+
+    if save_all_candidates:
+        # Modo candidatos: descargar TODOS sin límite
+        imagenes_validas = 0
+        with ThreadPoolExecutor(max_workers=settings.download_workers) as executor:
+            futuros: dict[Future, str] = {
+                executor.submit(
+                    _descargar_y_validar,
+                    url,
+                    settings.download_timeout,
+                    settings.image_min_width,
+                    settings.image_min_height,
+                    settings.image_resize_width,
+                    settings.image_resize_height,
+                ): url
+                for url in urls
+            }
+
+            for futuro in as_completed(futuros):
+                url = futuros[futuro]
+
+                try:
+                    imagen_bytes, extension = futuro.result()
+                except Exception as exc:
+                    logger.warning(
+                        "Candidata fallida al descargar",
+                        exc_info=exc,
+                        extra={"codigo": producto.codigo, "url": url},
+                    )
+                    resultados.append(
+                        ResultadoDescarga(url=url, exitoso=False, error=str(exc))
+                    )
+                    if callback_imagen:
+                        callback_imagen(False)
+                    continue
+
+                # Guardar como candidata con índice 0-based
+                indice = imagenes_validas
+                filename = f"{nombre_base}_candidate_{indice}.{extension.lower()}"
+
+                try:
+                    # Crear directorio candidates si no existe
+                    cand_dir = storage.candidates_dir(job_id)
+                    cand_dir.mkdir(parents=True, exist_ok=True)
+
+                    # Guardar candidata
+                    cand_path = storage.candidate_path(job_id, nombre_base, indice)
+                    cand_path.write_bytes(imagen_bytes)
+
+                    imagenes_validas += 1
+                    resultados.append(
+                        ResultadoDescarga(
+                            url=url, exitoso=True, ruta_guardada=str(cand_path)
+                        )
+                    )
+                    logger.info(
+                        "Candidata guardada",
+                        extra={
+                            "codigo": producto.codigo,
+                            "index": indice,
+                            "bytes": len(imagen_bytes),
+                        },
+                    )
+                    if callback_imagen:
+                        callback_imagen(True)
+                except OSError as exc:
+                    logger.warning(
+                        "Candidata fallida al guardar en storage",
+                        exc_info=exc,
+                        extra={"job_id": job_id, "filename": filename},
+                    )
+                    resultados.append(
+                        ResultadoDescarga(url=url, exitoso=False, error=str(exc))
+                    )
+                    if callback_imagen:
+                        callback_imagen(False)
+
+        logger.info(
+            "Descarga de producto (modo candidatos) completada",
+            extra={
+                "job_id": job_id,
+                "codigo": producto.codigo,
+                "candidatas": imagenes_validas,
+                "intentadas": len(urls),
+            },
+        )
+        return resultados
+
+    # Modo normal: comportamiento original (hasta max_imagenes)
+    limite = max_imagenes if max_imagenes is not None else settings.images_per_product
     imagenes_validas = 0
 
     with ThreadPoolExecutor(max_workers=settings.download_workers) as executor:
@@ -121,13 +227,8 @@ def descargar_imagenes_producto(
                     callback_imagen(False)
                 continue
 
-            # Generar nombre de archivo usando la columna seleccionada (o código como fallback)
+            # Generar nombre de archivo con índice 1-based
             indice = imagenes_validas + 1
-            nombre_base = producto.nombre_foto or producto.codigo
-            # Reemplazar caracteres inválidos en nombres de archivo por guion bajo
-            nombre_base = "".join(
-                c if c.isalnum() or c in "-_." else "_" for c in nombre_base
-            ).strip("_") or producto.codigo
             filename = f"{nombre_base}_{indice:03d}.{extension.lower()}"
 
             try:
