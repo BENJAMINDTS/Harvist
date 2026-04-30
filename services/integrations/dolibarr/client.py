@@ -208,7 +208,12 @@ class DolibarrClient(IntegrationClient):
                 platform="dolibarr",
                 status_code=404,
             )
-
+        if response.status_code >= 400:
+            raise IntegrationError(
+                f"Dolibarr {resource}/{resource_id} devolvió error",
+                platform="dolibarr",
+                status_code=response.status_code,
+            )
         result: dict[str, Any] = response.json()
         return result
 
