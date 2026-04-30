@@ -351,3 +351,91 @@ export async function validateBrands(
   )
   return response.data.data
 }
+
+// ─── Selección de fotos (Fase 7.5) ────────────────────────────────────────
+
+/** Información de una candidata de foto para un producto. */
+export interface CandidateInfo {
+  index: number
+  url: string
+  width: number
+  height: number
+  size_bytes: number
+}
+
+/** Datos de un producto con sus fotos candidatas. */
+export interface ProductPhotos {
+  codigo: string
+  nombre: string
+  n_candidates: number
+  candidates: CandidateInfo[]
+  selected_index: number | null
+}
+
+/** Item de selección de foto enviado al backend. */
+export interface PhotoSelectionItem {
+  codigo: string
+  selected_index: number
+}
+
+/** Body de POST /jobs/{jobId}/photos/confirm. */
+export interface PhotoConfirmRequest {
+  selections: PhotoSelectionItem[]
+}
+
+/** Respuesta del endpoint de confirmación de fotos. */
+export interface PhotoConfirmResult {
+  confirmadas: number
+  zip_listo: boolean
+}
+
+/**
+ * Obtiene la lista de productos con sus candidatas disponibles.
+ *
+ * Llama a `GET /api/v1/jobs/{jobId}/photos` y devuelve los productos con las fotos
+ * candidatas descargadas y disponibles para selección.
+ *
+ * @author BenjaminDTS
+ * @param jobId - ID del job en PENDIENTE_SELECCION_FOTOS.
+ * @param limit - Opcional. Máximo de productos a retornar (default: sin límite).
+ * @param offset - Opcional. Productos a saltar para paginación (default: 0).
+ * @returns Lista de ProductPhotos con todas las candidatas y selecciones actuales.
+ */
+export async function getJobPhotos(
+  jobId: string,
+  limit?: number,
+  offset?: number,
+): Promise<ProductPhotos[]> {
+  const params: Record<string, unknown> = {}
+  if (limit !== undefined) params.limit = limit
+  if (offset !== undefined) params.offset = offset
+
+  const response = await apiClient.get<ApiResponse<ProductPhotos[]>>(
+    `/jobs/${jobId}/photos`,
+    { params },
+  )
+  return response.data.data
+}
+
+/**
+ * Confirma la selección de fotos y genera el ZIP final.
+ *
+ * Llama a `POST /api/v1/jobs/{jobId}/photos/confirm` con el mapeo de productos
+ * a índices de candidata seleccionados. Las candidatas no seleccionadas se eliminan
+ * del disco, el ZIP se genera, y el job avanza de estado.
+ *
+ * @author BenjaminDTS
+ * @param jobId - ID del job en PENDIENTE_SELECCION_FOTOS.
+ * @param selections - Array de { codigo, selected_index } indicando la foto elegida por producto.
+ * @returns Resumen con número de confirmadas y si el ZIP está listo.
+ */
+export async function confirmPhotoSelection(
+  jobId: string,
+  selections: PhotoSelectionItem[],
+): Promise<PhotoConfirmResult> {
+  const response = await apiClient.post<ApiResponse<PhotoConfirmResult>>(
+    `/jobs/${jobId}/photos/confirm`,
+    { selections },
+  )
+  return response.data.data
+}
