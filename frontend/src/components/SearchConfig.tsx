@@ -65,6 +65,11 @@ export interface SearchConfigValues {
    * en brand_cache.json (Fase 7.4). Solo aplica cuando tipoJob === 'marcas'.
    */
   validateBrands: boolean;
+  /**
+   * Si true, el job descargará todas las candidatas de fotos y esperará validación
+   * manual antes de seleccionar la definitiva (Fase 7.5). Solo aplica cuando tipoJob === 'fotos'.
+   */
+  selectPhotos: boolean;
 }
 
 /**
@@ -343,6 +348,7 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
   const [storeType, setStoreType] = useState<string>("");
   const [targetLanguages, setTargetLanguages] = useState<string[]>([]);
   const [validateBrands, setValidateBrands] = useState<boolean>(false);
+  const [selectPhotos, setSelectPhotos] = useState<boolean>(false);
 
   /** Indica si `onLaunch` está en curso para bloquear el botón y mostrar spinner. */
   const [launching, setLaunching] = useState<boolean>(false);
@@ -387,6 +393,7 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
         storeType,
         targetLanguages,
         validateBrands,
+        selectPhotos,
       });
     } finally {
       // Siempre desbloquear, incluso si onLaunch lanza una excepción.
@@ -409,6 +416,7 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
     storeType,
     targetLanguages,
     validateBrands,
+    selectPhotos,
   ]);
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -954,59 +962,83 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
       )}
 
       {/* ── Imágenes por producto (solo fotos) ── */}
-      {tipoJob === "fotos" && <div>
-        <div className="flex items-center justify-between mb-3">
-          <label
-            htmlFor="imagenes-slider"
-            className="text-sm font-semibold text-gray-700 dark:text-gray-300"
-          >
-            Imágenes por producto
-          </label>
-          {/* Input numérico sincronizado con el slider */}
+      {tipoJob === "fotos" && <div className="flex flex-col gap-6">
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <label
+              htmlFor="imagenes-slider"
+              className="text-sm font-semibold text-gray-700 dark:text-gray-300"
+            >
+              Imágenes por producto
+            </label>
+            {/* Input numérico sincronizado con el slider */}
+            <input
+              type="number"
+              min={MIN_IMAGENES}
+              max={MAX_IMAGENES}
+              value={imagenesPorProducto}
+              onChange={(e) => handleImagenesChange(parseInt(e.target.value, 10))}
+              aria-label="Número exacto de imágenes por producto"
+              className={
+                "w-16 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 " +
+                "text-sm text-center text-gray-800 dark:text-gray-100 font-semibold " +
+                "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent " +
+                "transition-colors duration-150 [appearance:textfield] " +
+                "[&::-webkit-outer-spin-button]:appearance-none " +
+                "[&::-webkit-inner-spin-button]:appearance-none"
+              }
+            />
+          </div>
+
           <input
-            type="number"
+            id="imagenes-slider"
+            type="range"
             min={MIN_IMAGENES}
             max={MAX_IMAGENES}
+            step={1}
             value={imagenesPorProducto}
             onChange={(e) => handleImagenesChange(parseInt(e.target.value, 10))}
-            aria-label="Número exacto de imágenes por producto"
+            aria-valuemin={MIN_IMAGENES}
+            aria-valuemax={MAX_IMAGENES}
+            aria-valuenow={imagenesPorProducto}
+            aria-label={`Imágenes por producto: ${imagenesPorProducto}`}
             className={
-              "w-16 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 " +
-              "text-sm text-center text-gray-800 dark:text-gray-100 font-semibold " +
-              "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent " +
-              "transition-colors duration-150 [appearance:textfield] " +
-              "[&::-webkit-outer-spin-button]:appearance-none " +
-              "[&::-webkit-inner-spin-button]:appearance-none"
+              "w-full h-2 rounded-full appearance-none cursor-pointer " +
+              "bg-gray-200 dark:bg-gray-700 accent-blue-500 " +
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
             }
           />
+
+          {/* Etiquetas de rango */}
+          <div
+            className="flex justify-between mt-1"
+            aria-hidden="true"
+          >
+            <span className="text-xs text-gray-400 dark:text-gray-500">{MIN_IMAGENES}</span>
+            <span className="text-xs text-gray-400 dark:text-gray-500">{MAX_IMAGENES}</span>
+          </div>
         </div>
 
-        <input
-          id="imagenes-slider"
-          type="range"
-          min={MIN_IMAGENES}
-          max={MAX_IMAGENES}
-          step={1}
-          value={imagenesPorProducto}
-          onChange={(e) => handleImagenesChange(parseInt(e.target.value, 10))}
-          aria-valuemin={MIN_IMAGENES}
-          aria-valuemax={MAX_IMAGENES}
-          aria-valuenow={imagenesPorProducto}
-          aria-label={`Imágenes por producto: ${imagenesPorProducto}`}
-          className={
-            "w-full h-2 rounded-full appearance-none cursor-pointer " +
-            "bg-gray-200 dark:bg-gray-700 accent-blue-500 " +
-            "focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-          }
-        />
-
-        {/* Etiquetas de rango */}
-        <div
-          className="flex justify-between mt-1"
-          aria-hidden="true"
-        >
-          <span className="text-xs text-gray-400 dark:text-gray-500">{MIN_IMAGENES}</span>
-          <span className="text-xs text-gray-400 dark:text-gray-500">{MAX_IMAGENES}</span>
+        {/* Toggle para selección visual de fotos (Fase 7.5) */}
+        <div className="p-4 bg-cyan-50 dark:bg-cyan-950 border border-cyan-200 dark:border-cyan-800 rounded-lg">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={selectPhotos}
+              onChange={(e) => setSelectPhotos(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
+            />
+            <span className="flex flex-col gap-2">
+              <span className="text-sm font-medium text-cyan-900 dark:text-cyan-100">
+                Seleccionar foto manualmente antes de descargar
+              </span>
+              {selectPhotos && (
+                <span className="text-xs text-cyan-700 dark:text-cyan-200">
+                  Se descargarán todas las candidatas por producto. Podrás elegir la mejor antes de generar el ZIP.
+                </span>
+              )}
+            </span>
+          </label>
         </div>
       </div>}
 
