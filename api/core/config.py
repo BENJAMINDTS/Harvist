@@ -5,6 +5,7 @@ Todas las variables se leen exclusivamente desde variables de entorno o archivo 
 NUNCA hardcodear valores aquí — usar siempre get_settings().
 
 :author: BenjaminDTS
+:author: Carlitos6712
 :version: 1.0.0
 """
 
@@ -24,6 +25,7 @@ class Settings(BaseSettings):
     Pydantic lanzará un ValidationError antes de que la app sirva tráfico.
 
     :author: BenjaminDTS
+    :author: Carlitos6712
     """
 
     model_config = SettingsConfigDict(
