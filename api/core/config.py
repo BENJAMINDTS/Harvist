@@ -154,6 +154,14 @@ class Settings(BaseSettings):
             raise ValueError("brand_cache_path no puede estar vacío.")
         return v.strip()
 
+    # ── Selección de fotos — Fase 7.5 ─────────────────────────────────────────
+    candidates_ttl_hours: int = Field(
+        default=24,
+        ge=1,
+        le=168,
+        description="Horas antes de limpiar imágenes candidatas sin confirmar (Fase 7.5)."
+    )
+
     # ── Scraper — motor de búsqueda ───────────────────────────────────────────
     search_engine: Literal["bing", "google", "duckduckgo"] = Field(
         default="bing",
