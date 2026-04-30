@@ -15,13 +15,17 @@ ningún WebDriver. Toda la resolución se realiza mediante HTTP síncrono
 (httpx.Client) a través de los clientes de ean_http_clients.py.
 
 :author: BenjaminDTS
-:version: 3.0.0
+:author: Carlitos6712
+:version: 3.1.0
 """
 
 from __future__ import annotations
 
 import csv
 import io
+import json
+import threading
+from pathlib import Path
 from typing import Callable
 
 from loguru import logger
@@ -35,6 +39,9 @@ from services.storage_service import StorageService, get_storage_service
 # Firma: (job_id, procesados, total, exitosos) -> None
 BrandProgressCallback = Callable[[str, int, int, int], None]
 
+# Protege las escrituras concurrentes a brand_cache.json
+_BRAND_CACHE_LOCK: threading.Lock = threading.Lock()
+
 
 class BrandPipeline:
     """
@@ -46,6 +53,7 @@ class BrandPipeline:
     resolvió cada EAN) y ``confidence`` para filtrar resultados poco fiables.
 
     :author: BenjaminDTS
+    :author: Carlitos6712
     """
 
     def __init__(
@@ -54,6 +62,7 @@ class BrandPipeline:
         config: SearchConfig,
         storage: StorageService | None = None,
         carpeta_job_id: str | None = None,
+        write_cache: bool = True,
     ) -> None:
         """
         Inicializa el pipeline de resolución de marcas.
@@ -64,11 +73,15 @@ class BrandPipeline:
             storage: servicio de almacenamiento. Si None usa el factory.
             carpeta_job_id: carpeta de almacenamiento a reutilizar (para resume).
                 Si None se usa job_id.
+            write_cache: si True (por defecto), persiste los prefijos aprendidos
+                en brand_cache.json al finalizar. Si False, devuelve los prefijos
+                nuevos en el resumen para que el endpoint de validación los persista.
         """
         self._job_id = job_id
         self._carpeta_id = carpeta_job_id or job_id
         self._config = config
         self._storage = storage or get_storage_service()
+        self._write_cache = write_cache
 
     def ejecutar(
         self,
@@ -140,6 +153,9 @@ class BrandPipeline:
         # registra el prefijo para acelerar resoluciones posteriores del mismo
         # fabricante.
         resolver = EanBrandResolver()
+        # Capturar prefijos ya existentes ANTES de procesar cualquier producto
+        # para poder detectar cuáles son nuevos al finalizar.
+        seed_keys = resolver._cache.current_prefix_keys()
         resultados: list[BrandResult] = []
         exitosos = 0
 
@@ -196,11 +212,33 @@ class BrandPipeline:
         ))
         self._guardar_csv(productos_resultados)
 
+        # ── Paso 4: Persistencia de brand_cache.json ──────────────────────────
+        # Detectar los prefijos GS1 aprendidos durante el procesamiento.
+        new_entries = resolver._cache.get_learned_prefixes(seed_keys)
+
+        from api.core.config import get_settings  # noqa: PLC0415 — import diferido para evitar ciclos
+        settings = get_settings()
+        brand_cache_path = Path(settings.brand_cache_path)
+
+        if self._write_cache:
+            self._persist_brand_cache(new_entries, brand_cache_path)
+            new_cache_entries_out: dict[str, str] = {}
+        else:
+            logger.info(
+                "write_cache=False: prefijos nuevos diferidos para validación manual",
+                extra={
+                    "job_id": self._job_id,
+                    "prefijos_nuevos": len(new_entries),
+                },
+            )
+            new_cache_entries_out = new_entries
+
         resumen = {
             "total_productos": total,
             "marcas_exitosas": exitosos,
             "marcas_fallidas": total - exitosos,
             "errores_csv": resultado_csv.errores,
+            "new_cache_entries": new_cache_entries_out,
         }
 
         logger.info(
@@ -213,6 +251,64 @@ class BrandPipeline:
             },
         )
         return resumen
+
+    def _persist_brand_cache(
+        self,
+        new_entries: dict[str, str],
+        brand_cache_path: Path,
+    ) -> None:
+        """
+        Persiste las entradas nuevas de marca en brand_cache.json con lock.
+
+        Usa threading.Lock a nivel de proceso para evitar corrupción por
+        escrituras concurrentes entre workers Celery del mismo proceso.
+        El archivo se crea si no existe.
+
+        Args:
+            new_entries: dict {prefijo_7_digits: company_name} con las
+                marcas nuevas a persistir.
+            brand_cache_path: ruta absoluta al archivo brand_cache.json.
+
+        Raises:
+            OSError: si no se puede leer o escribir el archivo (log + raise).
+        """
+        if not new_entries:
+            logger.debug(
+                "Sin prefijos nuevos que persistir en brand_cache.json",
+                extra={"job_id": self._job_id},
+            )
+            return
+
+        with _BRAND_CACHE_LOCK:
+            existing: dict[str, str] = {}
+            if brand_cache_path.exists():
+                try:
+                    existing = json.loads(
+                        brand_cache_path.read_text(encoding="utf-8")
+                    )
+                except (json.JSONDecodeError, OSError) as exc:
+                    logger.error(
+                        "Error leyendo brand_cache.json; se sobreescribirá",
+                        exc_info=exc,
+                        extra={"job_id": self._job_id, "path": str(brand_cache_path)},
+                    )
+
+            merged = {**existing, **new_entries}
+            brand_cache_path.parent.mkdir(parents=True, exist_ok=True)
+            brand_cache_path.write_text(
+                json.dumps(merged, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+
+        for prefijo, nombre in new_entries.items():
+            logger.info(
+                "Prefijo GS1 persistido en brand_cache.json",
+                extra={
+                    "job_id": self._job_id,
+                    "prefijo": prefijo,
+                    "brand_name": nombre,
+                },
+            )
 
     def _guardar_csv(
         self,

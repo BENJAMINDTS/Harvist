@@ -15,7 +15,8 @@ Relación con el resto del pipeline:
     instantáneas desde caché.
 
 :author: BenjaminDTS
-:version: 1.0.0
+:author: Carlitos6712
+:version: 1.1.0
 """
 from __future__ import annotations
 
@@ -55,6 +56,7 @@ class GS1PrefixCache:
         disco desde el worker o la tarea Celery.
 
     :author: BenjaminDTS
+    :author: Carlitos6712
     """
 
     def __init__(self, seed_path: str | None = None) -> None:
@@ -220,3 +222,33 @@ class GS1PrefixCache:
             "Prefijo GS1 registrado en caché",
             extra={"prefix": prefix, "company_name": company_name, "country_code": country_code},
         )
+
+    def current_prefix_keys(self) -> set[str]:
+        """
+        Devuelve el conjunto de prefijos actualmente en la caché.
+
+        Returns:
+            Set de strings con todos los prefijos cargados en memoria.
+        """
+        return set(self._prefixes.keys())
+
+    def get_learned_prefixes(self, seed_prefixes: set[str]) -> dict[str, str]:
+        """
+        Devuelve los prefijos aprendidos durante la ejecución actual que no
+        estaban en el semillero original.
+
+        Útil para persistir solo las entradas nuevas a brand_cache.json
+        sin incluir las del semillero estático.
+
+        Args:
+            seed_prefixes: conjunto de prefijos que ya existían antes de
+                iniciar la resolución (obtenidos antes de procesar el lote).
+
+        Returns:
+            Dict {prefijo: company_name} con solo los prefijos nuevos.
+        """
+        return {
+            prefijo: datos["company_name"]
+            for prefijo, datos in self._prefixes.items()
+            if prefijo not in seed_prefixes
+        }
