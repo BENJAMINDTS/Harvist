@@ -222,7 +222,7 @@ class BrandPipeline:
 
         if self._write_cache:
             self._persist_brand_cache(new_entries, brand_cache_path)
-            new_cache_entries_out: dict[str, str] = {}
+            new_cache_entries_out: dict[str, dict[str, str]] = {}
         else:
             logger.info(
                 "write_cache=False: prefijos nuevos diferidos para validación manual",
@@ -254,7 +254,7 @@ class BrandPipeline:
 
     def _persist_brand_cache(
         self,
-        new_entries: dict[str, str],
+        new_entries: dict[str, dict[str, str]],
         brand_cache_path: Path,
     ) -> None:
         """
@@ -265,8 +265,8 @@ class BrandPipeline:
         El archivo se crea si no existe.
 
         Args:
-            new_entries: dict {prefijo_7_digits: company_name} con las
-                marcas nuevas a persistir.
+            new_entries: dict {prefijo_7_digits: {brand_name, ean, source, confidence}}
+                con las marcas nuevas a persistir.
             brand_cache_path: ruta absoluta al archivo brand_cache.json.
 
         Raises:
@@ -278,6 +278,12 @@ class BrandPipeline:
                 extra={"job_id": self._job_id},
             )
             return
+
+        # Build flat {prefijo: brand_name} dict for persistence
+        flat_entries: dict[str, str] = {
+            prefijo: entry["brand_name"]
+            for prefijo, entry in new_entries.items()
+        }
 
         with _BRAND_CACHE_LOCK:
             existing: dict[str, str] = {}
@@ -293,20 +299,20 @@ class BrandPipeline:
                         extra={"job_id": self._job_id, "path": str(brand_cache_path)},
                     )
 
-            merged = {**existing, **new_entries}
+            merged = {**existing, **flat_entries}
             brand_cache_path.parent.mkdir(parents=True, exist_ok=True)
             brand_cache_path.write_text(
                 json.dumps(merged, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
 
-        for prefijo, nombre in new_entries.items():
+        for prefijo, entry in new_entries.items():
             logger.info(
                 "Prefijo GS1 persistido en brand_cache.json",
                 extra={
                     "job_id": self._job_id,
                     "prefijo": prefijo,
-                    "brand_name": nombre,
+                    "brand_name": entry["brand_name"],
                 },
             )
 
