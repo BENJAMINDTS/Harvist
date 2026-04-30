@@ -24,6 +24,22 @@ class IntegrationError(Exception):
     tras agotar los reintentos.
     """
 
+    def __init__(
+        self,
+        message: str,
+        platform: str = "",
+        status_code: int | None = None,
+    ) -> None:
+        """
+        Args:
+            message:     descripción del error.
+            platform:    nombre de la plataforma (ej: "dolibarr", "odoo").
+            status_code: código HTTP de la respuesta, si aplica.
+        """
+        super().__init__(message)
+        self.platform = platform
+        self.status_code = status_code
+
 
 class IntegrationClient(ABC):
     """
@@ -40,7 +56,7 @@ class IntegrationClient(ABC):
         limit: int = 50,
         offset: int = 0,
         filters: dict[str, Any] | None = None,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """
         Lista recursos paginados de la plataforma.
 
@@ -55,7 +71,7 @@ class IntegrationClient(ABC):
         """
 
     @abstractmethod
-    async def get(self, resource: str, resource_id: int | str) -> dict:
+    async def get(self, resource: str, resource_id: int | str) -> dict[str, Any]:
         """
         Obtiene un recurso por su ID.
 
@@ -71,7 +87,7 @@ class IntegrationClient(ABC):
         """
 
     @abstractmethod
-    async def create(self, resource: str, data: dict) -> dict:
+    async def create(self, resource: str, data: dict) -> dict[str, Any]:
         """
         Crea un nuevo recurso en la plataforma.
 
@@ -89,7 +105,7 @@ class IntegrationClient(ABC):
         resource: str,
         resource_id: int | str,
         data: dict,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """
         Actualiza un recurso existente.
 
@@ -113,6 +129,9 @@ class IntegrationClient(ABC):
 
         Returns:
             True si se eliminó correctamente.
+
+        Raises:
+            IntegrationError: si el recurso no existe o hay error al eliminar.
         """
 
     @abstractmethod
@@ -122,4 +141,10 @@ class IntegrationClient(ABC):
 
         Returns:
             True si la plataforma responde correctamente.
+
+        Raises:
+            IntegrationNotConfiguredError: si la integración no está configurada.
+
+        Note:
+            Nunca lanza excepciones de red — devuelve False ante cualquier fallo de conexión.
         """
