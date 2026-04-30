@@ -2,19 +2,20 @@
 Endpoints para la gestión de archivos generados por los trabajos de scraping.
 
 Rutas expuestas:
-  GET    /api/v1/files/{job_id}                        — Descargar el ZIP de imágenes (job fotos)
-  GET    /api/v1/files/{job_id}/csv                    — Descargar el CSV de descripciones (?only_approved=true para solo aprobadas, Fase 7.3)
-  GET    /api/v1/files/{job_id}/seo                    — (Fase 7.1) Descargar CSV de textos SEO (meta_title + meta_description)
-  GET    /api/v1/files/{job_id}/brands                 — (Fase 6) Descargar fichas de marca JSON
-  GET    /api/v1/files/{job_id}/translations/{lang}    — (Fase 7.2) Descargar CSV de traducciones por idioma
-  DELETE /api/v1/files/{job_id}                        — Eliminar los archivos de un job
+  GET    /api/v1/files/{job_id}                                 — Descargar el ZIP de imágenes (job fotos)
+  GET    /api/v1/files/{job_id}/csv                             — Descargar el CSV de descripciones (?only_approved=true para solo aprobadas, Fase 7.3)
+  GET    /api/v1/files/{job_id}/seo                             — (Fase 7.1) Descargar CSV de textos SEO (meta_title + meta_description)
+  GET    /api/v1/files/{job_id}/brands                          — (Fase 6) Descargar fichas de marca JSON
+  GET    /api/v1/files/{job_id}/translations/{lang}             — (Fase 7.2) Descargar CSV de traducciones por idioma
+  GET    /api/v1/files/{job_id}/photos/{codigo}/candidates/{n}  — (Fase 7.5) Servir candidata de foto para previsualización
+  DELETE /api/v1/files/{job_id}                                 — Eliminar los archivos de un job
 
 Solo gestiona la capa HTTP. El acceso al sistema de archivos se delega
 a StorageService para mantener la arquitectura limpia.
 
 :author: BenjaminDTS
 :author: Carlitos6712
-:version: 1.2.0
+:version: 1.3.0
 """
 
 import csv
@@ -22,7 +23,7 @@ import io
 
 import redis.asyncio as aioredis
 from fastapi import APIRouter, HTTPException, Path, Query
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from loguru import logger
 
 from api.core.config import get_settings
@@ -386,4 +387,88 @@ async def descargar_traducciones(
         media_type="text/csv; charset=utf-8",
         filename=filename,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get(
+    "/{job_id}/photos/{codigo}/candidates/{n:int}",
+    summary="(Fase 7.5) Servir una candidata de foto para previsualización",
+    response_class=StreamingResponse,
+    include_in_schema=True,
+)
+async def obtener_candidata_foto(
+    job_id: str,
+    codigo: str,
+    n: int,
+) -> StreamingResponse:
+    """
+    Sirve una imagen candidata como JPEG para previsualización en el navegador.
+
+    La imagen se lee del directorio candidates/ del job y se devuelve
+    como StreamingResponse con cabecera Cache-Control.
+
+    Args:
+        job_id: identificador UUID del trabajo.
+        codigo: código único del producto.
+        n: índice de la candidata (0-based).
+
+    Returns:
+        StreamingResponse con la imagen JPEG.
+
+    Raises:
+        HTTPException 404: si la candidata no existe.
+        HTTPException 500: si hay error al leer la imagen.
+
+    :author: BenjaminDTS
+    """
+    storage = get_storage_service()
+
+    try:
+        candidate_path = storage.candidate_path(job_id, codigo, n)
+    except FileNotFoundError as exc:
+        logger.warning(
+            "Candidata no encontrada",
+            exc_info=exc,
+            extra={"job_id": job_id, "codigo": codigo, "n": n},
+        )
+        raise HTTPException(
+            status_code=404,
+            detail=f"Candidata no encontrada para '{codigo}' (índice {n}).",
+        ) from exc
+
+    if not candidate_path.exists():
+        logger.warning(
+            "Candidata no existe en disco",
+            extra={"job_id": job_id, "codigo": codigo, "n": n},
+        )
+        raise HTTPException(
+            status_code=404,
+            detail=f"Candidata no existe para '{codigo}' (índice {n}).",
+        )
+
+    try:
+        image_data = candidate_path.read_bytes()
+    except OSError as exc:
+        logger.error(
+            "Error leyendo candidata del disco",
+            exc_info=exc,
+            extra={"job_id": job_id, "codigo": codigo, "n": n},
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Error al leer la imagen candidata.",
+        ) from exc
+
+    logger.debug(
+        "Candidata servida",
+        extra={"job_id": job_id, "codigo": codigo, "n": n, "bytes": len(image_data)},
+    )
+
+    return StreamingResponse(
+        iter([image_data]),
+        media_type="image/jpeg",
+        headers={
+            "Cache-Control": "max-age=3600",
+            "Content-Disposition": f'inline; filename="{codigo}_candidate_{n}.jpg"',
+        },
     )

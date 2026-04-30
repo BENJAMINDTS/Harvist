@@ -7,6 +7,8 @@ Rutas expuestas:
   GET    /api/v1/jobs/{job_id}/brands                          — Obtener marcas resueltas como JSON (Fase 6.4)
   GET    /api/v1/jobs/{job_id}/brands/pending                  — Obtener marcas pendientes de validación (Fase 7.4)
   POST   /api/v1/jobs/{job_id}/brands/validate                 — Validar marcas nuevas (Fase 7.4)
+  GET    /api/v1/jobs/{job_id}/photos                          — Obtener productos con fotos candidatas (Fase 7.5)
+  POST   /api/v1/jobs/{job_id}/photos/confirm                  — Confirmar selección de fotos y generar ZIP (Fase 7.5)
   POST   /api/v1/jobs/{job_id}/cancel                          — Cancelar un job en curso
   POST   /api/v1/jobs/{job_id}/resume                          — Reanudar un job cancelado o fallido
   PATCH  /api/v1/jobs/{job_id}/descriptions/{codigo}           — Revisar (aprobar/rechazar/editar) una descripción (Fase 7.3)
@@ -18,7 +20,7 @@ Ninguna lógica de negocio vive aquí.
 
 :author: BenjaminDTS
 :author: Carlitos6712
-:version: 1.4.0
+:version: 1.5.0
 """
 
 import csv
@@ -36,6 +38,7 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Query,
     Request,
     UploadFile,
     WebSocket,
@@ -50,6 +53,7 @@ from services.storage_service import get_storage_service
 from api.v1.schemas.job import (
     BrandValidationAction,
     BrandValidationRequest,
+    CandidateInfo,
     ColumnMapping,
     DescriptionReviewEntry,
     DescriptionReviewRequest,
@@ -60,6 +64,9 @@ from api.v1.schemas.job import (
     JobResponse,
     JobStatus,
     ModosBusqueda,
+    PhotoSelectionItem,
+    PhotoSelectionRequest,
+    ProductPhotos,
     ReviewAction,
     ReviewStatus,
     SearchConfig,
@@ -1113,6 +1120,302 @@ async def obtener_estado_revisiones(
         await redis.aclose()
 
 
+@router.get(
+    "/{job_id}/photos",
+    response_model=dict,
+    status_code=200,
+    summary="(Fase 7.5) Obtener lista de productos con candidatas de foto",
+)
+async def obtener_fotos_job(
+    job_id: str,
+    limit: int = Query(20, ge=1, le=100, description="Máximo de productos por página."),
+    offset: int = Query(0, ge=0, description="Número de productos a saltar."),
+) -> JSONResponse:
+    """
+    Obtiene la lista paginada de productos con sus fotos candidatas disponibles.
+
+    Requiere que el job esté en estado PENDIENTE_SELECCION_FOTOS.
+    Para cada producto devuelve las candidatas encontradas con URLs de acceso.
+
+    Args:
+        job_id: identificador UUID del trabajo.
+        limit: máximo de productos en la respuesta (1-100).
+        offset: número de productos a saltar para paginación.
+
+    Returns:
+        JSONResponse con lista paginada de ProductPhotos.
+
+    Raises:
+        HTTPException 404: si el job no existe.
+        HTTPException 409: si el job no está en PENDIENTE_SELECCION_FOTOS.
+
+    :author: BenjaminDTS
+    """
+    redis = await _get_redis()
+    storage = get_storage_service()
+
+    try:
+        status = await _get_job_status(redis, job_id)
+
+        if status.estado != EstadoJob.PENDIENTE_SELECCION_FOTOS:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"El job '{job_id}' no está en estado "
+                    f"'{EstadoJob.PENDIENTE_SELECCION_FOTOS.value}'. "
+                    f"Estado actual: '{status.estado.value}'."
+                ),
+            )
+
+        # Leer productos del CSV original para obtener nombres
+        csv_raw = await redis.get(_JOB_CSV_KEY.format(job_id=job_id))
+        if not csv_raw:
+            raise HTTPException(
+                status_code=404,
+                detail=f"CSV original no encontrado para job '{job_id}'.",
+            )
+
+        codigos: list[tuple[str, str]] = []  # (codigo, nombre)
+        try:
+            reader = csv.DictReader(io.StringIO(csv_raw))
+            config_raw = await redis.get(_JOB_CONFIG_KEY.format(job_id=job_id))
+            config_dict = json.loads(config_raw) if config_raw else {}
+            col_mapping = config_dict.get("column_mapping", {})
+            col_codigo = col_mapping.get("columna_codigo", "codigo")
+            col_nombre = col_mapping.get("columna_nombre", "nombre")
+
+            for row in reader:
+                codigo = row.get(col_codigo, "").strip()
+                nombre = row.get(col_nombre, "").strip()
+                if codigo:
+                    codigos.append((codigo, nombre or codigo))
+        except Exception as exc:
+            logger.error(
+                "Error leyendo CSV para obtener códigos",
+                exc_info=exc,
+                extra={"job_id": job_id},
+            )
+            raise HTTPException(
+                status_code=500,
+                detail="Error interno al leer el CSV.",
+            ) from exc
+
+        # Paginar
+        total = len(codigos)
+        codigos_pagina = codigos[offset : offset + limit]
+
+        # Para cada código, obtener candidatas
+        productos: list[dict] = []
+        for codigo, nombre in codigos_pagina:
+            indices = storage.list_candidates(job_id, codigo)
+            candidatas: list[dict] = []
+
+            for idx in indices:
+                try:
+                    info = storage.get_candidate_info(job_id, codigo, idx)
+                    candidata = CandidateInfo(
+                        index=idx,
+                        url=f"/api/v1/jobs/{job_id}/photos/{codigo}/candidates/{idx}",
+                        width=info.get("width", 0),
+                        height=info.get("height", 0),
+                        size_bytes=info.get("size_bytes", 0),
+                    )
+                    candidatas.append(candidata.model_dump())
+                except FileNotFoundError:
+                    logger.warning(
+                        "Candidata no encontrada",
+                        extra={"job_id": job_id, "codigo": codigo, "n": idx},
+                    )
+
+            # Leer selección anterior si existe en Redis
+            selection_key = f"job:{job_id}:photo_selection:{codigo}"
+            selected_idx_raw = await redis.get(selection_key)
+            selected_idx = int(selected_idx_raw) if selected_idx_raw else None
+
+            producto = ProductPhotos(
+                codigo=codigo,
+                nombre=nombre,
+                n_candidates=len(candidatas),
+                candidates=candidatas,
+                selected_index=selected_idx,
+            )
+            productos.append(producto.model_dump())
+
+        logger.info(
+            "Fotos del job obtenidas",
+            extra={"job_id": job_id, "total": total, "pagina": len(productos)},
+        )
+
+        return JSONResponse(
+            content={
+                "success": True,
+                "data": {
+                    "productos": productos,
+                    "total": total,
+                    "limit": limit,
+                    "offset": offset,
+                },
+                "message": f"{len(productos)} productos devueltos.",
+            }
+        )
+    finally:
+        await redis.aclose()
+
+
+@router.post(
+    "/{job_id}/photos/confirm",
+    response_model=dict,
+    status_code=200,
+    summary="(Fase 7.5) Confirmar selección de fotos y generar ZIP",
+)
+async def confirmar_seleccion_fotos(
+    job_id: str,
+    body: PhotoSelectionRequest,
+) -> JSONResponse:
+    """
+    Confirma la selección de fotos por producto: renombra candidatas elegidas
+    a {codigo}.jpg, elimina el resto, genera el ZIP y avanza el estado del job.
+
+    Requiere que el job esté en PENDIENTE_SELECCION_FOTOS.
+    Tras confirmación:
+      - Si job.validate_brands=True → PENDIENTE_VALIDACION_MARCAS
+      - Si no → COMPLETADO
+
+    Args:
+        job_id: identificador UUID del trabajo.
+        body: lista de selecciones con {codigo, selected_index}.
+
+    Returns:
+        JSONResponse con confirmadas y zip_listo.
+
+    Raises:
+        HTTPException 404: si el job no existe.
+        HTTPException 409: si el job no está en PENDIENTE_SELECCION_FOTOS.
+        HTTPException 422: si una candidata seleccionada no existe.
+
+    :author: BenjaminDTS
+    """
+    redis = await _get_redis()
+    storage = get_storage_service()
+
+    try:
+        status = await _get_job_status(redis, job_id)
+
+        if status.estado != EstadoJob.PENDIENTE_SELECCION_FOTOS:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"El job '{job_id}' no está en estado "
+                    f"'{EstadoJob.PENDIENTE_SELECCION_FOTOS.value}'."
+                ),
+            )
+
+        # Convertir lista de PhotoSelectionItem a dict
+        selections: dict[str, int] = {item.codigo: item.selected_index for item in body.selections}
+
+        # Validar que todas las candidatas existen
+        try:
+            for codigo, selected_idx in selections.items():
+                candidates_list = storage.list_candidates(job_id, codigo)
+                if selected_idx not in candidates_list:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=(
+                            f"Candidata seleccionada para '{codigo}' (índice {selected_idx}) no existe. "
+                            f"Candidatas disponibles: {candidates_list}."
+                        ),
+                    )
+        except FileNotFoundError as exc:
+            logger.error(
+                "Error validando candidatas seleccionadas",
+                exc_info=exc,
+                extra={"job_id": job_id},
+            )
+            raise HTTPException(
+                status_code=422,
+                detail="Error al validar las candidatas seleccionadas.",
+            ) from exc
+
+        # Confirmar selecciones: renombra y elimina
+        try:
+            storage.confirm_selection(job_id, selections)
+        except FileNotFoundError as exc:
+            logger.error(
+                "Error al confirmar selecciones",
+                exc_info=exc,
+                extra={"job_id": job_id},
+            )
+            raise HTTPException(
+                status_code=422,
+                detail="Error al confirmar las selecciones.",
+            ) from exc
+
+        # Generar ZIP con las fotos seleccionadas
+        try:
+            storage.create_zip(job_id)
+        except Exception as exc:
+            logger.error(
+                "Error al generar ZIP tras selección de fotos",
+                exc_info=exc,
+                extra={"job_id": job_id},
+            )
+            raise HTTPException(
+                status_code=500,
+                detail="Error al generar el archivo ZIP.",
+            ) from exc
+
+        # Eliminar clave de fotos pendientes en Redis
+        await redis.delete(f"job:{job_id}:photos_pending")
+
+        # Leer config para saber si hay validación de marcas pendiente
+        config_raw = await redis.get(_JOB_CONFIG_KEY.format(job_id=job_id))
+        config_dict = json.loads(config_raw) if config_raw else {}
+        validate_brands = config_dict.get("validate_brands", False)
+
+        # Actualizar estado del job
+        status.fotos_pendientes_seleccion = 0
+        if validate_brands:
+            status.estado = EstadoJob.PENDIENTE_VALIDACION_MARCAS
+            status.mensaje = "Selección de fotos completada. Esperando validación de marcas."
+        else:
+            status.estado = EstadoJob.COMPLETADO
+            status.completado_en = datetime.utcnow()
+            status.mensaje = "Job completado: selección de fotos y ZIP generado."
+
+        status.actualizado_en = datetime.utcnow()
+        await redis.set(
+            _JOB_KEY.format(job_id=job_id),
+            status.model_dump_json(),
+            ex=_KEY_TTL,
+        )
+
+        logger.info(
+            "Selección de fotos confirmada",
+            extra={
+                "job_id": job_id,
+                "confirmadas": len(selections),
+                "nuevo_estado": status.estado.value,
+            },
+        )
+
+        return JSONResponse(
+            content={
+                "success": True,
+                "data": {
+                    "confirmadas": len(selections),
+                    "zip_listo": True,
+                    "nuevo_estado": status.estado.value,
+                },
+                "message": (
+                    f"Selección confirmada: {len(selections)} fotos guardadas. "
+                    f"Nuevo estado: {status.estado.value}."
+                ),
+            }
+        )
+    finally:
+        await redis.aclose()
+
+
 @router.websocket("/{job_id}/ws")
 async def websocket_progreso(websocket: WebSocket, job_id: str) -> None:
     """
@@ -1169,6 +1472,7 @@ async def websocket_progreso(websocket: WebSocket, job_id: str) -> None:
                 EstadoJob.FALLIDO,
                 EstadoJob.CANCELADO,
                 EstadoJob.PENDIENTE_VALIDACION_MARCAS,
+                EstadoJob.PENDIENTE_SELECCION_FOTOS,
             ):
                 break
 

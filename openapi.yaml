@@ -397,6 +397,134 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /api/v1/jobs/{job_id}/photos:
+    get:
+      tags:
+        - jobs
+      summary: "(Fase 7.5) Obtener lista de productos con candidatas de foto"
+      description: |
+        Obtiene la lista paginada de productos con sus fotos candidatas disponibles.
+        Requiere que el job esté en estado `pendiente_seleccion_fotos`.
+      operationId: obtenerFotosJob
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+        - name: limit
+          in: query
+          description: Máximo de productos en la respuesta (1-100).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          description: Número de productos a saltar para paginación.
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Lista paginada de productos con candidatas.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      productos:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/ProductPhotos'
+                      total:
+                        type: integer
+                        description: Número total de productos.
+                      limit:
+                        type: integer
+                      offset:
+                        type: integer
+                  message:
+                    type: string
+        '404':
+          description: El job no existe.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: El job no está en estado pendiente_seleccion_fotos.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/jobs/{job_id}/photos/confirm:
+    post:
+      tags:
+        - jobs
+      summary: "(Fase 7.5) Confirmar selección de fotos y generar ZIP"
+      description: |
+        Confirma la selección de fotos por producto: renombra candidatas elegidas
+        a {codigo}.jpg, elimina el resto, genera el ZIP y avanza el estado del job.
+        Requiere que el job esté en estado `pendiente_seleccion_fotos`.
+      operationId: confirmarSeleccionFotos
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PhotoSelectionRequest'
+      responses:
+        '200':
+          description: Selección confirmada y ZIP generado.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      confirmadas:
+                        type: integer
+                        description: Número de fotos confirmadas.
+                      zip_listo:
+                        type: boolean
+                        description: Indica si el ZIP fue generado correctamente.
+                      nuevo_estado:
+                        type: string
+                        description: Nuevo estado del job tras confirmación.
+                  message:
+                    type: string
+        '404':
+          description: El job no existe.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: El job no está en estado pendiente_seleccion_fotos.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Candidata seleccionada no existe o body inválido.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/v1/jobs/{job_id}/ws:
     get:
       tags:
@@ -549,6 +677,53 @@ paths:
                     success: false
                     data: null
                     message: No se pudieron eliminar los archivos. Consulte los logs del servidor.
+
+  /api/v1/jobs/{job_id}/photos/{codigo}/candidates/{n}:
+    get:
+      tags:
+        - files
+      summary: "(Fase 7.5) Servir una candidata de foto para previsualización"
+      description: |
+        Sirve una imagen candidata como JPEG para previsualización en el navegador.
+        La imagen se lee del directorio candidates/ del job.
+      operationId: obtenerCandidataFoto
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+        - name: codigo
+          in: path
+          required: true
+          description: Código único del producto.
+          schema:
+            type: string
+            example: "PROD001"
+        - name: n
+          in: path
+          required: true
+          description: Índice de la candidata (0-based).
+          schema:
+            type: integer
+            minimum: 0
+            example: 0
+      responses:
+        '200':
+          description: Imagen candidata servida como JPEG.
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: La candidata no existe.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Error al leer la imagen candidata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   # ──────────────────────────────────────────────────────────────────────────
   # HEALTH
@@ -988,4 +1163,104 @@ components:
           minItems: 1
           description: Lista de decisiones de validación, una por marca pendiente.
           items:
+
+    # ── Fase 7.5 — Selección de fotos ────────────────────────────────────────
+
+    CandidateInfo:
+      type: object
+      description: Metadatos de una imagen candidata para previsualización en el frontend.
+      required:
+        - index
+        - url
+        - width
+        - height
+        - size_bytes
+      properties:
+        index:
+          type: integer
+          minimum: 0
+          description: Índice de la candidata (0-based).
+          example: 0
+        url:
+          type: string
+          description: URL de endpoint para servir la candidata.
+          example: "/api/v1/jobs/{job_id}/photos/{codigo}/candidates/0"
+        width:
+          type: integer
+          minimum: 1
+          description: Ancho de la imagen en píxeles.
+          example: 800
+        height:
+          type: integer
+          minimum: 1
+          description: Alto de la imagen en píxeles.
+          example: 600
+        size_bytes:
+          type: integer
+          minimum: 1
+          description: Tamaño del archivo en bytes.
+          example: 204800
+
+    ProductPhotos:
+      type: object
+      description: Información de fotos de un producto con sus candidatas disponibles.
+      required:
+        - codigo
+        - nombre
+        - n_candidates
+        - candidates
+      properties:
+        codigo:
+          type: string
+          description: Código único del producto.
+          example: "PROD001"
+        nombre:
+          type: string
+          description: Nombre del producto.
+          example: "Pienso Royal Canin Adult"
+        n_candidates:
+          type: integer
+          minimum: 0
+          description: Número total de candidatas disponibles.
+          example: 3
+        candidates:
+          type: array
+          description: Lista de candidatas disponibles para selección.
+          items:
+            $ref: '#/components/schemas/CandidateInfo'
+        selected_index:
+          type: integer
+          nullable: true
+          description: Índice de la foto seleccionada (None si no seleccionada aún).
+          example: 1
+
+    PhotoSelectionItem:
+      type: object
+      description: Selección de foto para un producto individual.
+      required:
+        - codigo
+        - selected_index
+      properties:
+        codigo:
+          type: string
+          description: Código único del producto.
+          example: "PROD001"
+        selected_index:
+          type: integer
+          minimum: 0
+          description: Índice de la candidata seleccionada (0-based).
+          example: 1
+
+    PhotoSelectionRequest:
+      type: object
+      description: Cuerpo de la petición para confirmar la selección de fotos de un job.
+      required:
+        - selections
+      properties:
+        selections:
+          type: array
+          minItems: 1
+          description: Lista de productos con foto seleccionada.
+          items:
+            $ref: '#/components/schemas/PhotoSelectionItem'
             $ref: '#/components/schemas/BrandValidationItem'
