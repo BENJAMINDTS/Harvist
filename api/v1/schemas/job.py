@@ -34,6 +34,7 @@ class EstadoJob(str, Enum):
     COMPLETADO = "completado"
     FALLIDO = "fallido"
     CANCELADO = "cancelado"
+    PENDIENTE_VALIDACION_MARCAS = "pendiente_validacion_marcas"
 
 
 class ModosBusqueda(str, Enum):
@@ -155,6 +156,66 @@ class DescriptionReviewEntry(DescriptionReviewState):
     descripcion_larga: str = Field(default="", description="Descripción larga generada por IA.")
 
 
+# ── Validación de marcas (Fase 7.4) ───────────────────────────────────────────
+
+class BrandValidationAction(str, Enum):
+    """
+    Acción que el usuario aplica sobre una marca pendiente de validación.
+
+    :author: Carlitos6712
+    """
+
+    ACCEPT = "accept"
+    REJECT = "reject"
+    EDIT = "edit"
+
+
+class BrandValidationItem(BaseModel):
+    """
+    Item de validación de una marca nueva antes de persistirla en brand_cache.json.
+
+    :author: Carlitos6712
+    """
+
+    ean: str = Field(description="Código EAN del producto.")
+    brand_name: str = Field(description="Nombre de marca resuelto por el scraper.")
+    action: BrandValidationAction = Field(
+        description="Decisión del usuario: accept, reject o edit."
+    )
+    edited_name: str | None = Field(
+        default=None,
+        description="Nombre editado por el usuario. Requerido si action es 'edit'.",
+    )
+
+    @model_validator(mode="after")
+    def edited_name_required_when_edit(self) -> "BrandValidationItem":
+        """
+        Valida que edited_name esté presente cuando action es 'edit'.
+
+        Returns:
+            La instancia validada.
+
+        Raises:
+            ValueError: si action es 'edit' y edited_name está ausente o vacío.
+        """
+        if self.action == BrandValidationAction.EDIT and not self.edited_name:
+            raise ValueError("edited_name es requerido cuando action es 'edit'")
+        return self
+
+
+class BrandValidationRequest(BaseModel):
+    """
+    Body de la petición POST para validar marcas nuevas de un job.
+
+    :author: Carlitos6712
+    """
+
+    items: list[BrandValidationItem] = Field(
+        min_length=1,
+        description="Lista de marcas con su decisión. Mínimo 1 item.",
+    )
+
+
 # ── Configuración de búsqueda ─────────────────────────────────────────────────
 
 class ColumnMapping(BaseModel):
@@ -252,6 +313,14 @@ class SearchConfig(BaseModel):
         ),
         examples=[["en", "fr"]],
     )
+    validate_brands: bool = Field(
+        default=False,
+        description=(
+            "Si True, el job espera validación manual antes de escribir "
+            "marcas nuevas en brand_cache.json (Fase 7.4). "
+            "Solo aplica cuando tipo_job=MARCAS."
+        ),
+    )
     column_mapping: ColumnMapping = Field(
         default_factory=ColumnMapping,
         description="Mapeo de columnas del CSV del usuario a los campos internos del parser.",
@@ -344,6 +413,11 @@ class JobStatus(BaseModel):
         default=0,
         ge=0,
         description="Contador de marcas procesadas (Fase 6).",
+    )
+    marcas_pendientes_validacion: int = Field(
+        default=0,
+        ge=0,
+        description="Número de marcas nuevas pendientes de validación (Fase 7.4).",
     )
     revisiones_pendientes: int = Field(
         default=0,
