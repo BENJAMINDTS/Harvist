@@ -189,7 +189,15 @@ class GS1PrefixCache:
             confidence="high",
         )
 
-    def register(self, prefix: str, company_name: str, country_code: str) -> None:
+    def register(
+        self,
+        prefix: str,
+        company_name: str,
+        country_code: str,
+        source: str = "",
+        confidence: str = "",
+        ean: str = "",
+    ) -> None:
         """
         Registra un nuevo prefijo GS1 en la caché en memoria.
 
@@ -202,6 +210,9 @@ class GS1PrefixCache:
             prefix: prefijo GS1 (entre 6 y 10 dígitos) del nuevo fabricante.
             company_name: nombre de la empresa o fabricante asociado al prefijo.
             country_code: código de país ISO 3166-1 alpha-2 (p. ej. ``"ES"``).
+            source: fuente que resolvió el EAN (ej: ``"amazon"``, ``"open_data_api"``).
+            confidence: nivel de confianza del resultado (``"high"``, ``"medium"``, ``"low"``).
+            ean: código EAN completo del producto que originó el aprendizaje.
 
         Raises:
             No lanza excepciones. Si el prefijo ya existe, su entrada se
@@ -216,6 +227,9 @@ class GS1PrefixCache:
         self._prefixes[prefix] = {
             "company_name": company_name,
             "country_code": country_code,
+            "source": source,
+            "confidence": confidence,
+            "ean": ean,
         }
 
         logger.debug(
@@ -232,10 +246,10 @@ class GS1PrefixCache:
         """
         return set(self._prefixes.keys())
 
-    def get_learned_prefixes(self, seed_prefixes: set[str]) -> dict[str, str]:
+    def get_learned_prefixes(self, seed_prefixes: set[str]) -> dict[str, dict[str, str]]:
         """
         Devuelve los prefijos aprendidos durante la ejecución actual que no
-        estaban en el semillero original.
+        estaban en el semillero original, con sus metadatos completos.
 
         Útil para persistir solo las entradas nuevas a brand_cache.json
         sin incluir las del semillero estático.
@@ -245,10 +259,16 @@ class GS1PrefixCache:
                 iniciar la resolución (obtenidos antes de procesar el lote).
 
         Returns:
-            Dict {prefijo: company_name} con solo los prefijos nuevos.
+            Dict {prefijo: {brand_name, ean, source, confidence}} con solo
+            los prefijos nuevos.
         """
         return {
-            prefijo: datos["company_name"]
+            prefijo: {
+                "brand_name": datos["company_name"],
+                "ean": datos.get("ean", ""),
+                "source": datos.get("source", ""),
+                "confidence": datos.get("confidence", ""),
+            }
             for prefijo, datos in self._prefixes.items()
             if prefijo not in seed_prefixes
         }
