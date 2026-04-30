@@ -16,7 +16,6 @@ Verifica:
 :version: 1.0.0
 """
 
-import asyncio
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -305,15 +304,25 @@ class TestDolibarrClientIntegrationError:
 class TestDolibarrClientApiKeySecurity:
     """Tests para verificar que la API key nunca se expone."""
 
-    def test_api_key_not_in_log_on_init(self, caplog):
+    def test_api_key_not_in_log_on_init(self):
         """T15: la API key no aparece en ningún log durante la inicialización."""
-        s = _make_settings(api_key="super-secret-key-xyz")
-        with patch("httpx.AsyncClient"):
-            with caplog.at_level("DEBUG"):
+        captured: list[str] = []
+
+        def _sink(message: "loguru.Message") -> None:  # type: ignore[name-defined]
+            captured.append(str(message))
+
+        from loguru import logger
+
+        handler_id = logger.add(_sink, level="DEBUG")
+        try:
+            s = _make_settings(api_key="super-secret-key-xyz")
+            with patch("httpx.AsyncClient"):
                 DolibarrClient(s)
-        for record in caplog.records:
-            assert "super-secret-key-xyz" not in record.getMessage()
-            assert "super-secret-key-xyz" not in str(record.__dict__)
+        finally:
+            logger.remove(handler_id)
+
+        for msg in captured:
+            assert "super-secret-key-xyz" not in msg
 
     async def test_api_key_not_in_error_message(self):
         """T16: la API key no aparece en el mensaje del IntegrationError."""
