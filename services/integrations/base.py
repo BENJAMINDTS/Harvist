@@ -142,9 +142,6 @@ class IntegrationClient(ABC):
         Returns:
             True si la plataforma responde correctamente.
 
-        Raises:
-            IntegrationNotConfiguredError: si la integración no está configurada.
-
         Note:
             Nunca lanza excepciones de red — devuelve False ante cualquier fallo de conexión.
         """
