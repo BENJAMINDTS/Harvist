@@ -34,6 +34,7 @@ class EstadoJob(str, Enum):
     COMPLETADO = "completado"
     FALLIDO = "fallido"
     CANCELADO = "cancelado"
+    PENDIENTE_SELECCION_FOTOS = "pendiente_seleccion_fotos"
     PENDIENTE_VALIDACION_MARCAS = "pendiente_validacion_marcas"
 
 
@@ -216,6 +217,71 @@ class BrandValidationRequest(BaseModel):
     )
 
 
+# ── Selección de fotos (Fase 7.5) ─────────────────────────────────────────────
+
+class PhotoSelectionItem(BaseModel):
+    """
+    Item de selección de foto para un producto.
+
+    :author: BenjaminDTS
+    """
+
+    codigo: str = Field(description="Código único del producto.")
+    selected_index: int = Field(
+        ge=0,
+        description="Índice de la candidata seleccionada (0-based)."
+    )
+
+
+class PhotoSelectionRequest(BaseModel):
+    """
+    Body de la petición POST para confirmar la selección de fotos de un job.
+
+    :author: BenjaminDTS
+    """
+
+    selections: list[PhotoSelectionItem] = Field(
+        min_length=1,
+        description="Lista de productos con foto seleccionada. Mínimo 1 item."
+    )
+
+
+class CandidateInfo(BaseModel):
+    """
+    Metadatos de una imagen candidata para previsualización en el frontend.
+
+    :author: BenjaminDTS
+    """
+
+    index: int = Field(description="Índice de la candidata (0-based).")
+    url: str = Field(description="URL de endpoint para servir la candidata.")
+    width: int = Field(ge=1, description="Ancho de la imagen en píxeles.")
+    height: int = Field(ge=1, description="Alto de la imagen en píxeles.")
+    size_bytes: int = Field(ge=1, description="Tamaño del archivo en bytes.")
+
+
+class ProductPhotos(BaseModel):
+    """
+    Información de fotos de un producto con sus candidatas disponibles.
+
+    :author: BenjaminDTS
+    """
+
+    codigo: str = Field(description="Código único del producto.")
+    nombre: str = Field(description="Nombre del producto.")
+    n_candidates: int = Field(
+        ge=0,
+        description="Número total de candidatas disponibles."
+    )
+    candidates: list[CandidateInfo] = Field(
+        description="Lista de candidatas disponibles para selección."
+    )
+    selected_index: int | None = Field(
+        default=None,
+        description="Índice de la foto seleccionada (None si no seleccionada aún)."
+    )
+
+
 # ── Configuración de búsqueda ─────────────────────────────────────────────────
 
 class ColumnMapping(BaseModel):
@@ -321,6 +387,14 @@ class SearchConfig(BaseModel):
             "Solo aplica cuando tipo_job=MARCAS."
         ),
     )
+    select_photos: bool = Field(
+        default=False,
+        description=(
+            "Si True, el job descarga TODAS las candidatas de imagen por producto "
+            "y espera selección manual de la mejor antes de generar el ZIP (Fase 7.5). "
+            "Solo aplica cuando tipo_job=FOTOS."
+        ),
+    )
     column_mapping: ColumnMapping = Field(
         default_factory=ColumnMapping,
         description="Mapeo de columnas del CSV del usuario a los campos internos del parser.",
@@ -418,6 +492,11 @@ class JobStatus(BaseModel):
         default=0,
         ge=0,
         description="Número de marcas nuevas pendientes de validación (Fase 7.4).",
+    )
+    fotos_pendientes_seleccion: int = Field(
+        default=0,
+        ge=0,
+        description="Número de productos sin foto seleccionada (Fase 7.5).",
     )
     revisiones_pendientes: int = Field(
         default=0,
