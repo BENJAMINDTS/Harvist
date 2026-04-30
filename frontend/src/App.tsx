@@ -10,7 +10,7 @@
  *
  * @author BenjaminDTS | Carlos Vico
  */
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { CsvUploader } from '@/components/CsvUploader'
 import { SearchConfig } from '@/components/SearchConfig'
 import { JobProgress } from '@/components/JobProgress'
@@ -18,9 +18,10 @@ import { JobHistory } from '@/components/JobHistory'
 import { HomeScreen } from '@/components/HomeScreen'
 import { BrandsPanel } from '@/components/BrandsPanel'
 import { ReviewPanel } from '@/components/ReviewPanel'
+import BrandValidationPanel from '@/components/BrandValidationPanel'
 import { NsLogo } from '@/components/NsLogo'
-import { apiClient, getBrands, resumeJob, downloadTranslationCsv } from '@/api/client'
-import type { ApiError, BrandEntry } from '@/api/client'
+import { apiClient, getBrands, getBrandsPending, resumeJob, downloadTranslationCsv } from '@/api/client'
+import type { ApiError, BrandEntry, BrandPendingEntry, BrandValidationResult } from '@/api/client'
 import type { SearchConfigValues, TipoJob } from '@/components/SearchConfig'
 
 /** Estados posibles de la pantalla principal */
@@ -44,6 +45,8 @@ const App: React.FC = () => {
   const [targetLanguages, setTargetLanguages] = useState<string[]>([])
   const [reviewPanelOpen, setReviewPanelOpen] = useState(true)
   const [descripcionesGeneradas, setDescripcionesGeneradas] = useState(0)
+  const [pendingBrands, setPendingBrands] = useState<BrandPendingEntry[]>([])
+  const [brandValidationDone, setBrandValidationDone] = useState(false)
 
   // ── Handlers de HomeScreen ───────────────────────────────────────────────
 
@@ -106,6 +109,7 @@ const App: React.FC = () => {
       config.targetLanguages.forEach((lang) =>
         formData.append('target_languages', lang)
       )
+      formData.append('validate_brands', String(config.validateBrands))
 
       const response = await apiClient.post<{
         success: boolean
@@ -124,9 +128,33 @@ const App: React.FC = () => {
   }
 
   /** Callback: el job completó (exitoso o fallido) */
-  const handleJobFinished = (): void => {
+  const handleJobFinished = useCallback(async (): Promise<void> => {
+    if (!jobId || tipoJob !== 'marcas') {
+      setAppState('done')
+      return
+    }
+
+    try {
+      const response = await apiClient.get<{
+        success: boolean
+        data: { estado: string }
+      }>(`/jobs/${jobId}`)
+
+      if (response.data.data.estado === 'pendiente_validacion_marcas') {
+        const brands = await getBrandsPending(jobId)
+        setPendingBrands(brands)
+      }
+    } catch {
+      // Fall through to done regardless
+    }
     setAppState('done')
-  }
+  }, [jobId, tipoJob])
+
+  /** Callback: el usuario completó la validación de marcas */
+  const handleValidationComplete = useCallback((_result: BrandValidationResult): void => {
+    setPendingBrands([])
+    setBrandValidationDone(true)
+  }, [])
 
   // Cuando un job de descripciones completa, cargamos el contador para el ReviewPanel.
   useEffect(() => {
@@ -176,6 +204,8 @@ const App: React.FC = () => {
     setBrandsLoadError(null)
     setReviewPanelOpen(true)
     setDescripcionesGeneradas(0)
+    setPendingBrands([])
+    setBrandValidationDone(false)
   }
 
   /** Callback: desde el historial el usuario abre un job anterior */
@@ -379,6 +409,26 @@ const App: React.FC = () => {
                       <ReviewPanel jobId={jobId} onComplete={handleReset} />
                     </div>
                   )}
+                </section>
+              )}
+
+            {/* Panel de validación de marcas — visible cuando el job espera validación de marcas nuevas */}
+            {appState === 'done' &&
+              tipoJob === 'marcas' &&
+              jobId !== null &&
+              pendingBrands.length > 0 &&
+              !brandValidationDone && (
+                <section className="w-full max-w-2xl mx-auto">
+                  <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-white dark:bg-gray-900 p-4">
+                    <h3 className="text-sm font-semibold text-amber-900 dark:text-amber-300 mb-4">
+                      Validar marcas nuevas antes de guardar
+                    </h3>
+                    <BrandValidationPanel
+                      jobId={jobId}
+                      pendingBrands={pendingBrands}
+                      onComplete={handleValidationComplete}
+                    />
+                  </div>
                 </section>
               )}
 
