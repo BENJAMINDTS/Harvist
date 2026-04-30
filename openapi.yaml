@@ -290,6 +290,113 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /api/v1/jobs/{job_id}/brands/pending:
+    get:
+      tags:
+        - jobs
+      summary: "(Fase 7.4) Obtener marcas pendientes de validación"
+      description: |
+        Devuelve la lista de marcas nuevas detectadas en el job que aún no
+        han sido validadas manualmente. Solo disponible cuando el job está en
+        estado `pendiente_validacion_marcas`.
+      operationId: getJobBrandsPending
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Lista de marcas pendientes.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/BrandPendingEntry'
+                  message:
+                    type: string
+        '404':
+          description: El job no existe.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: El job no está en estado pendiente_validacion_marcas.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/jobs/{job_id}/brands/validate:
+    post:
+      tags:
+        - jobs
+      summary: "(Fase 7.4) Validar marcas nuevas y persistirlas en brand_cache.json"
+      description: |
+        Procesa la decisión del usuario sobre las marcas nuevas detectadas en el job.
+        Solo los items con `action != reject` se escriben en `brand_cache.json`.
+        Tras la validación, el job pasa a estado `completado`.
+      operationId: validateJobBrands
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BrandValidationRequest'
+      responses:
+        '200':
+          description: Validación completada correctamente.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      accepted:
+                        type: integer
+                        description: Marcas aceptadas y escritas en brand_cache.json.
+                      rejected:
+                        type: integer
+                        description: Marcas rechazadas (no escritas).
+                      edited:
+                        type: integer
+                        description: Marcas editadas y escritas con el nombre modificado.
+                  message:
+                    type: string
+        '404':
+          description: El job no existe.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: El job no está en estado pendiente_validacion_marcas.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Cuerpo de la petición inválido (p. ej. action=edit sin edited_name).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/v1/jobs/{job_id}/ws:
     get:
       tags:
@@ -506,6 +613,7 @@ components:
         - completado
         - fallido
         - cancelado
+        - pendiente_validacion_marcas
       example: en_proceso
 
     ModosBusqueda:
@@ -798,3 +906,86 @@ components:
             - production
           description: Entorno activo en el que está corriendo el servicio.
           example: development
+
+    # ── Fase 7.4 — Validación de marcas ───────────────────────────────────────
+
+    BrandPendingEntry:
+      type: object
+      description: Marca nueva detectada durante el scraping, pendiente de validación manual.
+      required:
+        - prefijo
+        - brand_name
+        - ean
+        - source
+        - confidence
+      properties:
+        prefijo:
+          type: string
+          description: Prefijo GS1 de 7 dígitos que identifica al fabricante.
+          example: "8410076"
+        brand_name:
+          type: string
+          description: Nombre de la marca resuelto automáticamente.
+          example: "Royal Canin"
+        ean:
+          type: string
+          description: EAN del producto que originó el aprendizaje de este prefijo.
+          example: "8410076472093"
+        source:
+          type: string
+          description: Fuente de resolución (amazon, open_pet_food_facts, open_food_facts, etc.).
+          example: "amazon"
+        confidence:
+          type: string
+          description: Nivel de confianza de la resolución.
+          enum:
+            - high
+            - medium
+            - low
+          example: "high"
+
+    BrandValidationAction:
+      type: string
+      description: Acción a realizar sobre una marca pendiente de validación.
+      enum:
+        - accept
+        - reject
+        - edit
+      example: accept
+
+    BrandValidationItem:
+      type: object
+      description: Decisión del usuario sobre una marca pendiente de validación.
+      required:
+        - ean
+        - brand_name
+        - action
+      properties:
+        ean:
+          type: string
+          description: EAN del producto asociado a la marca.
+          example: "8410076472093"
+        brand_name:
+          type: string
+          description: Nombre de la marca (original o editado).
+          example: "Royal Canin"
+        action:
+          $ref: '#/components/schemas/BrandValidationAction'
+        edited_name:
+          type: string
+          nullable: true
+          description: Nombre editado por el usuario. Requerido cuando `action` es `edit`.
+          example: "Royal Canin ES"
+
+    BrandValidationRequest:
+      type: object
+      description: Cuerpo de la petición para validar marcas pendientes de un job.
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          minItems: 1
+          description: Lista de decisiones de validación, una por marca pendiente.
+          items:
+            $ref: '#/components/schemas/BrandValidationItem'

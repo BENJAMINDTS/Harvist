@@ -15,7 +15,8 @@ Relación con el resto del pipeline:
     instantáneas desde caché.
 
 :author: BenjaminDTS
-:version: 1.0.0
+:author: Carlitos6712
+:version: 1.1.0
 """
 from __future__ import annotations
 
@@ -55,6 +56,7 @@ class GS1PrefixCache:
         disco desde el worker o la tarea Celery.
 
     :author: BenjaminDTS
+    :author: Carlitos6712
     """
 
     def __init__(self, seed_path: str | None = None) -> None:
@@ -187,7 +189,15 @@ class GS1PrefixCache:
             confidence="high",
         )
 
-    def register(self, prefix: str, company_name: str, country_code: str) -> None:
+    def register(
+        self,
+        prefix: str,
+        company_name: str,
+        country_code: str,
+        source: str = "",
+        confidence: str = "",
+        ean: str = "",
+    ) -> None:
         """
         Registra un nuevo prefijo GS1 en la caché en memoria.
 
@@ -200,6 +210,9 @@ class GS1PrefixCache:
             prefix: prefijo GS1 (entre 6 y 10 dígitos) del nuevo fabricante.
             company_name: nombre de la empresa o fabricante asociado al prefijo.
             country_code: código de país ISO 3166-1 alpha-2 (p. ej. ``"ES"``).
+            source: fuente que resolvió el EAN (ej: ``"amazon"``, ``"open_data_api"``).
+            confidence: nivel de confianza del resultado (``"high"``, ``"medium"``, ``"low"``).
+            ean: código EAN completo del producto que originó el aprendizaje.
 
         Raises:
             No lanza excepciones. Si el prefijo ya existe, su entrada se
@@ -214,9 +227,48 @@ class GS1PrefixCache:
         self._prefixes[prefix] = {
             "company_name": company_name,
             "country_code": country_code,
+            "source": source,
+            "confidence": confidence,
+            "ean": ean,
         }
 
         logger.debug(
             "Prefijo GS1 registrado en caché",
             extra={"prefix": prefix, "company_name": company_name, "country_code": country_code},
         )
+
+    def current_prefix_keys(self) -> set[str]:
+        """
+        Devuelve el conjunto de prefijos actualmente en la caché.
+
+        Returns:
+            Set de strings con todos los prefijos cargados en memoria.
+        """
+        return set(self._prefixes.keys())
+
+    def get_learned_prefixes(self, seed_prefixes: set[str]) -> dict[str, dict[str, str]]:
+        """
+        Devuelve los prefijos aprendidos durante la ejecución actual que no
+        estaban en el semillero original, con sus metadatos completos.
+
+        Útil para persistir solo las entradas nuevas a brand_cache.json
+        sin incluir las del semillero estático.
+
+        Args:
+            seed_prefixes: conjunto de prefijos que ya existían antes de
+                iniciar la resolución (obtenidos antes de procesar el lote).
+
+        Returns:
+            Dict {prefijo: {brand_name, ean, source, confidence}} con solo
+            los prefijos nuevos.
+        """
+        return {
+            prefijo: {
+                "brand_name": datos["company_name"],
+                "ean": datos.get("ean", ""),
+                "source": datos.get("source", ""),
+                "confidence": datos.get("confidence", ""),
+            }
+            for prefijo, datos in self._prefixes.items()
+            if prefijo not in seed_prefixes
+        }

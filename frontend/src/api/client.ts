@@ -273,3 +273,81 @@ export async function downloadApprovedCsv(jobId: string): Promise<Blob | null> {
   if (response.status === 204) return null
   return response.data
 }
+
+// ─── Validación de marcas (Fase 7.4) ─────────────────────────────────────────
+
+/** Acción del usuario sobre una marca pendiente de validación. */
+export type BrandValidationAction = 'accept' | 'reject' | 'edit'
+
+/** Marca nueva pendiente de validación antes de persistirse en brand_cache.json. */
+export interface BrandPendingEntry {
+  /** Código EAN del producto. */
+  ean: string
+  /** Nombre de marca resuelto por el scraper. */
+  brand_name: string
+  /** Fuente que resolvió el EAN. */
+  source: BrandSource
+  /** Nivel de confianza del resultado. */
+  confidence: 'high' | 'medium' | 'low'
+  /** Primeros 7 dígitos del EAN (prefijo GS1). */
+  prefijo: string
+}
+
+/** Item de validación enviado al backend. */
+export interface BrandValidationItem {
+  ean: string
+  brand_name: string
+  action: BrandValidationAction
+  edited_name?: string
+}
+
+/** Body de POST /jobs/{jobId}/brands/validate. */
+export interface BrandValidationRequest {
+  items: BrandValidationItem[]
+}
+
+/** Respuesta del endpoint de validación. */
+export interface BrandValidationResult {
+  accepted: number
+  rejected: number
+  edited: number
+}
+
+/**
+ * Obtiene las marcas pendientes de validación para un job.
+ *
+ * Llama a `GET /api/v1/jobs/{jobId}/brands/pending`.
+ * Devuelve la lista de marcas nuevas en espera de aprobación.
+ *
+ * @author Carlitos6712
+ * @param jobId - ID del job en PENDIENTE_VALIDACION_MARCAS.
+ * @returns Lista de BrandPendingEntry.
+ */
+export async function getBrandsPending(jobId: string): Promise<BrandPendingEntry[]> {
+  const response = await apiClient.get<ApiResponse<{ items: BrandPendingEntry[] }>>(
+    `/jobs/${jobId}/brands/pending`,
+  )
+  return response.data.data.items
+}
+
+/**
+ * Envía la validación de marcas nuevas para un job.
+ *
+ * Solo los items con action != 'reject' se escriben en brand_cache.json.
+ * Llama a `POST /api/v1/jobs/{jobId}/brands/validate`.
+ *
+ * @author Carlitos6712
+ * @param jobId   - ID del job en PENDIENTE_VALIDACION_MARCAS.
+ * @param request - Lista de marcas con su decisión.
+ * @returns Resumen de marcas aceptadas, rechazadas y editadas.
+ */
+export async function validateBrands(
+  jobId: string,
+  request: BrandValidationRequest,
+): Promise<BrandValidationResult> {
+  const response = await apiClient.post<ApiResponse<BrandValidationResult>>(
+    `/jobs/${jobId}/brands/validate`,
+    request,
+  )
+  return response.data.data
+}

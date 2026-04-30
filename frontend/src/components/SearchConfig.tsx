@@ -60,6 +60,11 @@ export interface SearchConfigValues {
   storeType: string;
   /** Idiomas destino para traducción automática (Fase 7.2). Lista vacía = sin traducción. */
   targetLanguages: string[];
+  /**
+   * Si true, el job espera validación manual de marcas nuevas antes de escribirlas
+   * en brand_cache.json (Fase 7.4). Solo aplica cuando tipoJob === 'marcas'.
+   */
+  validateBrands: boolean;
 }
 
 /**
@@ -337,6 +342,7 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
   const [groqApiKey, setGroqApiKey] = useState<string>("");
   const [storeType, setStoreType] = useState<string>("");
   const [targetLanguages, setTargetLanguages] = useState<string[]>([]);
+  const [validateBrands, setValidateBrands] = useState<boolean>(false);
 
   /** Indica si `onLaunch` está en curso para bloquear el botón y mostrar spinner. */
   const [launching, setLaunching] = useState<boolean>(false);
@@ -380,6 +386,7 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
         groqApiKey,
         storeType,
         targetLanguages,
+        validateBrands,
       });
     } finally {
       // Siempre desbloquear, incluso si onLaunch lanza una excepción.
@@ -401,6 +408,7 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
     groqApiKey,
     storeType,
     targetLanguages,
+    validateBrands,
   ]);
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -918,6 +926,31 @@ export const SearchConfig: React.FC<SearchConfigProps> = ({
             </div>
           </div>
         </fieldset>
+      )}
+
+      {/* ── Validación de marcas (solo marcas) — Fase 7.4 ── */}
+      {(tipoJobForzado === "marcas" || tipoJob === "marcas") && (
+        <div className="mt-6 p-4 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-lg">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={validateBrands}
+              onChange={(e) => setValidateBrands(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+            />
+            <span className="flex flex-col gap-1">
+              <span className="text-sm font-medium text-amber-900 dark:text-amber-100">
+                Validar marcas nuevas manualmente
+              </span>
+              {validateBrands && (
+                <span className="text-xs text-amber-700 dark:text-amber-200">
+                  Las marcas nuevas encontradas no se guardarán automáticamente.
+                  Podrás revisarlas y aprobarlas cuando termine el job.
+                </span>
+              )}
+            </span>
+          </label>
+        </div>
       )}
 
       {/* ── Imágenes por producto (solo fotos) ── */}
