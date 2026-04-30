@@ -19,6 +19,7 @@ import { HomeScreen } from '@/components/HomeScreen'
 import { BrandsPanel } from '@/components/BrandsPanel'
 import { ReviewPanel } from '@/components/ReviewPanel'
 import BrandValidationPanel from '@/components/BrandValidationPanel'
+import PhotoSelectionPanel from '@/components/PhotoSelectionPanel'
 import { NsLogo } from '@/components/NsLogo'
 import { apiClient, getBrands, getBrandsPending, resumeJob, downloadTranslationCsv } from '@/api/client'
 import type { ApiError, BrandEntry, BrandPendingEntry, BrandValidationResult } from '@/api/client'
@@ -47,6 +48,8 @@ const App: React.FC = () => {
   const [descripcionesGeneradas, setDescripcionesGeneradas] = useState(0)
   const [pendingBrands, setPendingBrands] = useState<BrandPendingEntry[]>([])
   const [brandValidationDone, setBrandValidationDone] = useState(false)
+  const [photoSelectionDone, setPhotoSelectionDone] = useState(false)
+  const [selectPhotos, setSelectPhotos] = useState(false)
 
   // ── Handlers de HomeScreen ───────────────────────────────────────────────
 
@@ -110,6 +113,7 @@ const App: React.FC = () => {
         formData.append('target_languages', lang)
       )
       formData.append('validate_brands', String(config.validateBrands))
+      formData.append('select_photos', String(config.selectPhotos))
 
       const response = await apiClient.post<{
         success: boolean
@@ -120,6 +124,7 @@ const App: React.FC = () => {
       setJobId(response.data.data.job_id)
       setTipoJob(config.tipoJob)
       setTargetLanguages(config.targetLanguages)
+      setSelectPhotos(config.selectPhotos)
       setAppState('running')
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error al iniciar el trabajo.'
@@ -129,7 +134,7 @@ const App: React.FC = () => {
 
   /** Callback: el job completó (exitoso o fallido) */
   const handleJobFinished = useCallback(async (): Promise<void> => {
-    if (!jobId || tipoJob !== 'marcas') {
+    if (!jobId) {
       setAppState('done')
       return
     }
@@ -140,7 +145,12 @@ const App: React.FC = () => {
         data: { estado: string }
       }>(`/jobs/${jobId}`)
 
-      if (response.data.data.estado === 'pendiente_validacion_marcas') {
+      const estado = response.data.data.estado
+
+      // Detectar si está en estado de selección de fotos (Fase 7.5)
+      if (estado === 'pendiente_seleccion_fotos') {
+        // No avanzamos de estado, dejamos que el PhotoSelectionPanel se muestre
+      } else if (estado === 'pendiente_validacion_marcas') {
         const brands = await getBrandsPending(jobId)
         setPendingBrands(brands)
       }
@@ -149,13 +159,37 @@ const App: React.FC = () => {
       setError(msg)
     }
     setAppState('done')
-  }, [jobId, tipoJob])
+  }, [jobId])
 
   /** Callback: el usuario completó la validación de marcas */
   const handleValidationComplete = useCallback((_result: BrandValidationResult): void => {
     setPendingBrands([])
     setBrandValidationDone(true)
   }, [])
+
+  /** Callback: el usuario completó la selección de fotos */
+  const handlePhotoSelectionComplete = useCallback(async (): Promise<void> => {
+    setPhotoSelectionDone(true)
+    // Después de confirmar la selección, avanzar automáticamente
+    // Si hay validación de marcas activada, ir al BrandValidationPanel
+    // Si no, pasar a COMPLETADO
+    if (jobId) {
+      try {
+        const response = await apiClient.get<{
+          success: boolean
+          data: { estado: string }
+        }>(`/jobs/${jobId}`)
+
+        if (response.data.data.estado === 'pendiente_validacion_marcas') {
+          const brands = await getBrandsPending(jobId)
+          setPendingBrands(brands)
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Error al comprobar el estado del job.'
+        setError(msg)
+      }
+    }
+  }, [jobId])
 
   // Cuando un job de descripciones completa, cargamos el contador para el ReviewPanel.
   useEffect(() => {
@@ -207,6 +241,8 @@ const App: React.FC = () => {
     setDescripcionesGeneradas(0)
     setPendingBrands([])
     setBrandValidationDone(false)
+    setPhotoSelectionDone(false)
+    setSelectPhotos(false)
   }
 
   /** Callback: desde el historial el usuario abre un job anterior */
@@ -410,6 +446,25 @@ const App: React.FC = () => {
                       <ReviewPanel jobId={jobId} onComplete={handleReset} />
                     </div>
                   )}
+                </section>
+              )}
+
+            {/* Panel de selección de fotos — visible cuando el job espera selección de fotos (Fase 7.5) */}
+            {appState === 'done' &&
+              tipoJob === 'fotos' &&
+              selectPhotos &&
+              jobId !== null &&
+              !photoSelectionDone && (
+                <section className="w-full max-w-4xl mx-auto">
+                  <div className="rounded-lg border border-cyan-200 dark:border-cyan-800 bg-white dark:bg-gray-900 p-4">
+                    <h3 className="text-sm font-semibold text-cyan-900 dark:text-cyan-300 mb-4">
+                      Seleccionar foto por producto
+                    </h3>
+                    <PhotoSelectionPanel
+                      jobId={jobId}
+                      onComplete={handlePhotoSelectionComplete}
+                    />
+                  </div>
                 </section>
               )}
 
