@@ -339,6 +339,138 @@ class TestUploadImage:
 
         assert response.status_code == 422
 
+    @pytest.mark.asyncio
+    async def test_upload_image_success(self, http_client: AsyncClient):
+        """upload_image retorna 200 con resultado de Dolibarr para imagen válida."""
+        svc = _mock_svc(upload_return={"success": 1, "filename": "producto.jpg"})
+
+        with (
+            patch(
+                "api.v1.endpoints.dolibarr.get_settings",
+                return_value=_mock_settings(),
+            ),
+            patch(
+                "api.v1.endpoints.dolibarr._get_service",
+                return_value=svc,
+            ),
+        ):
+            response = await http_client.post(
+                f"{_BASE}/1/image",
+                files={"file": ("producto.jpg", io.BytesIO(b"\xff\xd8\xff fake"), "image/jpeg")},
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["success"] is True
+
+
+# ---------------------------------------------------------------------------
+# Error paths — 502 from IntegrationError
+# ---------------------------------------------------------------------------
+
+
+class TestErrorPaths:
+    """Tests para error paths de los endpoints (502 desde IntegrationError)."""
+
+    @pytest.mark.asyncio
+    async def test_list_products_returns_502_on_integration_error(
+        self, http_client: AsyncClient
+    ):
+        """GET /dolibarr/products retorna 502 cuando client lanza IntegrationError."""
+        from services.integrations.base import IntegrationError
+
+        svc = _mock_svc()
+        svc.list_products = AsyncMock(
+            side_effect=IntegrationError("timeout", platform="dolibarr")
+        )
+
+        with (
+            patch("api.v1.endpoints.dolibarr.get_settings", return_value=_mock_settings()),
+            patch("api.v1.endpoints.dolibarr._get_service", return_value=svc),
+        ):
+            response = await http_client.get(_BASE)
+
+        assert response.status_code == 502
+
+    @pytest.mark.asyncio
+    async def test_get_product_returns_502_on_non_404_error(
+        self, http_client: AsyncClient
+    ):
+        """GET /dolibarr/products/{id} retorna 502 para errores que no sean 404."""
+        from services.integrations.base import IntegrationError
+
+        svc = _mock_svc(
+            get_exc=IntegrationError("server error", platform="dolibarr", status_code=500)
+        )
+
+        with (
+            patch("api.v1.endpoints.dolibarr.get_settings", return_value=_mock_settings()),
+            patch("api.v1.endpoints.dolibarr._get_service", return_value=svc),
+        ):
+            response = await http_client.get(f"{_BASE}/1")
+
+        assert response.status_code == 502
+
+    @pytest.mark.asyncio
+    async def test_create_product_returns_502_on_integration_error(
+        self, http_client: AsyncClient
+    ):
+        """POST /dolibarr/products retorna 502 cuando client lanza IntegrationError."""
+        from services.integrations.base import IntegrationError
+
+        svc = _mock_svc()
+        svc.create_product = AsyncMock(
+            side_effect=IntegrationError("create failed", platform="dolibarr")
+        )
+
+        with (
+            patch("api.v1.endpoints.dolibarr.get_settings", return_value=_mock_settings()),
+            patch("api.v1.endpoints.dolibarr._get_service", return_value=svc),
+        ):
+            response = await http_client.post(_BASE, json={"ref": "X"})
+
+        assert response.status_code == 502
+
+    @pytest.mark.asyncio
+    async def test_update_product_returns_502_on_integration_error(
+        self, http_client: AsyncClient
+    ):
+        """PUT /dolibarr/products/{id} retorna 502 cuando client lanza IntegrationError."""
+        from services.integrations.base import IntegrationError
+
+        svc = _mock_svc()
+        svc.update_product = AsyncMock(
+            side_effect=IntegrationError("update failed", platform="dolibarr")
+        )
+
+        with (
+            patch("api.v1.endpoints.dolibarr.get_settings", return_value=_mock_settings()),
+            patch("api.v1.endpoints.dolibarr._get_service", return_value=svc),
+        ):
+            response = await http_client.put(f"{_BASE}/1", json={"label": "X"})
+
+        assert response.status_code == 502
+
+    @pytest.mark.asyncio
+    async def test_delete_product_returns_502_on_integration_error(
+        self, http_client: AsyncClient
+    ):
+        """DELETE /dolibarr/products/{id} retorna 502 cuando client lanza IntegrationError."""
+        from services.integrations.base import IntegrationError
+
+        svc = _mock_svc()
+        svc.delete_product = AsyncMock(
+            side_effect=IntegrationError("delete failed", platform="dolibarr")
+        )
+
+        with (
+            patch("api.v1.endpoints.dolibarr.get_settings", return_value=_mock_settings()),
+            patch("api.v1.endpoints.dolibarr._get_service", return_value=svc),
+        ):
+            response = await http_client.delete(f"{_BASE}/1")
+
+        assert response.status_code == 502
+
 
 # ---------------------------------------------------------------------------
 # POST /dolibarr/products/sync
