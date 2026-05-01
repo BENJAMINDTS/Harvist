@@ -215,6 +215,8 @@ async def upload_image(product_id: int, file: UploadFile) -> JSONResponse:
     Returns:
         Respuesta estándar con el resultado de Dolibarr.
     """
+    svc = _get_service()
+
     if file.content_type not in _ALLOWED_IMAGE_TYPES:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -230,7 +232,6 @@ async def upload_image(product_id: int, file: UploadFile) -> JSONResponse:
         )
 
     suffix = Path(file.filename or "imagen.jpg").suffix or ".jpg"
-    svc = _get_service()
 
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(content)

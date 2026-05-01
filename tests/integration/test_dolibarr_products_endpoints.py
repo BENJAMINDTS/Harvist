@@ -91,21 +91,85 @@ async def http_client() -> AsyncClient:
 
 
 class TestNotConfigured:
-    """503 cuando Dolibarr no está configurado."""
+    """503 cuando Dolibarr no está configurado — todos los endpoints."""
+
+    def _not_configured_patch(self):
+        return patch(
+            "api.v1.endpoints.dolibarr.get_settings",
+            return_value=_mock_settings(configured=False),
+        )
 
     @pytest.mark.asyncio
     async def test_returns_503_when_dolibarr_not_configured(
         self, http_client: AsyncClient
     ):
         """GET /dolibarr/products devuelve 503 si Dolibarr no está configurado."""
-        with patch(
-            "api.v1.endpoints.dolibarr.get_settings",
-            return_value=_mock_settings(configured=False),
-        ):
+        with self._not_configured_patch():
             response = await http_client.get(_BASE)
 
         assert response.status_code == 503
         assert "DOLIBARR_URL" in response.text or "configurado" in response.text.lower()
+
+    @pytest.mark.asyncio
+    async def test_get_by_id_returns_503_when_not_configured(
+        self, http_client: AsyncClient
+    ):
+        """GET /dolibarr/products/{id} devuelve 503 si Dolibarr no configurado."""
+        with self._not_configured_patch():
+            response = await http_client.get(f"{_BASE}/1")
+        assert response.status_code == 503
+
+    @pytest.mark.asyncio
+    async def test_create_returns_503_when_not_configured(
+        self, http_client: AsyncClient
+    ):
+        """POST /dolibarr/products devuelve 503 si Dolibarr no configurado."""
+        with self._not_configured_patch():
+            response = await http_client.post(_BASE, json={"ref": "X"})
+        assert response.status_code == 503
+
+    @pytest.mark.asyncio
+    async def test_update_returns_503_when_not_configured(
+        self, http_client: AsyncClient
+    ):
+        """PUT /dolibarr/products/{id} devuelve 503 si Dolibarr no configurado."""
+        with self._not_configured_patch():
+            response = await http_client.put(f"{_BASE}/1", json={"label": "X"})
+        assert response.status_code == 503
+
+    @pytest.mark.asyncio
+    async def test_delete_returns_503_when_not_configured(
+        self, http_client: AsyncClient
+    ):
+        """DELETE /dolibarr/products/{id} devuelve 503 si Dolibarr no configurado."""
+        with self._not_configured_patch():
+            response = await http_client.delete(f"{_BASE}/1")
+        assert response.status_code == 503
+
+    @pytest.mark.asyncio
+    async def test_upload_image_returns_503_when_not_configured(
+        self, http_client: AsyncClient
+    ):
+        """POST /dolibarr/products/{id}/image devuelve 503 si Dolibarr no configurado."""
+        import io as _io
+        with self._not_configured_patch():
+            response = await http_client.post(
+                f"{_BASE}/1/image",
+                files={"file": ("img.jpg", _io.BytesIO(b"\xff\xd8"), "image/jpeg")},
+            )
+        assert response.status_code == 503
+
+    @pytest.mark.asyncio
+    async def test_sync_returns_503_when_not_configured(
+        self, http_client: AsyncClient
+    ):
+        """POST /dolibarr/products/sync devuelve 503 si Dolibarr no configurado."""
+        with self._not_configured_patch():
+            response = await http_client.post(
+                f"{_BASE}/sync",
+                json={"job_id": "j", "product_codes": ["X"]},
+            )
+        assert response.status_code == 503
 
 
 # ---------------------------------------------------------------------------
