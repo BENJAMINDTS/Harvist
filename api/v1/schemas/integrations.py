@@ -39,3 +39,18 @@ class SyncFromJobRequest(BaseModel):
         default=False,
         description="Si True, sobreescribe productos existentes en Dolibarr.",
     )
+
+
+class DolibarrConfigRequest(BaseModel):
+    """Petición para guardar configuración de Dolibarr."""
+
+    url: str = Field(..., min_length=1, description="URL base de Dolibarr.")
+    api_key: str = Field(..., min_length=1, description="API Key de Dolibarr.")
+
+
+class DolibarrConfigResponse(BaseModel):
+    """Respuesta con configuración actual de Dolibarr."""
+
+    url: str
+    api_key: str
+    configured: bool
