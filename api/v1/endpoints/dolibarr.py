@@ -50,16 +50,24 @@ Todos los endpoints devuelven 503 si Dolibarr no está configurado.
 
 from __future__ import annotations
 
+import json
 import tempfile
 from pathlib import Path
 from typing import Any
 
+import redis.asyncio as aioredis
 from fastapi import APIRouter, HTTPException, Query, UploadFile, status
 from fastapi.responses import JSONResponse
 from loguru import logger
 
 from api.core.config import get_settings
-from api.v1.schemas.integrations import IntegrationStatus, PaginatedResponse, SyncFromJobRequest
+from api.v1.schemas.integrations import (
+    DolibarrConfigRequest,
+    DolibarrConfigResponse,
+    IntegrationStatus,
+    PaginatedResponse,
+    SyncFromJobRequest,
+)
 from services.integrations.base import IntegrationError, IntegrationNotConfiguredError
 from services.integrations.dolibarr.categories import DolibarrCategoryService
 from services.integrations.dolibarr.client import DolibarrClient
@@ -81,9 +89,69 @@ _NOT_CONFIGURED_MSG = (
 )
 
 
+async def _get_dolibarr_credentials() -> tuple[str, str]:
+    """
+    Obtiene credenciales de Dolibarr desde Redis o .env.
+
+    Retorna:
+        Tupla (url, api_key).
+
+    Raises:
+        IntegrationNotConfiguredError: si no hay credenciales configuradas.
+    """
+    settings = get_settings()
+    redis_client: aioredis.Redis | None = None
+
+    try:
+        redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
+        stored = await redis_client.get("integration:dolibarr:config")
+        if stored:
+            config = json.loads(stored)
+            url = config.get("url", "").strip()
+            api_key = config.get("api_key", "").strip()
+            if url and api_key:
+                return url, api_key
+    except Exception as exc:
+        logger.debug("Redis no disponible para config Dolibarr", exc_info=exc)
+    finally:
+        if redis_client:
+            await redis_client.aclose()
+
+    # Fallback a settings
+    if settings.dolibarr_configured:
+        return settings.dolibarr_url, settings.dolibarr_api_key
+
+    raise IntegrationNotConfiguredError(
+        "Dolibarr no configurado: define DOLIBARR_URL y DOLIBARR_API_KEY en .env "
+        "o configúralas en la interfaz gráfica."
+    )
+
+
+async def _get_service_async() -> DolibarrProductService:
+    """
+    Construye y devuelve una instancia de DolibarrProductService.
+    Lee credenciales desde Redis o .env.
+
+    Raises:
+        HTTPException 503: si Dolibarr no está configurado.
+    """
+    settings = get_settings()
+    try:
+        url, api_key = await _get_dolibarr_credentials()
+        client = DolibarrClient(settings, override_url=url, override_api_key=api_key)
+    except IntegrationNotConfiguredError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=_NOT_CONFIGURED_MSG,
+        )
+    return DolibarrProductService(client)
+
+
 def _get_service() -> DolibarrProductService:
     """
     Construye y devuelve una instancia de DolibarrProductService.
+
+    NOTA: Esta versión usa solo .env. Usar _get_service_async para aprovechar Redis config.
 
     Raises:
         HTTPException 503: si Dolibarr no está configurado.
@@ -118,28 +186,52 @@ async def get_status() -> IntegrationStatus:
     Verifica estado de configuración y salud de la integración Dolibarr.
 
     Siempre devuelve HTTP 200. El estado se comunica en el body.
+    Prioridad: Redis config > variables de entorno.
 
     Returns:
         IntegrationStatus con platform, configured, healthy y message.
     """
     settings = get_settings()
+    redis_client: aioredis.Redis | None = None
+    override_url = ""
+    override_api_key = ""
 
-    if not settings.dolibarr_configured:
+    # Intentar leer config de Redis
+    try:
+        redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
+        stored = await redis_client.get("integration:dolibarr:config")
+        if stored:
+            config = json.loads(stored)
+            override_url = config.get("url", "")
+            override_api_key = config.get("api_key", "")
+    except Exception as exc:
+        logger.debug("Redis no disponible para config Dolibarr", exc_info=exc)
+    finally:
+        if redis_client:
+            await redis_client.aclose()
+
+    # Verificar si hay configuración disponible
+    has_config = (
+        (override_url and override_api_key)
+        or settings.dolibarr_configured
+    )
+
+    if not has_config:
         return IntegrationStatus(
             platform="dolibarr",
             configured=False,
             healthy=None,
-            message="DOLIBARR_URL o DOLIBARR_API_KEY no están definidos en .env.",
+            message="DOLIBARR_URL o DOLIBARR_API_KEY no están definidos en .env o en la GUI.",
         )
 
     try:
-        client = DolibarrClient(settings)
+        client = DolibarrClient(settings, override_url=override_url, override_api_key=override_api_key)
     except IntegrationNotConfiguredError:
         return IntegrationStatus(
             platform="dolibarr",
             configured=False,
             healthy=None,
-            message="DOLIBARR_URL o DOLIBARR_API_KEY no están definidos en .env.",
+            message="Configuración de Dolibarr incompleta. Define URL y API Key.",
         )
 
     try:
@@ -168,6 +260,89 @@ async def get_status() -> IntegrationStatus:
         )
 
 
+# ── Configuración ────────────────────────────────────────────────────────
+
+
+@router_main.get("/config", response_model=DolibarrConfigResponse)
+async def get_config() -> DolibarrConfigResponse:
+    """
+    Obtiene la configuración guardada de Dolibarr (Redis) o del .env.
+
+    Returns:
+        DolibarrConfigResponse con URL, API key y estado configurado.
+    """
+    settings = get_settings()
+    redis_client: aioredis.Redis | None = None
+
+    try:
+        redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
+        stored = await redis_client.get("integration:dolibarr:config")
+        if stored:
+            config = json.loads(stored)
+            return DolibarrConfigResponse(
+                url=config.get("url", ""),
+                api_key=config.get("api_key", ""),
+                configured=bool(config.get("url") and config.get("api_key")),
+            )
+    except Exception as exc:
+        logger.warning("Error accediendo a Redis para config Dolibarr", exc_info=exc)
+    finally:
+        if redis_client:
+            await redis_client.aclose()
+
+    # Fallback a variables de entorno
+    return DolibarrConfigResponse(
+        url=settings.dolibarr_url or "",
+        api_key=settings.dolibarr_api_key or "",
+        configured=settings.dolibarr_configured,
+    )
+
+
+@router_main.post("/config", response_model=DolibarrConfigResponse)
+async def save_config(request: DolibarrConfigRequest) -> DolibarrConfigResponse:
+    """
+    Guarda la configuración de Dolibarr en Redis.
+
+    Args:
+        request: DolibarrConfigRequest con URL y API key.
+
+    Returns:
+        DolibarrConfigResponse confirmando los datos guardados.
+    """
+    settings = get_settings()
+    redis_client: aioredis.Redis | None = None
+
+    try:
+        redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
+        config = {
+            "url": request.url.rstrip("/"),
+            "api_key": request.api_key.strip(),
+        }
+        await redis_client.set(
+            "integration:dolibarr:config",
+            json.dumps(config),
+            ex=None,
+        )
+        logger.info(
+            "Configuración de Dolibarr guardada",
+            extra={"url": config["url"]},
+        )
+        return DolibarrConfigResponse(
+            url=config["url"],
+            api_key=config["api_key"],
+            configured=True,
+        )
+    except Exception as exc:
+        logger.error("Error guardando configuración de Dolibarr en Redis", exc_info=exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error guardando configuración: {str(exc)}",
+        )
+    finally:
+        if redis_client:
+            await redis_client.aclose()
+
+
 # ── Productos ────────────────────────────────────────────────────────────
 
 
@@ -186,7 +361,17 @@ async def list_products(
     Returns:
         PaginatedResponse con los productos encontrados.
     """
-    svc = _get_service()
+    try:
+        svc = await _get_service_async()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Error creando servicio Dolibarr", exc_info=exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=_NOT_CONFIGURED_MSG,
+        )
+
     try:
         items = await svc.list_products(limit=limit, offset=offset)
     except IntegrationError as exc:
