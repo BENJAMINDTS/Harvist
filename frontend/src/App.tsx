@@ -1,12 +1,11 @@
 /**
  * Componente raíz de la aplicación Harvist.
  *
- * Gestiona el estado global del job activo y orquesta el flujo:
- * 1. Pantalla de inicio con selección de modo (HomeScreen)
- * 2. El usuario sube un CSV y configura la búsqueda (CsvUploader + SearchConfig)
- * 3. Se crea el job y se muestra el progreso en tiempo real (JobProgress)
- * 4. Al completar, se habilita la descarga del resultado
- * 5. Panel de historial de trabajos anteriores (JobHistory)
+ * Orquesta la navegación entre módulos:
+ * - Dashboard: selección de módulo (Harvist, Dolibarr, Odoo, WordPress)
+ * - Harvist: flujo de enriquecimiento de productos
+ * - Módulos ERP/CMS: sincronización de datos
+ * - Historial: accesible desde cualquier módulo
  *
  * @author BenjaminDTS | Carlos Vico
  */
@@ -16,10 +15,12 @@ import { SearchConfig } from '@/components/SearchConfig'
 import { JobProgress } from '@/components/JobProgress'
 import { JobHistory } from '@/components/JobHistory'
 import { HomeScreen } from '@/components/HomeScreen'
+import { DashboardHome } from '@/components/DashboardHome'
 import { BrandsPanel } from '@/components/BrandsPanel'
 import { ReviewPanel } from '@/components/ReviewPanel'
 import BrandValidationPanel from '@/components/BrandValidationPanel'
 import PhotoSelectionPanel from '@/components/PhotoSelectionPanel'
+import { Breadcrumb } from '@/components/navigation/Breadcrumb'
 import { NsLogo } from '@/components/NsLogo'
 import { apiClient, getBrands, getBrandsPending, resumeJob, downloadTranslationCsv } from '@/api/client'
 import type { ApiError, BrandEntry, BrandPendingEntry, BrandValidationResult } from '@/api/client'
@@ -27,12 +28,15 @@ import type { SearchConfigValues, TipoJob } from '@/components/SearchConfig'
 
 const DolibarrPanel = React.lazy(() => import('@/components/dolibarr/DolibarrPanel'))
 
-/** Estados posibles de la pantalla principal */
+/** Módulos disponibles */
+type Module = 'dashboard' | 'harvist' | 'dolibarr' | 'odoo' | 'wordpress'
+/** Estados posibles del flujo Harvist */
 type AppState = 'home' | 'configuring' | 'running' | 'done'
-/** Pestañas de navegación para el historial */
-type Tab = 'nuevo' | 'historial' | 'dolibarr'
+/** Pestañas de navegación */
+type Tab = 'nuevo' | 'historial'
 
 const App: React.FC = () => {
+  const [currentModule, setCurrentModule] = useState<Module>('dashboard')
   const [tab, setTab] = useState<Tab>('nuevo')
   const [appState, setAppState] = useState<AppState>('home')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -53,30 +57,73 @@ const App: React.FC = () => {
   const [photoSelectionDone, setPhotoSelectionDone] = useState(false)
   const [selectPhotos, setSelectPhotos] = useState(false)
 
-  // ── Handlers de HomeScreen ───────────────────────────────────────────────
+  // ── Handlers del Dashboard ──────────────────────────────────────────────
 
-  /** El usuario elige el modo "Fotos" en la pantalla de inicio */
+  const handleSelectHarvist = (): void => {
+    setCurrentModule('harvist')
+    setAppState('home')
+    setTab('nuevo')
+    setError(null)
+  }
+
+  const handleSelectDolibarr = (): void => {
+    setCurrentModule('dolibarr')
+    setError(null)
+  }
+
+  const handleSelectOdoo = (): void => {
+    setCurrentModule('odoo')
+    setError(null)
+  }
+
+  const handleSelectWordpress = (): void => {
+    setCurrentModule('wordpress')
+    setError(null)
+  }
+
+  const handleBackToDashboard = (): void => {
+    setCurrentModule('dashboard')
+    setAppState('home')
+    setTab('nuevo')
+    setSelectedFile(null)
+    setCsvHeaders([])
+    setJobId(null)
+    setError(null)
+    setBrandsData(null)
+    setBrandsPanelOpen(true)
+    setBrandsLoadError(null)
+    setReviewPanelOpen(true)
+    setDescripcionesGeneradas(0)
+    setPendingBrands([])
+    setBrandValidationDone(false)
+    setPhotoSelectionDone(false)
+    setSelectPhotos(false)
+  }
+
+  // ── Handlers de HomeScreen (Harvist) ─────────────────────────────────────
+
+  /** El usuario elige el modo "Fotos" en la pantalla de inicio de Harvist */
   const handleSelectFotos = (): void => {
     setTipoJobSeleccionado('fotos')
     setAppState('configuring')
     setError(null)
   }
 
-  /** El usuario elige el modo "Descripciones" en la pantalla de inicio */
+  /** El usuario elige el modo "Descripciones" en la pantalla de inicio de Harvist */
   const handleSelectDescripciones = (): void => {
     setTipoJobSeleccionado('descripciones')
     setAppState('configuring')
     setError(null)
   }
 
-  /** El usuario elige el modo "Fichas de Marca" en la pantalla de inicio */
+  /** El usuario elige el modo "Fichas de Marca" en la pantalla de inicio de Harvist */
   const handleSelectMarcas = (): void => {
     setTipoJobSeleccionado('marcas')
     setAppState('configuring')
     setError(null)
   }
 
-  /** El usuario abre el historial desde la pantalla de inicio */
+  /** El usuario abre el historial */
   const handleSelectHistorial = (): void => {
     setTab('historial')
   }
@@ -226,7 +273,7 @@ const App: React.FC = () => {
       })
   }, [appState, tipoJob, jobId, pendingBrands.length])
 
-  /** Reinicia el flujo completo a la pantalla de inicio */
+  /** Reinicia el flujo de Harvist a HomeScreen */
   const handleReset = (): void => {
     setAppState('home')
     setSelectedFile(null)
@@ -276,13 +323,13 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
       {/* ── Cabecera ── */}
-      <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-6 py-3">
-        <div className="max-w-3xl mx-auto flex items-center justify-between">
+      <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-6 py-4">
+        <div className="max-w-6xl mx-auto flex items-center justify-between gap-6">
           <button
             type="button"
-            onClick={handleReset}
-            className="flex items-center gap-3 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 rounded-lg p-1"
-            aria-label="Volver a la pantalla de inicio"
+            onClick={handleBackToDashboard}
+            className="flex items-center gap-3 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 rounded-lg p-1 flex-shrink-0"
+            aria-label="Volver al dashboard"
           >
             <NsLogo size={36} />
             <div className="text-left">
@@ -295,9 +342,28 @@ const App: React.FC = () => {
             </div>
           </button>
 
-          {/* Acceso a otras secciones cuando no estamos en la home */}
-          {appState !== 'home' && (
-            <nav className="flex gap-2">
+          {/* Navegación contextual */}
+          {currentModule !== 'dashboard' && (
+            <div className="flex-1">
+              <Breadcrumb
+                currentModule={currentModule}
+                currentLabel={
+                  currentModule === 'harvist'
+                    ? 'Harvist'
+                    : currentModule === 'dolibarr'
+                      ? 'Dolibarr'
+                      : currentModule === 'odoo'
+                        ? 'Odoo'
+                        : 'WordPress'
+                }
+                onBackToDashboard={handleBackToDashboard}
+              />
+            </div>
+          )}
+
+          {/* Botones de módulos cuando estamos dentro de uno */}
+          {currentModule === 'harvist' && appState !== 'home' && (
+            <nav className="flex gap-2 flex-shrink-0">
               <button
                 type="button"
                 onClick={() => setTab('nuevo')}
@@ -320,58 +386,74 @@ const App: React.FC = () => {
               >
                 Historial
               </button>
-              <button
-                type="button"
-                onClick={() => setTab('dolibarr')}
-                className={`px-4 py-1.5 text-sm font-medium rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
-                  tab === 'dolibarr'
-                    ? 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-950 dark:text-blue-400'
-                    : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800'
-                }`}
-              >
-                Dolibarr
-              </button>
             </nav>
+          )}
+
+          {/* Botón historial para módulos ERP */}
+          {(currentModule === 'dolibarr' || currentModule === 'odoo' || currentModule === 'wordpress') && (
+            <button
+              type="button"
+              onClick={() => {
+                setCurrentModule('harvist')
+                setTab('historial')
+              }}
+              className="px-4 py-1.5 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 flex-shrink-0"
+            >
+              Historial
+            </button>
           )}
         </div>
       </header>
 
       {/* ── Contenido principal ── */}
-      <main className="max-w-3xl mx-auto px-4 py-8 space-y-6">
+      <main className="max-w-6xl mx-auto px-4 py-8 space-y-6">
         {error && (
           <div className="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm" role="alert">
             {error}
           </div>
         )}
 
-        {/* Pantalla de inicio */}
-        {appState === 'home' && tab === 'nuevo' && (
-          <HomeScreen
-            onSelectFotos={handleSelectFotos}
-            onSelectDescripciones={handleSelectDescripciones}
-            onSelectMarcas={handleSelectMarcas}
-            onSelectHistorial={handleSelectHistorial}
+        {/* Dashboard — selección de módulo */}
+        {currentModule === 'dashboard' && (
+          <DashboardHome
+            onSelectHarvist={handleSelectHarvist}
+            onSelectDolibarr={handleSelectDolibarr}
+            onSelectOdoo={handleSelectOdoo}
+            onSelectWordpress={handleSelectWordpress}
           />
         )}
 
-        {/* Flujo de configuración y ejecución */}
-        {tab === 'nuevo' && appState !== 'home' && (
+        {/* Módulo Harvist */}
+        {currentModule === 'harvist' && (
           <>
-            {appState === 'configuring' && (
-              <>
-                {selectedFile === null ? (
-                  <CsvUploader onFileSelected={handleFileSelected} />
-                ) : (
-                  <SearchConfig
-                    fileName={selectedFile.name}
-                    csvHeaders={csvHeaders}
-                    onLaunch={handleLaunchJob}
-                    onBack={handleReset}
-                    tipoJobForzado={tipoJobSeleccionado ?? undefined}
-                  />
-                )}
-              </>
+            {/* Pantalla de inicio de Harvist */}
+            {appState === 'home' && tab === 'nuevo' && (
+              <HomeScreen
+                onSelectFotos={handleSelectFotos}
+                onSelectDescripciones={handleSelectDescripciones}
+                onSelectMarcas={handleSelectMarcas}
+                onSelectHistorial={handleSelectHistorial}
+              />
             )}
+
+            {/* Flujo de configuración y ejecución de Harvist */}
+            {tab === 'nuevo' && appState !== 'home' && (
+              <>
+                {appState === 'configuring' && (
+                  <>
+                    {selectedFile === null ? (
+                      <CsvUploader onFileSelected={handleFileSelected} />
+                    ) : (
+                      <SearchConfig
+                        fileName={selectedFile.name}
+                        csvHeaders={csvHeaders}
+                        onLaunch={handleLaunchJob}
+                        onBack={handleReset}
+                        tipoJobForzado={tipoJobSeleccionado ?? undefined}
+                      />
+                    )}
+                  </>
+                )}
 
             {(appState === 'running' || appState === 'done') && jobId && (
               <JobProgress
@@ -552,16 +634,18 @@ const App: React.FC = () => {
                 </section>
               )
             }
+              </>
+            )}
+
+            {/* Historial dentro de Harvist */}
+            {tab === 'historial' && (
+              <JobHistory onSelectJob={handleSelectJobFromHistory} />
+            )}
           </>
         )}
 
-        {/* Historial */}
-        {tab === 'historial' && (
-          <JobHistory onSelectJob={handleSelectJobFromHistory} />
-        )}
-
-        {/* Dolibarr */}
-        {tab === 'dolibarr' && (
+        {/* Módulo Dolibarr */}
+        {currentModule === 'dolibarr' && (
           <Suspense
             fallback={
               <div className="flex items-center justify-center h-64">
@@ -571,6 +655,15 @@ const App: React.FC = () => {
           >
             <DolibarrPanel />
           </Suspense>
+        )}
+
+        {/* Módulos Odoo y WordPress — pendientes */}
+        {(currentModule === 'odoo' || currentModule === 'wordpress') && (
+          <div className="text-center py-12">
+            <p className="text-gray-500 dark:text-gray-400">
+              Módulo {currentModule.charAt(0).toUpperCase() + currentModule.slice(1)} en desarrollo
+            </p>
+          </div>
         )}
       </main>
     </div>
