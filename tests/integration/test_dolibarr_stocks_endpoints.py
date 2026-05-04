@@ -417,3 +417,33 @@ class TestTransferStock:
                 },
             )
             assert resp.status_code == 422
+
+
+class TestRedisConfigPath:
+    """Tests que verifican que las credenciales de Redis se usan cuando .env no tiene config."""
+
+    @pytest.mark.asyncio
+    async def test_list_warehouses_uses_redis_config_when_env_not_set(
+        self, http_client: AsyncClient
+    ):
+        """
+        list_warehouses retorna 200 usando credenciales de Redis
+        aunque .env no tenga DOLIBARR_URL ni DOLIBARR_API_KEY.
+        """
+        mock_svc = MagicMock()
+        mock_svc.list_warehouses = AsyncMock(return_value=[])
+
+        with patch(
+            "api.v1.endpoints.dolibarr._get_dolibarr_credentials",
+            new=AsyncMock(return_value=("https://dolibarr.test", "test-key")),
+        ):
+            with patch("api.v1.endpoints.dolibarr.DolibarrClient"):
+                with patch(
+                    "api.v1.endpoints.dolibarr.DolibarrStockService",
+                    return_value=mock_svc,
+                ):
+                    response = await http_client.get(f"{_BASE}/warehouses")
+
+        assert response.status_code == 200
+        assert response.json()["items"] == []
+        mock_svc.list_warehouses.assert_called_once()

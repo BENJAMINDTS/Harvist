@@ -15,9 +15,10 @@ interface DolibarrConfigData {
 
 interface Props {
   className?: string
+  onSaved?: () => void
 }
 
-export default function DolibarrConfig({ className = '' }: Props) {
+export default function DolibarrConfig({ className = '', onSaved }: Props) {
   const [url, setUrl] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [loading, setLoading] = useState(true)
@@ -58,7 +59,7 @@ export default function DolibarrConfig({ className = '' }: Props) {
 
       if (res.data) {
         setMessage({ type: 'success', text: 'Configuración guardada correctamente ✓' })
-        setTimeout(() => setMessage({ type: '', text: '' }), 3000)
+        onSaved?.()
       }
     } catch (err) {
       console.error('Error guardando config:', err)

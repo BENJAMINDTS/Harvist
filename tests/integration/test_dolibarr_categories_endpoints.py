@@ -5,7 +5,7 @@ Tests de integración para endpoints de categorías Dolibarr.
 :version: 1.0.0
 """
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -301,3 +301,32 @@ class TestListProductsInCategory:
             assert response.status_code == 200
             data = response.json()
             assert "items" in data
+
+
+class TestRedisConfigPath:
+    """Tests que verifican que las credenciales de Redis se usan cuando .env no tiene config."""
+
+    def test_list_categories_uses_redis_config_when_env_not_set(self, client):
+        """
+        list_categories retorna 200 usando credenciales de Redis
+        aunque .env no tenga DOLIBARR_URL ni DOLIBARR_API_KEY.
+        """
+        mock_svc = MagicMock()
+        mock_svc.list_categories = AsyncMock(return_value=[])
+
+        with patch(
+            "api.v1.endpoints.dolibarr._get_dolibarr_credentials",
+            new=AsyncMock(return_value=("https://dolibarr.test", "test-key")),
+        ):
+            with patch("api.v1.endpoints.dolibarr.DolibarrClient"):
+                with patch(
+                    "api.v1.endpoints.dolibarr.DolibarrCategoryService",
+                    return_value=mock_svc,
+                ):
+                    response = client.get("/api/v1/dolibarr/categories")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["items"] == []
+        assert data["total"] == 0
+        mock_svc.list_categories.assert_called_once()

@@ -194,7 +194,7 @@ class TestListProducts:
                 return_value=_mock_settings(),
             ),
             patch(
-                "api.v1.endpoints.dolibarr._get_service",
+                "api.v1.endpoints.dolibarr._get_service_async",
                 return_value=svc,
             ),
         ):
@@ -233,7 +233,7 @@ class TestGetProduct:
                 return_value=_mock_settings(),
             ),
             patch(
-                "api.v1.endpoints.dolibarr._get_service",
+                "api.v1.endpoints.dolibarr._get_service_async",
                 return_value=svc,
             ),
         ):
@@ -264,7 +264,7 @@ class TestCreateProduct:
                 return_value=_mock_settings(),
             ),
             patch(
-                "api.v1.endpoints.dolibarr._get_service",
+                "api.v1.endpoints.dolibarr._get_service_async",
                 return_value=svc,
             ),
         ):
@@ -300,7 +300,7 @@ class TestUpdateProduct:
                 return_value=_mock_settings(),
             ),
             patch(
-                "api.v1.endpoints.dolibarr._get_service",
+                "api.v1.endpoints.dolibarr._get_service_async",
                 return_value=svc,
             ),
         ):
@@ -335,7 +335,7 @@ class TestDeleteProduct:
                 return_value=_mock_settings(),
             ),
             patch(
-                "api.v1.endpoints.dolibarr._get_service",
+                "api.v1.endpoints.dolibarr._get_service_async",
                 return_value=svc,
             ),
         ):
@@ -368,7 +368,7 @@ class TestUploadImage:
                 return_value=_mock_settings(),
             ),
             patch(
-                "api.v1.endpoints.dolibarr._get_service",
+                "api.v1.endpoints.dolibarr._get_service_async",
                 return_value=_mock_svc(),
             ),
         ):
@@ -390,7 +390,7 @@ class TestUploadImage:
                 return_value=_mock_settings(),
             ),
             patch(
-                "api.v1.endpoints.dolibarr._get_service",
+                "api.v1.endpoints.dolibarr._get_service_async",
                 return_value=_mock_svc(),
             ),
         ):
@@ -414,7 +414,7 @@ class TestUploadImage:
                 return_value=_mock_settings(),
             ),
             patch(
-                "api.v1.endpoints.dolibarr._get_service",
+                "api.v1.endpoints.dolibarr._get_service_async",
                 return_value=svc,
             ),
         ):
@@ -450,7 +450,7 @@ class TestErrorPaths:
 
         with (
             patch("api.v1.endpoints.dolibarr.get_settings", return_value=_mock_settings()),
-            patch("api.v1.endpoints.dolibarr._get_service", return_value=svc),
+            patch("api.v1.endpoints.dolibarr._get_service_async", return_value=svc),
         ):
             response = await http_client.get(_BASE)
 
@@ -469,7 +469,7 @@ class TestErrorPaths:
 
         with (
             patch("api.v1.endpoints.dolibarr.get_settings", return_value=_mock_settings()),
-            patch("api.v1.endpoints.dolibarr._get_service", return_value=svc),
+            patch("api.v1.endpoints.dolibarr._get_service_async", return_value=svc),
         ):
             response = await http_client.get(f"{_BASE}/1")
 
@@ -489,7 +489,7 @@ class TestErrorPaths:
 
         with (
             patch("api.v1.endpoints.dolibarr.get_settings", return_value=_mock_settings()),
-            patch("api.v1.endpoints.dolibarr._get_service", return_value=svc),
+            patch("api.v1.endpoints.dolibarr._get_service_async", return_value=svc),
         ):
             response = await http_client.post(_BASE, json={"ref": "X"})
 
@@ -509,7 +509,7 @@ class TestErrorPaths:
 
         with (
             patch("api.v1.endpoints.dolibarr.get_settings", return_value=_mock_settings()),
-            patch("api.v1.endpoints.dolibarr._get_service", return_value=svc),
+            patch("api.v1.endpoints.dolibarr._get_service_async", return_value=svc),
         ):
             response = await http_client.put(f"{_BASE}/1", json={"label": "X"})
 
@@ -529,7 +529,7 @@ class TestErrorPaths:
 
         with (
             patch("api.v1.endpoints.dolibarr.get_settings", return_value=_mock_settings()),
-            patch("api.v1.endpoints.dolibarr._get_service", return_value=svc),
+            patch("api.v1.endpoints.dolibarr._get_service_async", return_value=svc),
         ):
             response = await http_client.delete(f"{_BASE}/1")
 
@@ -562,7 +562,7 @@ class TestSyncFromJob:
                 return_value=_mock_settings(),
             ),
             patch(
-                "api.v1.endpoints.dolibarr._get_service",
+                "api.v1.endpoints.dolibarr._get_service_async",
                 return_value=svc,
             ),
             patch(

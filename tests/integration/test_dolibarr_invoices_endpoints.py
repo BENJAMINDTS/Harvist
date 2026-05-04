@@ -5,7 +5,7 @@ Tests de integración para endpoints de Dolibarr invoices.
 :version: 1.0.0
 """
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -428,3 +428,30 @@ class TestDeleteInvoice:
             response = client.delete("/api/v1/dolibarr/invoices/1")
 
             assert response.status_code == 409
+
+
+class TestRedisConfigPath:
+    """Tests que verifican que las credenciales de Redis se usan cuando .env no tiene config."""
+
+    def test_list_invoices_uses_redis_config_when_env_not_set(self, client):
+        """
+        list_invoices retorna 200 usando credenciales de Redis
+        aunque .env no tenga DOLIBARR_URL ni DOLIBARR_API_KEY.
+        """
+        mock_svc = MagicMock()
+        mock_svc.list_invoices = AsyncMock(return_value=[])
+
+        with patch(
+            "api.v1.endpoints.dolibarr._get_dolibarr_credentials",
+            new=AsyncMock(return_value=("https://dolibarr.test", "test-key")),
+        ):
+            with patch("api.v1.endpoints.dolibarr.DolibarrClient"):
+                with patch(
+                    "api.v1.endpoints.dolibarr.DolibarrInvoiceService",
+                    return_value=mock_svc,
+                ):
+                    response = client.get("/api/v1/dolibarr/invoices")
+
+        assert response.status_code == 200
+        assert response.json()["items"] == []
+        mock_svc.list_invoices.assert_called_once()
