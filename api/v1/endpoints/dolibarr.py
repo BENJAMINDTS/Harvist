@@ -400,7 +400,7 @@ async def get_product(product_id: int) -> JSONResponse:
     Returns:
         Respuesta estándar con los datos del producto.
     """
-    svc = _get_service()
+    svc = await _get_service_async()
     try:
         product = await svc.get_product(product_id)
     except IntegrationError as exc:
@@ -427,7 +427,7 @@ async def create_product(data: dict) -> JSONResponse:
     Returns:
         Respuesta estándar (201) con el producto creado.
     """
-    svc = _get_service()
+    svc = await _get_service_async()
     try:
         created = await svc.create_product(data)
     except IntegrationError as exc:
@@ -453,7 +453,7 @@ async def update_product(product_id: int, data: dict) -> JSONResponse:
     Returns:
         Respuesta estándar con el producto actualizado.
     """
-    svc = _get_service()
+    svc = await _get_service_async()
     try:
         updated = await svc.update_product(product_id, data)
     except IntegrationError as exc:
@@ -475,7 +475,7 @@ async def delete_product(product_id: int) -> JSONResponse:
     Returns:
         Respuesta estándar con confirmación de eliminación.
     """
-    svc = _get_service()
+    svc = await _get_service_async()
     try:
         await svc.delete_product(product_id)
     except IntegrationError as exc:
@@ -500,7 +500,7 @@ async def upload_image(product_id: int, file: UploadFile) -> JSONResponse:
     Returns:
         Respuesta estándar con el resultado de Dolibarr.
     """
-    svc = _get_service()
+    svc = await _get_service_async()
 
     if file.content_type not in _ALLOWED_IMAGE_TYPES:
         raise HTTPException(
@@ -549,7 +549,7 @@ async def sync_from_job(request: SyncFromJobRequest) -> JSONResponse:
     Returns:
         Respuesta estándar con la lista de resultados por producto.
     """
-    svc = _get_service()
+    svc = await _get_service_async()
     storage = get_storage_service()
 
     logger.info(
