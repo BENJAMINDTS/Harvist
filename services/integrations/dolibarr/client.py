@@ -37,28 +37,37 @@ class DolibarrClient(IntegrationClient):
     :author: Carlitos6712
     """
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, override_url: str = "", override_api_key: str = "") -> None:
         """
         Inicializa el cliente verificando que Dolibarr esté configurado.
 
+        Prioridad:
+          1. override_url / override_api_key (parámetros)
+          2. DOLIBARR_URL / DOLIBARR_API_KEY (Settings)
+
         Args:
             settings: instancia de Settings con las variables de entorno.
+            override_url: URL de Dolibarr (opcional, sobreescribe .env).
+            override_api_key: API Key de Dolibarr (opcional, sobreescribe .env).
 
         Raises:
-            IntegrationNotConfiguredError: si DOLIBARR_URL o DOLIBARR_API_KEY
-                no están definidas en el entorno.
+            IntegrationNotConfiguredError: si URL o API key están vacías.
         """
-        if not settings.dolibarr_configured:
+        url = (override_url or settings.dolibarr_url or "").strip()
+        api_key = (override_api_key or settings.dolibarr_api_key or "").strip()
+
+        if not url or not api_key:
             raise IntegrationNotConfiguredError(
-                "Dolibarr no configurado: define DOLIBARR_URL y DOLIBARR_API_KEY en .env"
+                "Dolibarr no configurado: define DOLIBARR_URL y DOLIBARR_API_KEY en .env "
+                "o configúralas en la interfaz gráfica."
             )
 
-        self._base_url: str = settings.dolibarr_url.rstrip("/")
+        self._base_url: str = url.rstrip("/")
 
         self._client: httpx.AsyncClient = httpx.AsyncClient(
             base_url=self._base_url + "/api/index.php/",
             headers={
-                "DOLAPIKEY": settings.dolibarr_api_key,
+                "DOLAPIKEY": api_key,
                 "Content-Type": "application/json",
                 "Accept": "application/json",
             },

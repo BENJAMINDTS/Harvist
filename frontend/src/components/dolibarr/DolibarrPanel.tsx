@@ -12,8 +12,9 @@ import DolibarrThirdparties from './DolibarrThirdparties'
 import DolibarrOrders from './DolibarrOrders'
 import DolibarrInvoices from './DolibarrInvoices'
 import DolibarrStocks from './DolibarrStocks'
+import DolibarrConfig from './DolibarrConfig'
 
-type DolibarrTab = 'productos' | 'terceros' | 'pedidos' | 'facturas' | 'stock'
+type DolibarrTab = 'productos' | 'terceros' | 'pedidos' | 'facturas' | 'stock' | 'config'
 
 interface Props {
   className?: string
@@ -127,7 +128,7 @@ export default function DolibarrPanel({ className = '' }: Props) {
         </div>
 
         {/* Tabs internos */}
-        <div className="flex border-b border-gray-200">
+        <div className="flex border-b border-gray-200 overflow-x-auto">
           {(
             [
               { id: 'productos', label: 'Productos' },
@@ -135,12 +136,13 @@ export default function DolibarrPanel({ className = '' }: Props) {
               { id: 'pedidos', label: 'Pedidos' },
               { id: 'facturas', label: 'Facturas' },
               { id: 'stock', label: 'Stock' },
+              { id: 'config', label: 'Configuración' },
             ] as Array<{ id: DolibarrTab; label: string }>
           ).map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+              className={`px-4 py-3 text-sm font-medium transition-colors whitespace-nowrap ${
                 tab === t.id
                   ? 'text-blue-600 border-b-2 border-blue-600'
                   : 'text-gray-700 hover:text-gray-900'
@@ -158,6 +160,7 @@ export default function DolibarrPanel({ className = '' }: Props) {
           {tab === 'pedidos' && <DolibarrOrders />}
           {tab === 'facturas' && <DolibarrInvoices />}
           {tab === 'stock' && <DolibarrStocks />}
+          {tab === 'config' && <DolibarrConfig />}
         </div>
       </div>
     </div>
