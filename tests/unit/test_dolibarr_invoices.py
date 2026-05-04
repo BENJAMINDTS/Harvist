@@ -263,3 +263,115 @@ class TestDeleteInvoice:
 
         with pytest.raises(ValueError):
             await service.delete_invoice(1, type="customer")
+
+
+# ── Error Handling ──────────────────────────────────────────────────────
+
+
+class TestErrorHandling:
+    """Tests para manejo de errores."""
+
+    @pytest.mark.asyncio
+    async def test_list_invoices_raises_IntegrationError_on_failure(
+        self, service: DolibarrInvoiceService, mock_client: AsyncMock
+    ) -> None:
+        """Verifica que list_invoices levanta IntegrationError en fallo."""
+        from services.integrations.base import IntegrationError
+
+        mock_client.get.side_effect = Exception("Network error")
+
+        with pytest.raises(IntegrationError):
+            await service.list_invoices(type="customer")
+
+    @pytest.mark.asyncio
+    async def test_get_invoice_raises_IntegrationError_on_failure(
+        self, service: DolibarrInvoiceService, mock_client: AsyncMock
+    ) -> None:
+        """Verifica que get_invoice levanta IntegrationError en fallo."""
+        from services.integrations.base import IntegrationError
+
+        mock_client.get.side_effect = Exception("Network error")
+
+        with pytest.raises(IntegrationError):
+            await service.get_invoice(1, type="customer")
+
+    @pytest.mark.asyncio
+    async def test_create_invoice_raises_IntegrationError_on_failure(
+        self, service: DolibarrInvoiceService, mock_client: AsyncMock
+    ) -> None:
+        """Verifica que create_invoice levanta IntegrationError en fallo."""
+        from services.integrations.base import IntegrationError
+
+        mock_client.post.side_effect = Exception("Network error")
+
+        with pytest.raises(IntegrationError):
+            await service.create_invoice({"socid": 42}, type="customer")
+
+    @pytest.mark.asyncio
+    async def test_add_invoice_line_raises_IntegrationError_on_failure(
+        self, service: DolibarrInvoiceService, mock_client: AsyncMock
+    ) -> None:
+        """Verifica que add_invoice_line levanta IntegrationError en fallo."""
+        from services.integrations.base import IntegrationError
+
+        mock_client.post.side_effect = Exception("Network error")
+
+        with pytest.raises(IntegrationError):
+            await service.add_invoice_line(1, {"qty": 1}, type="customer")
+
+    @pytest.mark.asyncio
+    async def test_validate_invoice_raises_IntegrationError_on_api_failure(
+        self, service: DolibarrInvoiceService, mock_client: AsyncMock
+    ) -> None:
+        """Verifica que validate_invoice levanta IntegrationError si API falla."""
+        from services.integrations.base import IntegrationError
+
+        mock_client.get.return_value = {"id": 1, "status": 0}
+        mock_client.post.side_effect = Exception("API error")
+
+        with pytest.raises(IntegrationError):
+            await service.validate_invoice(1, type="customer")
+
+    @pytest.mark.asyncio
+    async def test_send_by_email_raises_IntegrationError_on_failure(
+        self, service: DolibarrInvoiceService, mock_client: AsyncMock
+    ) -> None:
+        """Verifica que send_by_email levanta IntegrationError en fallo."""
+        from services.integrations.base import IntegrationError
+
+        mock_client.get.return_value = {"id": 1, "status": 1}
+        mock_client.post.side_effect = Exception("API error")
+
+        with pytest.raises(IntegrationError):
+            await service.send_by_email(1, "test@example.com", type="customer")
+
+    @pytest.mark.asyncio
+    async def test_mark_as_paid_raises_IntegrationError_on_failure(
+        self, service: DolibarrInvoiceService, mock_client: AsyncMock
+    ) -> None:
+        """Verifica que mark_as_paid levanta IntegrationError en fallo."""
+        from services.integrations.base import IntegrationError
+
+        mock_client.post.side_effect = Exception("API error")
+
+        with pytest.raises(IntegrationError):
+            await service.mark_as_paid(
+                1,
+                payment_date=1234567890,
+                payment_type_id=1,
+                bank_account_id=42,
+                type="customer",
+            )
+
+    @pytest.mark.asyncio
+    async def test_delete_invoice_raises_IntegrationError_on_api_failure(
+        self, service: DolibarrInvoiceService, mock_client: AsyncMock
+    ) -> None:
+        """Verifica que delete_invoice levanta IntegrationError si API falla."""
+        from services.integrations.base import IntegrationError
+
+        mock_client.get.return_value = {"id": 1, "status": 0}
+        mock_client.delete.side_effect = Exception("API error")
+
+        with pytest.raises(IntegrationError):
+            await service.delete_invoice(1, type="customer")
