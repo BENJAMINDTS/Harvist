@@ -31,6 +31,14 @@ Rutas expuestas bajo /api/v1/dolibarr/invoices:
   POST   /dolibarr/invoices/{invoice_id}/pay       — Registrar pago
   DELETE /dolibarr/invoices/{invoice_id}           — Eliminar factura (borrador)
 
+Rutas expuestas bajo /api/v1/dolibarr/stocks:
+  GET    /dolibarr/stocks/warehouses               — Listar almacenes (paginado)
+  GET    /dolibarr/stocks/warehouses/{warehouse_id} — Obtener almacén por ID
+  GET    /dolibarr/stocks/products/{product_id}   — Obtener stock de producto
+  GET    /dolibarr/stocks/movements                — Listar movimientos (paginado)
+  POST   /dolibarr/stocks/movements                — Crear movimiento de stock
+  POST   /dolibarr/stocks/transfer                 — Transferir entre almacenes
+
 Todos los endpoints devuelven 503 si Dolibarr no está configurado.
 
 :author: Carlitos6712
@@ -55,6 +63,7 @@ from services.integrations.dolibarr.client import DolibarrClient
 from services.integrations.dolibarr.invoices import DolibarrInvoiceService
 from services.integrations.dolibarr.orders import DolibarrOrderService
 from services.integrations.dolibarr.products import DolibarrProductService
+from services.integrations.dolibarr.stocks import DolibarrStockService
 from services.integrations.dolibarr.thirdparties import DolibarrThirdpartyService
 from services.storage_service import get_storage_service
 
@@ -1487,3 +1496,255 @@ async def delete_invoice(
             detail=str(exc),
         )
     return _ok({"deleted": True}, message="Factura eliminada exitosamente")
+
+
+stocks_router = APIRouter(prefix="/dolibarr/stocks", tags=["dolibarr-stocks"])
+
+
+def _get_stock_service() -> DolibarrStockService:
+    """
+    Construye y devuelve una instancia de DolibarrStockService.
+
+    Raises:
+        HTTPException 503: si Dolibarr no está configurado.
+    """
+    settings = get_settings()
+    if not settings.dolibarr_configured:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=_NOT_CONFIGURED_MSG,
+        )
+    try:
+        client = DolibarrClient(settings)
+    except IntegrationNotConfiguredError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=_NOT_CONFIGURED_MSG,
+        )
+    return DolibarrStockService(client)
+
+
+@stocks_router.get("/warehouses", response_model=PaginatedResponse)
+async def list_warehouses(
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> PaginatedResponse:
+    """
+    Lista almacenes de Dolibarr con paginación.
+
+    Args:
+        limit:  máximo de almacenes por página.
+        offset: desplazamiento desde el inicio.
+
+    Returns:
+        PaginatedResponse con los almacenes encontrados.
+    """
+    svc = _get_stock_service()
+    try:
+        items = await svc.list_warehouses(limit=limit, offset=offset)
+    except IntegrationError as exc:
+        logger.error("Error listando almacenes Dolibarr", exc_info=exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        )
+    return PaginatedResponse(
+        items=items,
+        total=len(items),
+        limit=limit,
+        offset=offset,
+        has_more=len(items) == limit,
+    )
+
+
+@stocks_router.get("/warehouses/{warehouse_id}")
+async def get_warehouse(warehouse_id: int) -> JSONResponse:
+    """
+    Obtiene un almacén de Dolibarr por su ID.
+
+    Args:
+        warehouse_id: ID del almacén en Dolibarr.
+
+    Returns:
+        Respuesta estándar con los datos del almacén.
+    """
+    svc = _get_stock_service()
+    try:
+        warehouse = await svc.get_warehouse(warehouse_id)
+    except IntegrationError as exc:
+        if exc.status_code == 404:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Almacén {warehouse_id} no encontrado en Dolibarr.",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        )
+    return JSONResponse(content=_ok(warehouse, "Almacén obtenido."))
+
+
+@stocks_router.get("/products/{product_id}")
+async def get_product_stock(product_id: int) -> JSONResponse:
+    """
+    Obtiene el stock actual de un producto desglosado por almacén.
+
+    Args:
+        product_id: ID del producto en Dolibarr.
+
+    Returns:
+        Respuesta estándar con stock_total y desglose por almacén.
+    """
+    svc = _get_stock_service()
+    try:
+        stock_info = await svc.get_product_stock(product_id)
+    except IntegrationError as exc:
+        if exc.status_code == 404:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Producto {product_id} no encontrado en Dolibarr.",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        )
+    return JSONResponse(content=_ok(stock_info, "Stock de producto obtenido."))
+
+
+@stocks_router.get("/movements", response_model=PaginatedResponse)
+async def list_movements(
+    product_id: int | None = Query(default=None),
+    warehouse_id: int | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> PaginatedResponse:
+    """
+    Lista movimientos de stock con filtros opcionales.
+
+    Args:
+        product_id: Filtrar por producto (opcional).
+        warehouse_id: Filtrar por almacén (opcional).
+        limit: máximo de movimientos por página.
+        offset: desplazamiento desde el inicio.
+
+    Returns:
+        PaginatedResponse con los movimientos encontrados.
+    """
+    svc = _get_stock_service()
+    try:
+        items = await svc.get_stock_movements(
+            product_id=product_id,
+            warehouse_id=warehouse_id,
+            limit=limit,
+            offset=offset,
+        )
+    except IntegrationError as exc:
+        logger.error("Error listando movimientos de stock Dolibarr", exc_info=exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        )
+    return PaginatedResponse(
+        items=items,
+        total=len(items),
+        limit=limit,
+        offset=offset,
+        has_more=len(items) == limit,
+    )
+
+
+@stocks_router.post("/movements", status_code=status.HTTP_201_CREATED)
+async def add_movement(data: dict) -> JSONResponse:
+    """
+    Registra un movimiento de stock en Dolibarr.
+
+    Body esperado:
+      - product_id: int
+      - warehouse_id: int
+      - qty: float (puede ser negativo)
+      - movement_type: int (0=entrada, 1=salida, 2=corrección, 3=transferencia)
+      - label: str (opcional)
+      - price: float (opcional)
+
+    Returns:
+        Respuesta estándar (201) con el movimiento creado.
+    """
+    svc = _get_stock_service()
+    try:
+        product_id = data.get("product_id")
+        warehouse_id = data.get("warehouse_id")
+        qty = data.get("qty")
+        movement_type = data.get("movement_type")
+        label = data.get("label", "")
+        price = data.get("price", 0.0)
+
+        movement = await svc.add_stock_movement(
+            product_id=product_id,
+            warehouse_id=warehouse_id,
+            qty=qty,
+            movement_type=movement_type,
+            label=label,
+            price=price,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        )
+    except IntegrationError as exc:
+        logger.error("Error registrando movimiento de stock", exc_info=exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        )
+    return JSONResponse(
+        content=_ok(movement, "Movimiento de stock registrado."),
+        status_code=status.HTTP_201_CREATED,
+    )
+
+
+@stocks_router.post("/transfer", status_code=status.HTTP_201_CREATED)
+async def transfer_stock(data: dict) -> JSONResponse:
+    """
+    Transfiere stock entre almacenes.
+
+    Body esperado:
+      - product_id: int
+      - from_warehouse_id: int
+      - to_warehouse_id: int
+      - qty: float (debe ser > 0)
+      - label: str (opcional)
+
+    Returns:
+        Respuesta estándar (201) con los dos movimientos creados.
+    """
+    svc = _get_stock_service()
+    try:
+        product_id = data.get("product_id")
+        from_warehouse_id = data.get("from_warehouse_id")
+        to_warehouse_id = data.get("to_warehouse_id")
+        qty = data.get("qty")
+        label = data.get("label", "")
+
+        result = await svc.transfer_stock(
+            product_id=product_id,
+            from_warehouse_id=from_warehouse_id,
+            to_warehouse_id=to_warehouse_id,
+            qty=qty,
+            label=label,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        )
+    except IntegrationError as exc:
+        logger.error("Error transfiriendo stock", exc_info=exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        )
+    return JSONResponse(
+        content=_ok(result, "Transferencia de stock completada."),
+        status_code=status.HTTP_201_CREATED,
+    )
