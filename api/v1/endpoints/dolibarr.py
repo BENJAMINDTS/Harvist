@@ -1361,6 +1361,7 @@ async def send_invoice_by_email(
     Returns:
         Mensaje de éxito.
     """
+    svc = _get_invoice_service()
     if not data:
         data = {}
     email = data.get("email")
@@ -1369,7 +1370,6 @@ async def send_invoice_by_email(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Campo 'email' requerido en body",
         )
-    svc = _get_invoice_service()
     try:
         success = await svc.send_by_email(
             invoice_id,
@@ -1420,6 +1420,7 @@ async def mark_invoice_as_paid(
     Returns:
         Diccionario con el registro de pago.
     """
+    svc = _get_invoice_service()
     if not data:
         data = {}
     required_fields = ["payment_date", "payment_type_id", "bank_account_id"]
@@ -1428,7 +1429,6 @@ async def mark_invoice_as_paid(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Campos requeridos: {', '.join(required_fields)}",
         )
-    svc = _get_invoice_service()
     try:
         payment = await svc.mark_as_paid(
             invoice_id,

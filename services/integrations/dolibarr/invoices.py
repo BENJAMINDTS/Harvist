@@ -110,7 +110,7 @@ class DolibarrInvoiceService:
                 extra={"invoice_id": invoice_id, "type": type},
             )
             raise IntegrationError(
-                f"Factura {invoice_id} no encontrada"
+                f"404 not found: Factura {invoice_id} no encontrada"
             ) from exc
 
     async def create_invoice(
