@@ -1,6 +1,9 @@
 """
 Endpoints de la integración Dolibarr.
 
+Rutas expuestas bajo /api/v1/dolibarr:
+  GET    /dolibarr/status                             — Verificar estado y configuración
+
 Rutas expuestas bajo /api/v1/dolibarr/products:
   GET    /dolibarr/products                        — Listar productos (paginado)
   GET    /dolibarr/products/{product_id}           — Obtener producto por ID
@@ -56,7 +59,7 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 
 from api.core.config import get_settings
-from api.v1.schemas.integrations import PaginatedResponse, SyncFromJobRequest
+from api.v1.schemas.integrations import IntegrationStatus, PaginatedResponse, SyncFromJobRequest
 from services.integrations.base import IntegrationError, IntegrationNotConfiguredError
 from services.integrations.dolibarr.categories import DolibarrCategoryService
 from services.integrations.dolibarr.client import DolibarrClient
@@ -67,7 +70,8 @@ from services.integrations.dolibarr.stocks import DolibarrStockService
 from services.integrations.dolibarr.thirdparties import DolibarrThirdpartyService
 from services.storage_service import get_storage_service
 
-router = APIRouter(prefix="/dolibarr/products", tags=["dolibarr"])
+router_main = APIRouter(prefix="/dolibarr", tags=["dolibarr"])
+router_products = APIRouter(prefix="/dolibarr/products", tags=["dolibarr-products"])
 
 _ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
 _MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5 MB
@@ -105,7 +109,69 @@ def _ok(data: Any, message: str = "OK") -> dict[str, Any]:
     return {"success": True, "data": data, "message": message}
 
 
-@router.get("", response_model=PaginatedResponse)
+# ── Status endpoint ──────────────────────────────────────────────────────
+
+
+@router_main.get("/status", response_model=IntegrationStatus)
+async def get_status() -> IntegrationStatus:
+    """
+    Verifica estado de configuración y salud de la integración Dolibarr.
+
+    Siempre devuelve HTTP 200. El estado se comunica en el body.
+
+    Returns:
+        IntegrationStatus con platform, configured, healthy y message.
+    """
+    settings = get_settings()
+
+    if not settings.dolibarr_configured:
+        return IntegrationStatus(
+            platform="dolibarr",
+            configured=False,
+            healthy=None,
+            message="DOLIBARR_URL o DOLIBARR_API_KEY no están definidos en .env.",
+        )
+
+    try:
+        client = DolibarrClient(settings)
+    except IntegrationNotConfiguredError:
+        return IntegrationStatus(
+            platform="dolibarr",
+            configured=False,
+            healthy=None,
+            message="DOLIBARR_URL o DOLIBARR_API_KEY no están definidos en .env.",
+        )
+
+    try:
+        is_healthy = await client.health_check()
+        if is_healthy:
+            return IntegrationStatus(
+                platform="dolibarr",
+                configured=True,
+                healthy=True,
+                message="Conexión con Dolibarr establecida.",
+            )
+        else:
+            return IntegrationStatus(
+                platform="dolibarr",
+                configured=True,
+                healthy=False,
+                message="Dolibarr no responde. Comprueba la URL y que el servidor esté activo.",
+            )
+    except Exception as exc:
+        logger.warning("Error verificando salud de Dolibarr", exc_info=exc)
+        return IntegrationStatus(
+            platform="dolibarr",
+            configured=True,
+            healthy=False,
+            message=f"Error al verificar conexión: {str(exc)}",
+        )
+
+
+# ── Productos ────────────────────────────────────────────────────────────
+
+
+@router_products.get("", response_model=PaginatedResponse)
 async def list_products(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
@@ -138,7 +204,7 @@ async def list_products(
     )
 
 
-@router.get("/{product_id}")
+@router_products.get("/{product_id}")
 async def get_product(product_id: int) -> JSONResponse:
     """
     Obtiene un producto de Dolibarr por su ID.
@@ -165,7 +231,7 @@ async def get_product(product_id: int) -> JSONResponse:
     return JSONResponse(content=_ok(product, "Producto obtenido."))
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router_products.post("", status_code=status.HTTP_201_CREATED)
 async def create_product(data: dict) -> JSONResponse:
     """
     Crea un producto en Dolibarr.
@@ -190,7 +256,7 @@ async def create_product(data: dict) -> JSONResponse:
     )
 
 
-@router.put("/{product_id}")
+@router_products.put("/{product_id}")
 async def update_product(product_id: int, data: dict) -> JSONResponse:
     """
     Actualiza un producto existente en Dolibarr.
@@ -213,7 +279,7 @@ async def update_product(product_id: int, data: dict) -> JSONResponse:
     return JSONResponse(content=_ok(updated, "Producto actualizado."))
 
 
-@router.delete("/{product_id}")
+@router_products.delete("/{product_id}")
 async def delete_product(product_id: int) -> JSONResponse:
     """
     Elimina un producto de Dolibarr.
@@ -235,7 +301,7 @@ async def delete_product(product_id: int) -> JSONResponse:
     return JSONResponse(content={"success": True, "message": "Producto eliminado."})
 
 
-@router.post("/{product_id}/image")
+@router_products.post("/{product_id}/image")
 async def upload_image(product_id: int, file: UploadFile) -> JSONResponse:
     """
     Sube una imagen a un producto de Dolibarr.
@@ -284,7 +350,7 @@ async def upload_image(product_id: int, file: UploadFile) -> JSONResponse:
     return JSONResponse(content=_ok(result, "Imagen subida correctamente."))
 
 
-@router.post("/sync")
+@router_products.post("/sync")
 async def sync_from_job(request: SyncFromJobRequest) -> JSONResponse:
     """
     Sincroniza productos de un job Harvist completado con Dolibarr.
