@@ -105,7 +105,9 @@ class DolibarrThirdpartyService:
         Returns:
             Lista de terceros que coinciden con la búsqueda.
         """
-        filters = {"sqlfilters": f"(t.nom:like:'%{name}%')"}
+        # Escapar comillas simples en el nombre para evitar inyección SQL
+        escaped_name = name.replace("'", "''")
+        filters = {"sqlfilters": f"(t.nom:like:'%{escaped_name}%')"}
         return await self._client.list(
             _DOLIBARR_THIRDPARTIES_RESOURCE,
             limit=limit,

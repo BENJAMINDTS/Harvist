@@ -773,7 +773,14 @@ async def delete_thirdparty(thirdparty_id: int) -> JSONResponse:
         si tiene registros asociados.
     """
     svc = _get_thirdparty_service()
-    success = await svc.delete_thirdparty(thirdparty_id)
+    try:
+        success = await svc.delete_thirdparty(thirdparty_id)
+    except IntegrationError as exc:
+        logger.error("Error eliminando tercero en Dolibarr", exc_info=exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        )
     if not success:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
