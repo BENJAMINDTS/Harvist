@@ -10,7 +10,7 @@
  *
  * @author BenjaminDTS | Carlos Vico
  */
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState, Suspense } from 'react'
 import { CsvUploader } from '@/components/CsvUploader'
 import { SearchConfig } from '@/components/SearchConfig'
 import { JobProgress } from '@/components/JobProgress'
@@ -25,10 +25,12 @@ import { apiClient, getBrands, getBrandsPending, resumeJob, downloadTranslationC
 import type { ApiError, BrandEntry, BrandPendingEntry, BrandValidationResult } from '@/api/client'
 import type { SearchConfigValues, TipoJob } from '@/components/SearchConfig'
 
+const DolibarrPanel = React.lazy(() => import('@/components/dolibarr/DolibarrPanel'))
+
 /** Estados posibles de la pantalla principal */
 type AppState = 'home' | 'configuring' | 'running' | 'done'
 /** Pestañas de navegación para el historial */
-type Tab = 'nuevo' | 'historial'
+type Tab = 'nuevo' | 'historial' | 'dolibarr'
 
 const App: React.FC = () => {
   const [tab, setTab] = useState<Tab>('nuevo')
@@ -293,12 +295,23 @@ const App: React.FC = () => {
             </div>
           </button>
 
-          {/* Acceso al historial cuando no estamos en la home */}
+          {/* Acceso a otras secciones cuando no estamos en la home */}
           {appState !== 'home' && (
-            <nav>
+            <nav className="flex gap-2">
               <button
                 type="button"
-                onClick={() => setTab(tab === 'historial' ? 'nuevo' : 'historial')}
+                onClick={() => setTab('nuevo')}
+                className={`px-4 py-1.5 text-sm font-medium rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
+                  tab === 'nuevo'
+                    ? 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-950 dark:text-blue-400'
+                    : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800'
+                }`}
+              >
+                Nuevo Job
+              </button>
+              <button
+                type="button"
+                onClick={() => setTab('historial')}
                 className={`px-4 py-1.5 text-sm font-medium rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
                   tab === 'historial'
                     ? 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-950 dark:text-blue-400'
@@ -306,6 +319,17 @@ const App: React.FC = () => {
                 }`}
               >
                 Historial
+              </button>
+              <button
+                type="button"
+                onClick={() => setTab('dolibarr')}
+                className={`px-4 py-1.5 text-sm font-medium rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
+                  tab === 'dolibarr'
+                    ? 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-950 dark:text-blue-400'
+                    : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800'
+                }`}
+              >
+                Dolibarr
               </button>
             </nav>
           )}
@@ -534,6 +558,19 @@ const App: React.FC = () => {
         {/* Historial */}
         {tab === 'historial' && (
           <JobHistory onSelectJob={handleSelectJobFromHistory} />
+        )}
+
+        {/* Dolibarr */}
+        {tab === 'dolibarr' && (
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center h-64">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+              </div>
+            }
+          >
+            <DolibarrPanel />
+          </Suspense>
         )}
       </main>
     </div>
