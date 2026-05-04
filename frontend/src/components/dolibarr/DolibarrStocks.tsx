@@ -9,7 +9,7 @@ import {
   listDolibarrProducts,
   getDolibarrProductStock,
 } from '@/api/client'
-import { type DolibarrWarehouse, type DolibarrProduct } from '@/types/dolibarr'
+import { type DolibarrWarehouse } from '@/types/dolibarr'
 
 interface StockRow {
   id: number

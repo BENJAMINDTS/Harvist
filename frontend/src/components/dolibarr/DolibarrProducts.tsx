@@ -5,13 +5,12 @@
  * @author BenjaminDTS
  */
 import { useEffect, useState } from 'react'
-import { Plus, Edit2, Trash2, Upload } from 'lucide-react'
 import {
   listDolibarrProducts,
   deleteDolibarrProduct,
   syncDolibarrFromJob,
 } from '@/api/client'
-import { type DolibarrProduct, type PaginatedResponse } from '@/types/dolibarr'
+import { type DolibarrProduct } from '@/types/dolibarr'
 
 export default function DolibarrProducts() {
   const [products, setProducts] = useState<DolibarrProduct[]>([])
@@ -61,16 +60,14 @@ export default function DolibarrProducts() {
     <div className="space-y-6">
       {/* Header con acciones */}
       <div className="flex gap-4">
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-          <Plus className="h-4 w-4" />
-          Nuevo producto
+        <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">
+          + Nuevo producto
         </button>
         <button
           onClick={() => setShowSyncModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
         >
-          <Upload className="h-4 w-4" />
-          Sincronizar desde job
+          ↓ Sincronizar desde job
         </button>
       </div>
 
@@ -140,15 +137,15 @@ export default function DolibarrProducts() {
                     </span>
                   </td>
                   <td className="px-6 py-4 text-sm">
-                    <div className="flex gap-2">
-                      <button className="p-1 text-blue-600 hover:bg-blue-50 rounded">
-                        <Edit2 className="h-4 w-4" />
+                    <div className="flex gap-3">
+                      <button className="text-blue-600 hover:text-blue-800 text-xs font-medium">
+                        Editar
                       </button>
                       <button
                         onClick={() => handleDelete(p.id)}
-                        className="p-1 text-red-600 hover:bg-red-50 rounded"
+                        className="text-red-600 hover:text-red-800 text-xs font-medium"
                       >
-                        <Trash2 className="h-4 w-4" />
+                        Eliminar
                       </button>
                     </div>
                   </td>
