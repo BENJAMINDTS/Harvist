@@ -1152,21 +1152,18 @@ async def get_thirdparty_orders(
 orders_router = APIRouter(prefix="/dolibarr/orders", tags=["dolibarr-orders"])
 
 
-def _get_order_service() -> DolibarrOrderService:
+async def _get_order_service() -> DolibarrOrderService:
     """
     Construye y devuelve una instancia de DolibarrOrderService.
+    Lee credenciales desde Redis o .env.
 
     Raises:
         HTTPException 503: si Dolibarr no está configurado.
     """
     settings = get_settings()
-    if not settings.dolibarr_configured:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=_NOT_CONFIGURED_MSG,
-        )
     try:
-        client = DolibarrClient(settings)
+        url, api_key = await _get_dolibarr_credentials()
+        client = DolibarrClient(settings, override_url=url, override_api_key=api_key)
     except IntegrationNotConfiguredError:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -1196,7 +1193,7 @@ async def list_orders(
     Returns:
         PaginatedResponse con los pedidos encontrados.
     """
-    svc = _get_order_service()
+    svc = await _get_order_service()
     try:
         items = await svc.list_orders(
             type=type, limit=limit, offset=offset, status=status, thirdparty_id=thirdparty_id
@@ -1231,7 +1228,7 @@ async def get_order(
     Returns:
         Diccionario con datos del pedido.
     """
-    svc = _get_order_service()
+    svc = await _get_order_service()
     try:
         order = await svc.get_order(order_id, type=type)
     except IntegrationError as exc:
@@ -1266,7 +1263,7 @@ async def create_order(
     """
     if not data:
         data = {}
-    svc = _get_order_service()
+    svc = await _get_order_service()
     try:
         order = await svc.create_order(data, type=type)
     except IntegrationError as exc:
@@ -1302,7 +1299,7 @@ async def add_order_line(
     """
     if not data:
         data = {}
-    svc = _get_order_service()
+    svc = await _get_order_service()
     try:
         line = await svc.add_order_line(order_id, data, type=type)
     except IntegrationError as exc:
@@ -1345,7 +1342,7 @@ async def update_order_status(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Campo 'status' requerido en body",
         )
-    svc = _get_order_service()
+    svc = await _get_order_service()
     try:
         order = await svc.update_order_status(order_id, status_value, type=type)
     except ValueError as exc:
@@ -1377,7 +1374,7 @@ async def delete_order(
     Returns:
         Mensaje de éxito.
     """
-    svc = _get_order_service()
+    svc = await _get_order_service()
     try:
         success = await svc.delete_order(order_id, type=type)
         if not success:
@@ -1402,21 +1399,18 @@ async def delete_order(
 invoices_router = APIRouter(prefix="/dolibarr/invoices", tags=["dolibarr-invoices"])
 
 
-def _get_invoice_service() -> DolibarrInvoiceService:
+async def _get_invoice_service() -> DolibarrInvoiceService:
     """
     Construye y devuelve una instancia de DolibarrInvoiceService.
+    Lee credenciales desde Redis o .env.
 
     Raises:
         HTTPException 503: si Dolibarr no está configurado.
     """
     settings = get_settings()
-    if not settings.dolibarr_configured:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=_NOT_CONFIGURED_MSG,
-        )
     try:
-        client = DolibarrClient(settings)
+        url, api_key = await _get_dolibarr_credentials()
+        client = DolibarrClient(settings, override_url=url, override_api_key=api_key)
     except IntegrationNotConfiguredError:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -1446,7 +1440,7 @@ async def list_invoices(
     Returns:
         PaginatedResponse con las facturas encontradas.
     """
-    svc = _get_invoice_service()
+    svc = await _get_invoice_service()
     try:
         items = await svc.list_invoices(
             type=type, limit=limit, offset=offset, status=status, thirdparty_id=thirdparty_id
@@ -1481,7 +1475,7 @@ async def get_invoice(
     Returns:
         Diccionario con datos de la factura.
     """
-    svc = _get_invoice_service()
+    svc = await _get_invoice_service()
     try:
         invoice = await svc.get_invoice(invoice_id, type=type)
     except IntegrationError as exc:
@@ -1516,7 +1510,7 @@ async def create_invoice(
     """
     if not data:
         data = {}
-    svc = _get_invoice_service()
+    svc = await _get_invoice_service()
     try:
         invoice = await svc.create_invoice(data, type=type)
     except IntegrationError as exc:
@@ -1553,7 +1547,7 @@ async def add_invoice_line(
     """
     if not data:
         data = {}
-    svc = _get_invoice_service()
+    svc = await _get_invoice_service()
     try:
         line = await svc.add_invoice_line(invoice_id, data, type=type)
     except IntegrationError as exc:
@@ -1580,7 +1574,7 @@ async def validate_invoice(
     Returns:
         Diccionario con la factura validada.
     """
-    svc = _get_invoice_service()
+    svc = await _get_invoice_service()
     try:
         invoice = await svc.validate_invoice(invoice_id, type=type)
     except ValueError as exc:
@@ -1619,7 +1613,7 @@ async def send_invoice_by_email(
     Returns:
         Mensaje de éxito.
     """
-    svc = _get_invoice_service()
+    svc = await _get_invoice_service()
     if not data:
         data = {}
     email = data.get("email")
@@ -1678,7 +1672,7 @@ async def mark_invoice_as_paid(
     Returns:
         Diccionario con el registro de pago.
     """
-    svc = _get_invoice_service()
+    svc = await _get_invoice_service()
     if not data:
         data = {}
     required_fields = ["payment_date", "payment_type_id", "bank_account_id"]
@@ -1720,7 +1714,7 @@ async def delete_invoice(
     Returns:
         Mensaje de éxito.
     """
-    svc = _get_invoice_service()
+    svc = await _get_invoice_service()
     try:
         success = await svc.delete_invoice(invoice_id, type=type)
         if not success:
@@ -1750,21 +1744,18 @@ async def delete_invoice(
 stocks_router = APIRouter(prefix="/dolibarr/stocks", tags=["dolibarr-stocks"])
 
 
-def _get_stock_service() -> DolibarrStockService:
+async def _get_stock_service() -> DolibarrStockService:
     """
     Construye y devuelve una instancia de DolibarrStockService.
+    Lee credenciales desde Redis o .env.
 
     Raises:
         HTTPException 503: si Dolibarr no está configurado.
     """
     settings = get_settings()
-    if not settings.dolibarr_configured:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=_NOT_CONFIGURED_MSG,
-        )
     try:
-        client = DolibarrClient(settings)
+        url, api_key = await _get_dolibarr_credentials()
+        client = DolibarrClient(settings, override_url=url, override_api_key=api_key)
     except IntegrationNotConfiguredError:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -1788,7 +1779,7 @@ async def list_warehouses(
     Returns:
         PaginatedResponse con los almacenes encontrados.
     """
-    svc = _get_stock_service()
+    svc = await _get_stock_service()
     try:
         items = await svc.list_warehouses(limit=limit, offset=offset)
     except IntegrationError as exc:
@@ -1817,7 +1808,7 @@ async def get_warehouse(warehouse_id: int) -> JSONResponse:
     Returns:
         Respuesta estándar con los datos del almacén.
     """
-    svc = _get_stock_service()
+    svc = await _get_stock_service()
     try:
         warehouse = await svc.get_warehouse(warehouse_id)
     except IntegrationError as exc:
@@ -1844,7 +1835,7 @@ async def get_product_stock(product_id: int) -> JSONResponse:
     Returns:
         Respuesta estándar con stock_total y desglose por almacén.
     """
-    svc = _get_stock_service()
+    svc = await _get_stock_service()
     try:
         stock_info = await svc.get_product_stock(product_id)
     except IntegrationError as exc:
@@ -1879,7 +1870,7 @@ async def list_movements(
     Returns:
         PaginatedResponse con los movimientos encontrados.
     """
-    svc = _get_stock_service()
+    svc = await _get_stock_service()
     try:
         items = await svc.get_stock_movements(
             product_id=product_id,
@@ -1918,7 +1909,7 @@ async def add_movement(data: dict) -> JSONResponse:
     Returns:
         Respuesta estándar (201) con el movimiento creado.
     """
-    svc = _get_stock_service()
+    svc = await _get_stock_service()
     try:
         product_id = data.get("product_id")
         warehouse_id = data.get("warehouse_id")
@@ -1967,7 +1958,7 @@ async def transfer_stock(data: dict) -> JSONResponse:
     Returns:
         Respuesta estándar (201) con los dos movimientos creados.
     """
-    svc = _get_stock_service()
+    svc = await _get_stock_service()
     try:
         product_id = data.get("product_id")
         from_warehouse_id = data.get("from_warehouse_id")
