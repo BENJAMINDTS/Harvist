@@ -42,6 +42,7 @@ from api.v1.schemas.integrations import PaginatedResponse, SyncFromJobRequest
 from services.integrations.base import IntegrationError, IntegrationNotConfiguredError
 from services.integrations.dolibarr.categories import DolibarrCategoryService
 from services.integrations.dolibarr.client import DolibarrClient
+from services.integrations.dolibarr.orders import DolibarrOrderService
 from services.integrations.dolibarr.products import DolibarrProductService
 from services.integrations.dolibarr.thirdparties import DolibarrThirdpartyService
 from services.storage_service import get_storage_service
