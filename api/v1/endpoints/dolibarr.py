@@ -579,21 +579,19 @@ async def sync_from_job(request: SyncFromJobRequest) -> JSONResponse:
 categories_router = APIRouter(prefix="/dolibarr/categories", tags=["dolibarr-categories"])
 
 
-def _get_category_service() -> DolibarrCategoryService:
+async def _get_category_service() -> DolibarrCategoryService:
     """
     Construye y devuelve una instancia de DolibarrCategoryService.
+
+    Obtiene las credenciales desde Redis (si están configuradas) o desde .env.
 
     Raises:
         HTTPException 503: si Dolibarr no está configurado.
     """
     settings = get_settings()
-    if not settings.dolibarr_configured:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=_NOT_CONFIGURED_MSG,
-        )
     try:
-        client = DolibarrClient(settings)
+        url, api_key = await _get_dolibarr_credentials()
+        client = DolibarrClient(settings, override_url=url, override_api_key=api_key)
     except IntegrationNotConfiguredError:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -619,7 +617,7 @@ async def list_categories(
     Returns:
         PaginatedResponse con las categorías encontradas.
     """
-    svc = _get_category_service()
+    svc = await _get_category_service()
     try:
         items = await svc.list_categories(type=type, limit=limit, offset=offset)
     except IntegrationError as exc:
@@ -650,7 +648,7 @@ async def get_tree(
     Returns:
         Respuesta estándar con lista anidada de nodos.
     """
-    svc = _get_category_service()
+    svc = await _get_category_service()
     try:
         tree = await svc.get_tree(type=type)
     except IntegrationError as exc:
@@ -673,7 +671,7 @@ async def get_category(category_id: int) -> JSONResponse:
     Returns:
         Respuesta estándar con los datos de la categoría.
     """
-    svc = _get_category_service()
+    svc = await _get_category_service()
     try:
         category = await svc.get_category(category_id)
     except IntegrationError as exc:
@@ -708,7 +706,7 @@ async def create_category(
     Returns:
         Respuesta estándar (201) con la categoría creada.
     """
-    svc = _get_category_service()
+    svc = await _get_category_service()
     try:
         created = await svc.create_category(
             label=label,
@@ -739,7 +737,7 @@ async def update_category(category_id: int, data: dict) -> JSONResponse:
     Returns:
         Respuesta estándar con la categoría actualizada.
     """
-    svc = _get_category_service()
+    svc = await _get_category_service()
     try:
         updated = await svc.update_category(category_id, data)
     except IntegrationError as exc:
@@ -761,7 +759,7 @@ async def delete_category(category_id: int) -> JSONResponse:
     Returns:
         Respuesta estándar con confirmación de eliminación.
     """
-    svc = _get_category_service()
+    svc = await _get_category_service()
     try:
         await svc.delete_category(category_id)
     except IntegrationError as exc:
@@ -784,7 +782,7 @@ async def assign_product(category_id: int, product_id: int) -> JSONResponse:
     Returns:
         Respuesta estándar con confirmación.
     """
-    svc = _get_category_service()
+    svc = await _get_category_service()
     try:
         await svc.assign_product(category_id, product_id)
     except IntegrationError as exc:
@@ -807,7 +805,7 @@ async def remove_product(category_id: int, product_id: int) -> JSONResponse:
     Returns:
         Respuesta estándar con confirmación.
     """
-    svc = _get_category_service()
+    svc = await _get_category_service()
     try:
         await svc.remove_product(category_id, product_id)
     except IntegrationError as exc:
@@ -835,7 +833,7 @@ async def list_products_in_category(
     Returns:
         PaginatedResponse con los productos en la categoría.
     """
-    svc = _get_category_service()
+    svc = await _get_category_service()
     try:
         items = await svc.list_products_in_category(
             category_id=category_id,
