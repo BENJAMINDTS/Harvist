@@ -11,6 +11,19 @@
  * @author BenjaminDTS | Carlos Vico
  */
 import axios, { type AxiosInstance, type AxiosError } from 'axios'
+import {
+  type IntegrationStatus,
+  type PaginatedResponse,
+  type DolibarrProduct,
+  type DolibarrThirdparty,
+  type DolibarrOrder,
+  type DolibarrInvoice,
+  type DolibarrWarehouse,
+  type SyncFromJobRequest,
+  type ThirdpartyMode,
+  type OrderType,
+  type InvoiceType,
+} from '@/types/dolibarr'
 
 /** Estructura estándar de respuesta de la API */
 export interface ApiResponse<T = unknown> {
@@ -437,5 +450,323 @@ export async function confirmPhotoSelection(
     `/jobs/${jobId}/photos/confirm`,
     { selections },
   )
+  return response.data.data
+}
+
+// ────────────────────────────────────────────────────────────────
+// DOLIBARR — Métodos de integración
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * Obtiene el estado de conexión a Dolibarr.
+ *
+ * @author BenjaminDTS
+ * @returns Estado con plataforma, configuración y salud.
+ */
+export async function getDolibarrStatus(): Promise<IntegrationStatus> {
+  const response = await apiClient.get<ApiResponse<IntegrationStatus>>(
+    '/dolibarr/status',
+  )
+  return response.data.data
+}
+
+/**
+ * Lista productos de Dolibarr con paginación.
+ *
+ * @author BenjaminDTS
+ * @param limit - Máximo de productos a retornar.
+ * @param offset - Productos a saltar para paginación.
+ * @returns Respuesta paginada de productos.
+ */
+export async function listDolibarrProducts(
+  limit?: number,
+  offset?: number,
+): Promise<PaginatedResponse<DolibarrProduct>> {
+  const params: Record<string, unknown> = {}
+  if (limit !== undefined) params.limit = limit
+  if (offset !== undefined) params.offset = offset
+
+  const response = await apiClient.get<
+    ApiResponse<PaginatedResponse<DolibarrProduct>>
+  >('/dolibarr/products', { params })
+  return response.data.data
+}
+
+/**
+ * Obtiene un producto específico de Dolibarr por ID.
+ *
+ * @author BenjaminDTS
+ * @param id - ID del producto.
+ * @returns Datos del producto.
+ */
+export async function getDolibarrProduct(id: number): Promise<DolibarrProduct> {
+  const response = await apiClient.get<ApiResponse<DolibarrProduct>>(
+    `/dolibarr/products/${id}`,
+  )
+  return response.data.data
+}
+
+/**
+ * Crea un nuevo producto en Dolibarr.
+ *
+ * @author BenjaminDTS
+ * @param data - Datos parciales del producto.
+ * @returns Producto creado.
+ */
+export async function createDolibarrProduct(
+  data: Partial<DolibarrProduct>,
+): Promise<DolibarrProduct> {
+  const response = await apiClient.post<ApiResponse<DolibarrProduct>>(
+    '/dolibarr/products',
+    data,
+  )
+  return response.data.data
+}
+
+/**
+ * Actualiza un producto existente en Dolibarr.
+ *
+ * @author BenjaminDTS
+ * @param id - ID del producto.
+ * @param data - Datos a actualizar.
+ * @returns Producto actualizado.
+ */
+export async function updateDolibarrProduct(
+  id: number,
+  data: Partial<DolibarrProduct>,
+): Promise<DolibarrProduct> {
+  const response = await apiClient.put<ApiResponse<DolibarrProduct>>(
+    `/dolibarr/products/${id}`,
+    data,
+  )
+  return response.data.data
+}
+
+/**
+ * Elimina un producto de Dolibarr.
+ *
+ * @author BenjaminDTS
+ * @param id - ID del producto.
+ */
+export async function deleteDolibarrProduct(id: number): Promise<void> {
+  await apiClient.delete(`/dolibarr/products/${id}`)
+}
+
+/**
+ * Sincroniza productos desde un job Harvist completado a Dolibarr.
+ *
+ * @author BenjaminDTS
+ * @param request - Request con job_id, códigos y flag overwrite.
+ * @returns Array de resultados por producto.
+ */
+export async function syncDolibarrFromJob(
+  request: SyncFromJobRequest,
+): Promise<
+  Array<{
+    codigo: string
+    action: string
+    dolibarr_id: number | null
+    error: string | null
+  }>
+> {
+  const response = await apiClient.post<
+    ApiResponse<
+      Array<{
+        codigo: string
+        action: string
+        dolibarr_id: number | null
+        error: string | null
+      }>
+    >
+  >('/dolibarr/products/sync', request)
+  return response.data.data
+}
+
+/**
+ * Lista terceros (clientes/proveedores) de Dolibarr.
+ *
+ * @author BenjaminDTS
+ * @param mode - 'all', 'customers' o 'suppliers'.
+ * @param limit - Máximo a retornar.
+ * @param offset - Terceros a saltar.
+ * @returns Respuesta paginada de terceros.
+ */
+export async function listDolibarrThirdparties(
+  mode?: ThirdpartyMode,
+  limit?: number,
+  offset?: number,
+): Promise<PaginatedResponse<DolibarrThirdparty>> {
+  const params: Record<string, unknown> = {}
+  if (mode) params.mode = mode
+  if (limit !== undefined) params.limit = limit
+  if (offset !== undefined) params.offset = offset
+
+  const response = await apiClient.get<
+    ApiResponse<PaginatedResponse<DolibarrThirdparty>>
+  >('/dolibarr/thirdparties', { params })
+  return response.data.data
+}
+
+/**
+ * Busca terceros por nombre.
+ *
+ * @author BenjaminDTS
+ * @param name - Nombre a buscar.
+ * @returns Array de terceros coincidentes.
+ */
+export async function searchDolibarrThirdparties(
+  name: string,
+): Promise<DolibarrThirdparty[]> {
+  const response = await apiClient.get<ApiResponse<DolibarrThirdparty[]>>(
+    '/dolibarr/thirdparties/search',
+    { params: { name } },
+  )
+  return response.data.data
+}
+
+/**
+ * Crea un nuevo tercero en Dolibarr.
+ *
+ * @author BenjaminDTS
+ * @param data - Datos del tercero.
+ * @returns Tercero creado.
+ */
+export async function createDolibarrThirdparty(
+  data: Partial<DolibarrThirdparty>,
+): Promise<DolibarrThirdparty> {
+  const response = await apiClient.post<ApiResponse<DolibarrThirdparty>>(
+    '/dolibarr/thirdparties',
+    data,
+  )
+  return response.data.data
+}
+
+/**
+ * Actualiza un tercero existente.
+ *
+ * @author BenjaminDTS
+ * @param id - ID del tercero.
+ * @param data - Datos a actualizar.
+ * @returns Tercero actualizado.
+ */
+export async function updateDolibarrThirdparty(
+  id: number,
+  data: Partial<DolibarrThirdparty>,
+): Promise<DolibarrThirdparty> {
+  const response = await apiClient.put<ApiResponse<DolibarrThirdparty>>(
+    `/dolibarr/thirdparties/${id}`,
+    data,
+  )
+  return response.data.data
+}
+
+/**
+ * Elimina un tercero de Dolibarr.
+ *
+ * @author BenjaminDTS
+ * @param id - ID del tercero.
+ */
+export async function deleteDolibarrThirdparty(id: number): Promise<void> {
+  await apiClient.delete(`/dolibarr/thirdparties/${id}`)
+}
+
+/**
+ * Lista pedidos de Dolibarr con filtros.
+ *
+ * @author BenjaminDTS
+ * @param type - 'customer' o 'supplier'.
+ * @param limit - Máximo a retornar.
+ * @param offset - Pedidos a saltar.
+ * @param status - Estado opcional a filtrar.
+ * @param thirdpartyId - ID tercero opcional a filtrar.
+ * @returns Respuesta paginada de pedidos.
+ */
+export async function listDolibarrOrders(
+  type: OrderType,
+  limit?: number,
+  offset?: number,
+  status?: number,
+  thirdpartyId?: number,
+): Promise<PaginatedResponse<DolibarrOrder>> {
+  const params: Record<string, unknown> = { type }
+  if (limit !== undefined) params.limit = limit
+  if (offset !== undefined) params.offset = offset
+  if (status !== undefined) params.status = status
+  if (thirdpartyId !== undefined) params.thirdparty_id = thirdpartyId
+
+  const response = await apiClient.get<
+    ApiResponse<PaginatedResponse<DolibarrOrder>>
+  >('/dolibarr/orders', { params })
+  return response.data.data
+}
+
+/**
+ * Lista facturas de Dolibarr con filtros.
+ *
+ * @author BenjaminDTS
+ * @param type - 'customer' o 'supplier'.
+ * @param limit - Máximo a retornar.
+ * @param offset - Facturas a saltar.
+ * @param status - Estado opcional a filtrar.
+ * @param thirdpartyId - ID tercero opcional a filtrar.
+ * @returns Respuesta paginada de facturas.
+ */
+export async function listDolibarrInvoices(
+  type: InvoiceType,
+  limit?: number,
+  offset?: number,
+  status?: number,
+  thirdpartyId?: number,
+): Promise<PaginatedResponse<DolibarrInvoice>> {
+  const params: Record<string, unknown> = { type }
+  if (limit !== undefined) params.limit = limit
+  if (offset !== undefined) params.offset = offset
+  if (status !== undefined) params.status = status
+  if (thirdpartyId !== undefined) params.thirdparty_id = thirdpartyId
+
+  const response = await apiClient.get<
+    ApiResponse<PaginatedResponse<DolibarrInvoice>>
+  >('/dolibarr/invoices', { params })
+  return response.data.data
+}
+
+/**
+ * Lista almacenes de Dolibarr.
+ *
+ * @author BenjaminDTS
+ * @returns Respuesta paginada de almacenes.
+ */
+export async function listDolibarrWarehouses(): Promise<
+  PaginatedResponse<DolibarrWarehouse>
+> {
+  const response = await apiClient.get<
+    ApiResponse<PaginatedResponse<DolibarrWarehouse>>
+  >('/dolibarr/stocks/warehouses')
+  return response.data.data
+}
+
+/**
+ * Obtiene el stock de un producto en todos los almacenes.
+ *
+ * @author BenjaminDTS
+ * @param productId - ID del producto.
+ * @returns Objeto con stock total y desglose por almacén.
+ */
+export async function getDolibarrProductStock(
+  productId: number,
+): Promise<{
+  stock_total: number
+  warehouses: Array<{ warehouse_id: number; warehouse_label: string; qty: number }>
+}> {
+  const response = await apiClient.get<
+    ApiResponse<{
+      stock_total: number
+      warehouses: Array<{
+        warehouse_id: number
+        warehouse_label: string
+        qty: number
+      }>
+    }>
+  >(`/dolibarr/stocks/products/${productId}`)
   return response.data.data
 }
