@@ -104,12 +104,12 @@ class TestGetTree:
         batch2 = [{"id": i, "label": f"Cat {i}", "fk_parent": None} for i in range(51, 101)]
         batch3 = [{"id": 101, "label": "Cat 101", "fk_parent": None}]
 
-        mock_client.list.side_effect = [batch1, batch2, batch3, []]
+        mock_client.list.side_effect = [batch1, batch2, batch3]
 
         tree = await category_service.get_tree(type="product")
 
         assert len(tree) == 101
-        assert mock_client.list.call_count == 4
+        assert mock_client.list.call_count == 3
 
     @pytest.mark.asyncio
     async def test_handles_empty_category_list(self, category_service, mock_client):

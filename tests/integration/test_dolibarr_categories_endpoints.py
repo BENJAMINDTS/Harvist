@@ -103,8 +103,8 @@ class TestListCategories:
 
             assert response.status_code == 200
             data = response.json()
-            assert "items" in data["data"]
-            assert len(data["data"]["items"]) == 2
+            assert "items" in data
+            assert len(data["items"]) == 2
 
 
 class TestGetTree:
@@ -300,4 +300,4 @@ class TestListProductsInCategory:
 
             assert response.status_code == 200
             data = response.json()
-            assert "items" in data["data"]
+            assert "items" in data
