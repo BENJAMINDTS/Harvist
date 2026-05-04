@@ -271,7 +271,9 @@ Si la validación de marcas (Fase 7.4) está activa, NO se escribe hasta confirm
 - Frontend: CsvUploader · SearchConfig · JobProgress · JobHistory · App state machine
 - `frontend/src/api/client.ts` — Axios + WebSocket builder
 - `frontend/src/hooks/useJobWebSocket.ts` — Reconexión automática backoff
-- Historial de jobs con paginación (sorted set Redis)
+- **Dashboard principal** — `DashboardHome.tsx` con 4 módulos: Harvist, Dolibarr, Odoo, WordPress
+- **Navegación contextual** — `Breadcrumb.tsx` + reorganización `App.tsx` para routing modular
+- Historial de jobs con paginación (sorted set Redis) — accesible desde cualquier módulo
 - Recuperación de jobs perdidos por crash (marcados FALLIDO al arrancar)
 - 130+ tests (unitarios + integración)
 - `.env.example` completo · `.gitignore` · `LICENSE` · `pyproject.toml`
