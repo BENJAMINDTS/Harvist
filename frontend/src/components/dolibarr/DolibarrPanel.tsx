@@ -25,19 +25,39 @@ export default function DolibarrPanel({ className = '' }: Props) {
   const [status, setStatus] = useState<IntegrationStatus | null>(null)
   const [loading, setLoading] = useState(true)
 
+  const fetchStatus = async () => {
+    try {
+      setLoading(true)
+      const st = await getDolibarrStatus()
+      setStatus(st)
+    } catch (err) {
+      console.error('Error loading Dolibarr status:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
-    ;(async () => {
-      try {
-        setLoading(true)
-        const st = await getDolibarrStatus()
-        setStatus(st)
-      } catch (err) {
-        console.error('Error loading Dolibarr status:', err)
-      } finally {
-        setLoading(false)
-      }
-    })()
+    fetchStatus()
   }, [])
+
+  useEffect(() => {
+    if (!loading && !status?.configured) {
+      setTab('config')
+    }
+  }, [status, loading])
+
+  const handleConfigSaved = async () => {
+    try {
+      const st = await getDolibarrStatus()
+      setStatus(st)
+      if (st.configured) {
+        setTab('productos')
+      }
+    } catch (err) {
+      console.error('Error reloading Dolibarr status:', err)
+    }
+  }
 
   if (!status && loading) {
     return (
@@ -49,39 +69,10 @@ export default function DolibarrPanel({ className = '' }: Props) {
     )
   }
 
-  if (!status?.configured) {
-    return (
-      <div className={`p-6 ${className}`}>
-        <div className="bg-orange-50 border-l-4 border-orange-400 p-4 rounded">
-          <div className="flex items-start">
-            <svg
-              className="h-5 w-5 text-orange-400 mt-0.5 mr-3 flex-shrink-0"
-              fill="currentColor"
-              viewBox="0 0 20 20"
-            >
-              <path
-                fillRule="evenodd"
-                d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-                clipRule="evenodd"
-              />
-            </svg>
-            <div>
-              <h3 className="text-sm font-medium text-orange-800">
-                Dolibarr no está configurado
-              </h3>
-              <p className="text-sm text-orange-700 mt-1">
-                Añade DOLIBARR_URL y DOLIBARR_API_KEY a tu archivo .env y reinicia el
-                servidor.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
+  const configured = status?.configured ?? false
 
   const healthIcon =
-    status.healthy === true ? (
+    status?.healthy === true ? (
       <svg className="h-4 w-4 text-green-500" fill="currentColor" viewBox="0 0 20 20">
         <path
           fillRule="evenodd"
@@ -89,7 +80,7 @@ export default function DolibarrPanel({ className = '' }: Props) {
           clipRule="evenodd"
         />
       </svg>
-    ) : status.healthy === false ? (
+    ) : status?.healthy === false ? (
       <svg className="h-4 w-4 text-red-500" fill="currentColor" viewBox="0 0 20 20">
         <path
           fillRule="evenodd"
@@ -109,9 +100,9 @@ export default function DolibarrPanel({ className = '' }: Props) {
     )
 
   const healthText =
-    status.healthy === true
+    status?.healthy === true
       ? 'Conectado'
-      : status.healthy === false
+      : status?.healthy === false
         ? 'Sin conexión'
         : 'Comprobando...'
 
@@ -121,10 +112,12 @@ export default function DolibarrPanel({ className = '' }: Props) {
         {/* Header con badge de estado */}
         <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
           <h2 className="text-lg font-semibold text-gray-900">Dolibarr</h2>
-          <div className="flex items-center gap-2">
-            {healthIcon}
-            <span className="text-sm text-gray-600">{healthText}</span>
-          </div>
+          {configured && (
+            <div className="flex items-center gap-2">
+              {healthIcon}
+              <span className="text-sm text-gray-600">{healthText}</span>
+            </div>
+          )}
         </div>
 
         {/* Tabs internos */}
@@ -138,19 +131,22 @@ export default function DolibarrPanel({ className = '' }: Props) {
               { id: 'stock', label: 'Stock' },
               { id: 'config', label: 'Configuración' },
             ] as Array<{ id: DolibarrTab; label: string }>
-          ).map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`px-4 py-3 text-sm font-medium transition-colors whitespace-nowrap ${
-                tab === t.id
-                  ? 'text-blue-600 border-b-2 border-blue-600'
-                  : 'text-gray-700 hover:text-gray-900'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+          ).map((t) => {
+            const disabled = !configured && t.id !== 'config'
+            return (
+              <button
+                key={t.id}
+                onClick={() => !disabled && setTab(t.id)}
+                className={`px-4 py-3 text-sm font-medium transition-colors whitespace-nowrap ${
+                  tab === t.id
+                    ? 'text-blue-600 border-b-2 border-blue-600'
+                    : 'text-gray-700 hover:text-gray-900'
+                } ${disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
+              >
+                {t.label}
+              </button>
+            )
+          })}
         </div>
 
         {/* Contenido del tab */}
@@ -160,7 +156,7 @@ export default function DolibarrPanel({ className = '' }: Props) {
           {tab === 'pedidos' && <DolibarrOrders />}
           {tab === 'facturas' && <DolibarrInvoices />}
           {tab === 'stock' && <DolibarrStocks />}
-          {tab === 'config' && <DolibarrConfig />}
+          {tab === 'config' && <DolibarrConfig onSaved={handleConfigSaved} />}
         </div>
       </div>
     </div>
