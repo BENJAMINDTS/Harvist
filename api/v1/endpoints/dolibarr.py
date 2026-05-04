@@ -44,6 +44,7 @@ from services.integrations.dolibarr.categories import DolibarrCategoryService
 from services.integrations.dolibarr.client import DolibarrClient
 from services.integrations.dolibarr.orders import DolibarrOrderService
 from services.integrations.dolibarr.products import DolibarrProductService
+from services.integrations.dolibarr.thirdparties import DolibarrThirdpartyService
 from services.storage_service import get_storage_service
 
 router = APIRouter(prefix="/dolibarr/products", tags=["dolibarr"])
@@ -585,15 +586,15 @@ async def list_products_in_category(
     )
 
 
-# ── Pedidos ──────────────────────────────────────────────────────
+# ── Terceros ─────────────────────────────────────────────────────
 
 
-orders_router = APIRouter(prefix="/dolibarr/orders", tags=["dolibarr-orders"])
+thirdparties_router = APIRouter(prefix="/dolibarr/thirdparties", tags=["dolibarr-thirdparties"])
 
 
-def _get_order_service() -> DolibarrOrderService:
+def _get_thirdparty_service() -> DolibarrThirdpartyService:
     """
-    Construye y devuelve una instancia de DolibarrOrderService.
+    Construye y devuelve una instancia de DolibarrThirdpartyService.
 
     Raises:
         HTTPException 503: si Dolibarr no está configurado.
@@ -611,37 +612,35 @@ def _get_order_service() -> DolibarrOrderService:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=_NOT_CONFIGURED_MSG,
         )
-    return DolibarrOrderService(client)
+    return DolibarrThirdpartyService(client)
 
 
-@orders_router.get("", response_model=PaginatedResponse)
-async def list_orders(
-    type: str = Query(default="customer"),
-    status: int | None = Query(default=None),
-    thirdparty_id: int | None = Query(default=None),
+@thirdparties_router.get("", response_model=PaginatedResponse)
+async def list_thirdparties(
+    mode: str = Query(default="all"),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> PaginatedResponse:
     """
-    Lista pedidos de cliente o proveedor.
+    Lista terceros de Dolibarr con paginación y filtro por modo.
 
     Args:
-        type: "customer" (pedidos de cliente) o "supplier" (pedidos de proveedor).
-        status: filtro opcional por estado del pedido.
-        thirdparty_id: filtro opcional por ID del tercero.
-        limit: máximo de pedidos por página.
+        mode:   "all" para todos, "customers" para clientes, "suppliers" para proveedores.
+        limit:  máximo de terceros por página.
         offset: desplazamiento desde el inicio.
 
     Returns:
-        PaginatedResponse con los pedidos encontrados.
+        PaginatedResponse con los terceros encontrados.
     """
-    svc = _get_order_service()
+    svc = _get_thirdparty_service()
     try:
-        items = await svc.list_orders(
-            type=type, limit=limit, offset=offset, status=status, thirdparty_id=thirdparty_id
+        items = await svc.list_thirdparties(
+            mode=mode,
+            limit=limit,
+            offset=offset,
         )
     except IntegrationError as exc:
-        logger.error("Error listando pedidos Dolibarr", exc_info=exc)
+        logger.error("Error listando terceros en Dolibarr", exc_info=exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
@@ -655,184 +654,224 @@ async def list_orders(
     )
 
 
-@orders_router.get("/{order_id}")
-async def get_order(
-    order_id: int,
-    type: str = Query(default="customer"),
-) -> dict[str, Any]:
+@thirdparties_router.get("/search")
+async def search_thirdparties(
+    name: str = Query(...),
+    limit: int = Query(default=10, ge=1, le=50),
+) -> JSONResponse:
     """
-    Obtiene un pedido por ID.
+    Busca terceros por nombre.
 
     Args:
-        order_id: ID del pedido.
-        type: "customer" o "supplier".
+        name:  nombre o fragmento a buscar.
+        limit: máximo de resultados.
 
     Returns:
-        Diccionario con datos del pedido.
+        Respuesta estándar con lista de terceros coincidentes.
     """
-    svc = _get_order_service()
+    svc = _get_thirdparty_service()
     try:
-        order = await svc.get_order(order_id, type=type)
+        items = await svc.search_thirdparty(name=name, limit=limit)
     except IntegrationError as exc:
-        if "404" in str(exc) or "not found" in str(exc).lower():
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-        logger.error("Error obteniendo pedido Dolibarr", exc_info=exc)
+        logger.error("Error buscando terceros en Dolibarr", exc_info=exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         )
-    return _ok(order)
+    return JSONResponse(content=_ok(items, f"Se encontraron {len(items)} terceros."))
 
 
-@orders_router.post("", status_code=status.HTTP_201_CREATED)
-async def create_order(
-    type: str = Query(default="customer"),
-    data: dict = None,
-) -> dict[str, Any]:
+@thirdparties_router.get("/{thirdparty_id}")
+async def get_thirdparty(thirdparty_id: int) -> JSONResponse:
     """
-    Crea un pedido.
-
-    Campos mínimos en data:
-      - socid: ID del tercero
-      - date: timestamp del pedido
+    Obtiene un tercero por ID.
 
     Args:
-        type: "customer" o "supplier".
-        data: diccionario con los datos del pedido.
+        thirdparty_id: ID del tercero en Dolibarr.
 
     Returns:
-        Diccionario con el pedido creado (incluye ID asignado).
+        Respuesta estándar con los datos del tercero.
     """
-    if not data:
-        data = {}
-    svc = _get_order_service()
+    svc = _get_thirdparty_service()
     try:
-        order = await svc.create_order(data, type=type)
+        thirdparty = await svc.get_thirdparty(thirdparty_id)
     except IntegrationError as exc:
-        logger.error("Error creando pedido Dolibarr", exc_info=exc)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        )
-    return _ok(order)
-
-
-@orders_router.post("/{order_id}/lines", status_code=status.HTTP_201_CREATED)
-async def add_order_line(
-    order_id: int,
-    type: str = Query(default="customer"),
-    data: dict = None,
-) -> dict[str, Any]:
-    """
-    Añade una línea a un pedido existente.
-
-    Campos mínimos en data:
-      - fk_product: ID del producto (o desc si no hay producto)
-      - qty: cantidad
-      - subprice: precio unitario
-
-    Args:
-        order_id: ID del pedido.
-        type: "customer" o "supplier".
-        data: diccionario con datos de la línea.
-
-    Returns:
-        Diccionario con la línea creada.
-    """
-    if not data:
-        data = {}
-    svc = _get_order_service()
-    try:
-        line = await svc.add_order_line(order_id, data, type=type)
-    except IntegrationError as exc:
-        logger.error("Error añadiendo línea a pedido Dolibarr", exc_info=exc)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        )
-    return _ok(line)
-
-
-@orders_router.patch("/{order_id}/status")
-async def update_order_status(
-    order_id: int,
-    type: str = Query(default="customer"),
-    data: dict = None,
-) -> dict[str, Any]:
-    """
-    Cambia el estado de un pedido.
-
-    Mapeo customer:
-      1 → Validado, 2 → Entregado, 3 → Cancelado
-
-    Mapeo supplier:
-      1 → Validado, 4 → Recibido, 5 → Cancelado
-
-    Args:
-        order_id: ID del pedido.
-        type: "customer" o "supplier".
-        data: diccionario con el campo "status" (int).
-
-    Returns:
-        Diccionario con el pedido actualizado.
-    """
-    if not data:
-        data = {}
-    status_value = data.get("status")
-    if status_value is None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Campo 'status' requerido en body",
-        )
-    svc = _get_order_service()
-    try:
-        order = await svc.update_order_status(order_id, status_value, type=type)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
-        )
-    except IntegrationError as exc:
-        logger.error("Error actualizando estado de pedido Dolibarr", exc_info=exc)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        )
-    return _ok(order)
-
-
-@orders_router.delete("/{order_id}")
-async def delete_order(
-    order_id: int,
-    type: str = Query(default="customer"),
-) -> dict[str, Any]:
-    """
-    Elimina un pedido en estado borrador.
-
-    Args:
-        order_id: ID del pedido.
-        type: "customer" o "supplier".
-
-    Returns:
-        Mensaje de éxito.
-    """
-    svc = _get_order_service()
-    try:
-        success = await svc.delete_order(order_id, type=type)
-        if not success:
+        if exc.status_code == 404:
             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="No se puede eliminar pedido no en estado borrador",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Tercero {thirdparty_id} no encontrado en Dolibarr.",
             )
-    except IntegrationError as exc:
-        if "409" in str(exc) or "conflict" in str(exc).lower():
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=str(exc),
-            )
-        logger.error("Error eliminando pedido Dolibarr", exc_info=exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         )
-    return _ok({"deleted": True}, message="Pedido eliminado exitosamente")
+    return JSONResponse(content=_ok(thirdparty, "Tercero obtenido."))
+
+
+@thirdparties_router.post("", status_code=status.HTTP_201_CREATED)
+async def create_thirdparty(data: dict[str, Any]) -> JSONResponse:
+    """
+    Crea un tercero en Dolibarr.
+
+    Args:
+        data: datos del tercero. Campos: name (obligatorio), client, supplier,
+              address, zip, town, country_id, phone, email, siret, tva_intra,
+              code_client, code_fournisseur.
+
+    Returns:
+        Respuesta estándar (201) con el tercero creado.
+    """
+    svc = _get_thirdparty_service()
+    try:
+        created = await svc.create_thirdparty(data)
+    except IntegrationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        )
+    return JSONResponse(
+        content=_ok(created, "Tercero creado."),
+        status_code=status.HTTP_201_CREATED,
+    )
+
+
+@thirdparties_router.put("/{thirdparty_id}")
+async def update_thirdparty(
+    thirdparty_id: int,
+    data: dict[str, Any],
+) -> JSONResponse:
+    """
+    Actualiza un tercero existente.
+
+    Args:
+        thirdparty_id: ID del tercero en Dolibarr.
+        data:          campos a actualizar.
+
+    Returns:
+        Respuesta estándar con el tercero actualizado.
+    """
+    svc = _get_thirdparty_service()
+    try:
+        updated = await svc.update_thirdparty(thirdparty_id, data)
+    except IntegrationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        )
+    return JSONResponse(content=_ok(updated, "Tercero actualizado."))
+
+
+@thirdparties_router.delete("/{thirdparty_id}")
+async def delete_thirdparty(thirdparty_id: int) -> JSONResponse:
+    """
+    Elimina un tercero de Dolibarr.
+
+    Args:
+        thirdparty_id: ID del tercero a eliminar.
+
+    Returns:
+        Respuesta estándar con confirmación de eliminación o error 409
+        si tiene registros asociados.
+    """
+    svc = _get_thirdparty_service()
+    try:
+        success = await svc.delete_thirdparty(thirdparty_id)
+    except IntegrationError as exc:
+        logger.error("Error eliminando tercero en Dolibarr", exc_info=exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        )
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "No se puede eliminar el tercero porque tiene registros "
+                "asociados en Dolibarr."
+            ),
+        )
+    return JSONResponse(content={"success": True, "message": "Tercero eliminado."})
+
+
+@thirdparties_router.get("/{thirdparty_id}/invoices", response_model=PaginatedResponse)
+async def get_thirdparty_invoices(
+    thirdparty_id: int,
+    type: str = Query(default="customer"),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> PaginatedResponse:
+    """
+    Lista facturas asociadas a un tercero.
+
+    Args:
+        thirdparty_id: ID del tercero.
+        type:          "customer" para facturas de cliente, "supplier" para proveedor.
+        limit:         máximo de facturas por página.
+        offset:        desplazamiento desde el inicio.
+
+    Returns:
+        PaginatedResponse con las facturas del tercero.
+    """
+    svc = _get_thirdparty_service()
+    try:
+        items = await svc.get_thirdparty_invoices(
+            thirdparty_id=thirdparty_id,
+            type=type,
+            limit=limit,
+            offset=offset,
+        )
+    except IntegrationError as exc:
+        logger.error("Error obteniendo facturas del tercero en Dolibarr", exc_info=exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        )
+    return PaginatedResponse(
+        items=items,
+        total=len(items),
+        limit=limit,
+        offset=offset,
+        has_more=len(items) == limit,
+    )
+
+
+@thirdparties_router.get("/{thirdparty_id}/orders", response_model=PaginatedResponse)
+async def get_thirdparty_orders(
+    thirdparty_id: int,
+    type: str = Query(default="customer"),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> PaginatedResponse:
+    """
+    Lista pedidos asociados a un tercero.
+
+    Args:
+        thirdparty_id: ID del tercero.
+        type:          "customer" para pedidos de cliente, "supplier" para proveedor.
+        limit:         máximo de pedidos por página.
+        offset:        desplazamiento desde el inicio.
+
+    Returns:
+        PaginatedResponse con los pedidos del tercero.
+    """
+    svc = _get_thirdparty_service()
+    try:
+        items = await svc.get_thirdparty_orders(
+            thirdparty_id=thirdparty_id,
+            type=type,
+            limit=limit,
+            offset=offset,
+        )
+    except IntegrationError as exc:
+        logger.error("Error obteniendo pedidos del tercero en Dolibarr", exc_info=exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        )
+    return PaginatedResponse(
+        items=items,
+        total=len(items),
+        limit=limit,
+        offset=offset,
+        has_more=len(items) == limit,
+    )
