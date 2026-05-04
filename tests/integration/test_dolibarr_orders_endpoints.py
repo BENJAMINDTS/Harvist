@@ -115,11 +115,11 @@ class TestListOrders:
 
             assert response.status_code == 200
             data = response.json()
-            assert "items" in data["data"]
-            assert "total" in data["data"]
-            assert "limit" in data["data"]
-            assert "offset" in data["data"]
-            assert "has_more" in data["data"]
+            assert "items" in data
+            assert "total" in data
+            assert "limit" in data
+            assert "offset" in data
+            assert "has_more" in data
 
     def test_list_supplier_orders_calls_correct_service_method(
         self, client: TestClient, _mock_settings_configured
