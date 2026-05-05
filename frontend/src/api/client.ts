@@ -464,10 +464,8 @@ export async function confirmPhotoSelection(
  * @returns Estado con plataforma, configuración y salud.
  */
 export async function getDolibarrStatus(): Promise<IntegrationStatus> {
-  const response = await apiClient.get<ApiResponse<IntegrationStatus>>(
-    '/dolibarr/status',
-  )
-  return response.data.data
+  const response = await apiClient.get<IntegrationStatus>('/dolibarr/status')
+  return response.data
 }
 
 /**
