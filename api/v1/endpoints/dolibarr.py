@@ -233,6 +233,13 @@ async def get_status() -> IntegrationStatus:
             healthy=None,
             message="Configuración de Dolibarr incompleta. Define URL y API Key.",
         )
+    except Exception as exc:
+        return IntegrationStatus(
+            platform="dolibarr",
+            configured=False,
+            healthy=None,
+            message=f"URL inválida: {exc}. Usa el formato http://host:puerto",
+        )
 
     try:
         is_healthy = await client.health_check()
