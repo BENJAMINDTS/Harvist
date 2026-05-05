@@ -27,6 +27,47 @@ export interface DolibarrProduct {
   price: number
   status: number
   type: number
+  barcode?: string
+  barcode_type?: string
+  tobatch?: number
+  accountancy_code_sell?: string
+  accountancy_code_sell_export?: string
+  accountancy_code_buy?: string
+  accountancy_code_buy_intra?: string
+  url?: string
+  fk_default_warehouse?: number
+  finished?: number
+  weight?: number
+  weight_units?: number
+  length?: number
+  width?: number
+  height?: number
+  length_units?: number
+  surface?: number
+  surface_units?: number
+  volume?: number
+  volume_units?: number
+  customcode?: string
+  country_id?: number
+  /** Extra/custom fields configured in this Dolibarr instance. Keys are "options_fieldname". */
+  array_options?: Record<string, unknown>
+}
+
+export type DolibarrFieldType = 'text' | 'number' | 'select' | 'boolean' | 'textarea' | 'date'
+
+export interface DolibarrFieldOption {
+  value: string
+  label: string
+}
+
+export interface DolibarrFieldSchema {
+  key: string
+  label: string
+  type: DolibarrFieldType
+  required: boolean
+  section: string
+  is_extra: boolean
+  options?: DolibarrFieldOption[] | null
 }
 
 export interface DolibarrThirdparty {

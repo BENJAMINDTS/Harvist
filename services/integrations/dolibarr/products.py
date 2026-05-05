@@ -11,6 +11,7 @@ validación, imagen, sincronización desde job Harvist.
 from __future__ import annotations
 
 import base64
+import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -24,6 +25,97 @@ if TYPE_CHECKING:
 
 _DOLIBARR_PRODUCTS_RESOURCE = "products"
 _DOLIBARR_DOCUMENTS_RESOURCE = "documents"
+
+_EXTRA_TYPE_MAP: dict[str, str] = {
+    "varchar": "text", "char": "text", "phone": "text", "mail": "text", "url": "text",
+    "int": "number", "double": "number", "price": "number",
+    "date": "date", "datetime": "date",
+    "select": "select", "radio": "select",
+    "boolean": "boolean", "chkbxlst": "boolean",
+    "text": "textarea", "html": "textarea",
+}
+
+_STANDARD_FIELDS: list[dict[str, Any]] = [
+    {"key": "ref", "label": "Referencia", "type": "text", "required": True, "section": "Identificación", "is_extra": False},
+    {"key": "label", "label": "Nombre", "type": "text", "required": True, "section": "Identificación", "is_extra": False},
+    {"key": "type", "label": "Tipo", "type": "select", "required": False, "section": "Identificación", "is_extra": False, "options": [{"value": "0", "label": "Producto"}, {"value": "1", "label": "Servicio"}]},
+    {"key": "status", "label": "Estado", "type": "select", "required": False, "section": "Identificación", "is_extra": False, "options": [{"value": "1", "label": "Activo"}, {"value": "0", "label": "Inactivo"}]},
+    {"key": "price", "label": "Precio (€)", "type": "number", "required": False, "section": "Identificación", "is_extra": False},
+    {"key": "url", "label": "URL pública", "type": "text", "required": False, "section": "Identificación", "is_extra": False},
+    {"key": "description", "label": "Descripción", "type": "textarea", "required": False, "section": "Identificación", "is_extra": False},
+    {"key": "barcode_type", "label": "Tipo de código de barras", "type": "select", "required": False, "section": "Código de barras", "is_extra": False, "options": [{"value": "", "label": "— Ninguno —"}, {"value": "EAN13", "label": "EAN-13"}, {"value": "EAN8", "label": "EAN-8"}, {"value": "UPC", "label": "UPC"}, {"value": "QR", "label": "QR"}, {"value": "ISBN", "label": "ISBN"}, {"value": "CODE128", "label": "Code 128"}]},
+    {"key": "barcode", "label": "Valor del código de barras", "type": "text", "required": False, "section": "Código de barras", "is_extra": False},
+    {"key": "tobatch", "label": "Numeración por lotes/series", "type": "select", "required": False, "section": "Lotes y series", "is_extra": False, "options": [{"value": "", "label": "No"}, {"value": "1", "label": "Por lote"}, {"value": "2", "label": "Por serie"}]},
+    {"key": "accountancy_code_sell", "label": "Código contable (ventas)", "type": "text", "required": False, "section": "Contabilidad", "is_extra": False},
+    {"key": "accountancy_code_sell_export", "label": "Código contable (ventas exportación)", "type": "text", "required": False, "section": "Contabilidad", "is_extra": False},
+    {"key": "accountancy_code_buy", "label": "Código contable (compras)", "type": "text", "required": False, "section": "Contabilidad", "is_extra": False},
+    {"key": "accountancy_code_buy_intra", "label": "Código contable (compras importación)", "type": "text", "required": False, "section": "Contabilidad", "is_extra": False},
+    {"key": "fk_default_warehouse", "label": "Almacén por defecto (ID)", "type": "number", "required": False, "section": "Logística", "is_extra": False},
+    {"key": "finished", "label": "Naturaleza del producto", "type": "select", "required": False, "section": "Logística", "is_extra": False, "options": [{"value": "", "label": "— No definido —"}, {"value": "0", "label": "Materia prima / Comprado"}, {"value": "1", "label": "Producto fabricado"}]},
+    {"key": "weight", "label": "Peso", "type": "number", "required": False, "section": "Dimensiones y peso", "is_extra": False},
+    {"key": "weight_units", "label": "Unidad peso", "type": "select", "required": False, "section": "Dimensiones y peso", "is_extra": False, "options": [{"value": "0", "label": "kg"}, {"value": "-1", "label": "g"}, {"value": "-2", "label": "mg"}, {"value": "1", "label": "t"}, {"value": "99", "label": "oz"}, {"value": "98", "label": "lb"}]},
+    {"key": "length", "label": "Longitud", "type": "number", "required": False, "section": "Dimensiones y peso", "is_extra": False},
+    {"key": "width", "label": "Ancho", "type": "number", "required": False, "section": "Dimensiones y peso", "is_extra": False},
+    {"key": "height", "label": "Alto", "type": "number", "required": False, "section": "Dimensiones y peso", "is_extra": False},
+    {"key": "length_units", "label": "Unidad longitud", "type": "select", "required": False, "section": "Dimensiones y peso", "is_extra": False, "options": [{"value": "0", "label": "m"}, {"value": "-1", "label": "dm"}, {"value": "-2", "label": "cm"}, {"value": "-3", "label": "mm"}, {"value": "99", "label": "in"}]},
+    {"key": "surface", "label": "Superficie", "type": "number", "required": False, "section": "Dimensiones y peso", "is_extra": False},
+    {"key": "surface_units", "label": "Unidad superficie", "type": "select", "required": False, "section": "Dimensiones y peso", "is_extra": False, "options": [{"value": "0", "label": "m²"}, {"value": "-1", "label": "dm²"}, {"value": "-2", "label": "cm²"}, {"value": "-3", "label": "mm²"}]},
+    {"key": "volume", "label": "Volumen", "type": "number", "required": False, "section": "Dimensiones y peso", "is_extra": False},
+    {"key": "volume_units", "label": "Unidad volumen", "type": "select", "required": False, "section": "Dimensiones y peso", "is_extra": False, "options": [{"value": "0", "label": "m³"}, {"value": "-1", "label": "dm³ (L)"}, {"value": "-2", "label": "cm³ (mL)"}, {"value": "-3", "label": "mm³"}]},
+    {"key": "customcode", "label": "Código HS", "type": "text", "required": False, "section": "Aduanas", "is_extra": False},
+    {"key": "country_id", "label": "País de origen (ID Dolibarr)", "type": "number", "required": False, "section": "Aduanas", "is_extra": False},
+]
+
+
+def _normalize_product(raw: dict[str, Any]) -> dict[str, Any]:
+    """Coerce Dolibarr string fields to their proper Python types."""
+    result: dict[str, Any] = {
+        "id": int(raw.get("id", 0) or 0),
+        "ref": raw.get("ref", "") or "",
+        "label": raw.get("label", "") or "",
+        "description": raw.get("description", "") or "",
+        "price": float(raw.get("price", 0) or 0),
+        "status": int(raw.get("status", 0) or 0),
+        "type": int(raw.get("type", 0) or 0),
+    }
+
+    raw_array_options = raw.get("array_options")
+    if isinstance(raw_array_options, dict):
+        result["array_options"] = raw_array_options
+
+    _optional_str = (
+        "barcode", "barcode_type", "url", "customcode",
+        "accountancy_code_sell", "accountancy_code_sell_export",
+        "accountancy_code_buy", "accountancy_code_buy_intra",
+    )
+    _optional_int = (
+        "tobatch", "fk_default_warehouse", "finished",
+        "weight_units", "length_units", "surface_units", "volume_units", "country_id",
+    )
+    _optional_float = ("weight", "length", "width", "height", "surface", "volume")
+
+    for key in _optional_str:
+        val = raw.get(key)
+        if val is not None:
+            result[key] = str(val) if val else ""
+
+    for key in _optional_int:
+        val = raw.get(key)
+        if val is not None and val != "":
+            try:
+                result[key] = int(val)
+            except (ValueError, TypeError):
+                pass
+
+    for key in _optional_float:
+        val = raw.get(key)
+        if val is not None and val != "":
+            try:
+                result[key] = float(val)
+            except (ValueError, TypeError):
+                pass
+
+    return result
 
 
 class DolibarrProductService:
@@ -43,6 +135,69 @@ class DolibarrProductService:
         """
         self._client = client
 
+    async def get_product_fields(self) -> list[dict[str, Any]]:
+        """
+        Devuelve el schema de campos para productos de esta instancia Dolibarr.
+
+        Combina los campos estándar (siempre presentes) con los campos extra
+        configurados en esta instancia específica vía GET /extrafields?attrname=product.
+
+        Returns:
+            Lista de dicts con key, label, type, required, section, is_extra y options.
+        """
+        fields: list[dict[str, Any]] = [dict(f) for f in _STANDARD_FIELDS]
+
+        try:
+            response = await self._client._request(
+                "GET", "extrafields", params={"attrname": "product"}
+            )
+            if response.status_code == 200:
+                raw = response.json()
+
+                extra_items: list[tuple[str, dict[str, Any]]] = []
+                if isinstance(raw, dict):
+                    for k, v in raw.items():
+                        if isinstance(v, dict):
+                            extra_items.append((k, v))
+                elif isinstance(raw, list):
+                    for item in raw:
+                        if isinstance(item, dict) and "attrname" in item:
+                            extra_items.append((str(item["attrname"]), item))
+
+                for field_key, field_def in extra_items:
+                    field_type_raw = str(field_def.get("type", "varchar"))
+                    field_type = _EXTRA_TYPE_MAP.get(field_type_raw, "text")
+
+                    options: list[dict[str, str]] = []
+                    if field_type == "select":
+                        param = field_def.get("param") or {}
+                        if isinstance(param, str):
+                            try:
+                                param = json.loads(param)
+                            except (json.JSONDecodeError, ValueError):
+                                param = {}
+                        raw_opts = param.get("options", {}) if isinstance(param, dict) else {}
+                        if isinstance(raw_opts, dict):
+                            options = [{"value": str(k), "label": str(v)} for k, v in raw_opts.items()]
+
+                    fields.append({
+                        "key": f"options_{field_key}",
+                        "label": str(field_def.get("label", field_key)),
+                        "type": field_type,
+                        "required": str(field_def.get("required", "0")) == "1",
+                        "section": "Campos personalizados",
+                        "is_extra": True,
+                        "options": options if options else None,
+                    })
+
+        except Exception as exc:
+            logger.warning(
+                "No se pudieron obtener extra fields de Dolibarr",
+                exc_info=exc,
+            )
+
+        return fields
+
     async def list_products(
         self,
         limit: int = 50,
@@ -60,12 +215,13 @@ class DolibarrProductService:
         Returns:
             Lista de dicts con los productos devueltos por Dolibarr.
         """
-        return await self._client.list(
+        raw = await self._client.list(
             _DOLIBARR_PRODUCTS_RESOURCE,
             limit=limit,
             offset=offset,
             filters=filters,
         )
+        return [_normalize_product(p) for p in raw]
 
     async def get_product(self, product_id: int) -> dict[str, Any]:
         """
@@ -80,7 +236,8 @@ class DolibarrProductService:
         Raises:
             IntegrationError: si el producto no existe o hay error de comunicación.
         """
-        return await self._client.get(_DOLIBARR_PRODUCTS_RESOURCE, product_id)
+        raw = await self._client.get(_DOLIBARR_PRODUCTS_RESOURCE, product_id)
+        return _normalize_product(raw)
 
     async def create_product(self, data: dict[str, Any]) -> dict[str, Any]:
         """
@@ -93,7 +250,8 @@ class DolibarrProductService:
         Returns:
             Dict con el producto creado, incluyendo el ID asignado por Dolibarr.
         """
-        return await self._client.create(_DOLIBARR_PRODUCTS_RESOURCE, data)
+        raw = await self._client.create(_DOLIBARR_PRODUCTS_RESOURCE, data)
+        return _normalize_product(raw) if isinstance(raw, dict) else raw
 
     async def update_product(
         self,
@@ -110,11 +268,12 @@ class DolibarrProductService:
         Returns:
             Dict con el producto actualizado.
         """
-        return await self._client.update(
+        raw = await self._client.update(
             _DOLIBARR_PRODUCTS_RESOURCE,
             product_id,
             data,
         )
+        return _normalize_product(raw) if isinstance(raw, dict) else raw
 
     async def delete_product(self, product_id: int) -> bool:
         """

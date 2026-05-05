@@ -23,6 +23,7 @@ import {
   type ThirdpartyMode,
   type OrderType,
   type InvoiceType,
+  type DolibarrFieldSchema,
 } from '@/types/dolibarr'
 
 /** Estructura estándar de respuesta de la API */
@@ -466,6 +467,20 @@ export async function confirmPhotoSelection(
 export async function getDolibarrStatus(): Promise<IntegrationStatus> {
   const response = await apiClient.get<IntegrationStatus>('/dolibarr/status')
   return response.data
+}
+
+/**
+ * Obtiene el schema dinámico de campos para productos de esta instancia Dolibarr.
+ * Incluye campos estándar y extra fields configurados.
+ *
+ * @author BenjaminDTS
+ * @returns Lista de DolibarrFieldSchema con metadata de cada campo.
+ */
+export async function getDolibarrProductFields(): Promise<DolibarrFieldSchema[]> {
+  const response = await apiClient.get<ApiResponse<DolibarrFieldSchema[]>>(
+    '/dolibarr/products/fields',
+  )
+  return response.data.data
 }
 
 /**

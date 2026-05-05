@@ -6,6 +6,7 @@ Rutas expuestas bajo /api/v1/dolibarr:
 
 Rutas expuestas bajo /api/v1/dolibarr/products:
   GET    /dolibarr/products                        — Listar productos (paginado)
+  GET    /dolibarr/products/fields                 — Schema dinámico de campos (estándar + extra)
   GET    /dolibarr/products/{product_id}           — Obtener producto por ID
   POST   /dolibarr/products                        — Crear producto
   PUT    /dolibarr/products/{product_id}           — Actualizar producto
@@ -394,6 +395,29 @@ async def list_products(
         offset=offset,
         has_more=len(items) == limit,
     ).model_dump()))
+
+
+@router_products.get("/fields")
+async def get_product_fields() -> JSONResponse:
+    """
+    Devuelve el schema de campos para productos de esta instancia Dolibarr.
+
+    Combina campos estándar con los campos extra configurados (extrafields).
+    El frontend usa este endpoint para renderizar el formulario de producto dinámicamente.
+
+    Returns:
+        Lista de DolibarrFieldSchema con key, label, type, required, section, is_extra, options.
+    """
+    svc = await _get_service_async()
+    try:
+        fields = await svc.get_product_fields()
+    except Exception as exc:
+        logger.error("Error obteniendo schema de campos Dolibarr", exc_info=exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        )
+    return JSONResponse(content=_ok(fields, "Schema de campos obtenido."))
 
 
 @router_products.get("/{product_id}")

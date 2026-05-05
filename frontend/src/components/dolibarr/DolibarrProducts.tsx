@@ -1,16 +1,26 @@
 /**
  * Módulo de gestión de productos de Dolibarr.
- * Incluye CRUD y sincronización desde job Harvist completado.
+ * El formulario de creación/edición es completamente dinámico:
+ * obtiene el schema de campos desde el endpoint /products/fields,
+ * que combina campos estándar con los extra fields configurados en esa instancia.
  *
  * @author BenjaminDTS
  */
-import { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import {
   listDolibarrProducts,
   deleteDolibarrProduct,
   syncDolibarrFromJob,
+  createDolibarrProduct,
+  updateDolibarrProduct,
+  getDolibarrProductFields,
 } from '@/api/client'
-import { type DolibarrProduct } from '@/types/dolibarr'
+import {
+  type DolibarrProduct,
+  type DolibarrFieldSchema,
+  type DolibarrFieldType,
+  type DolibarrFieldOption,
+} from '@/types/dolibarr'
 
 export default function DolibarrProducts() {
   const [products, setProducts] = useState<DolibarrProduct[]>([])
@@ -23,6 +33,8 @@ export default function DolibarrProducts() {
     has_more: false,
   })
   const [showSyncModal, setShowSyncModal] = useState(false)
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [editingProduct, setEditingProduct] = useState<DolibarrProduct | null>(null)
 
   const loadProducts = async (limit = 10, offset = 0) => {
     try {
@@ -58,9 +70,11 @@ export default function DolibarrProducts() {
 
   return (
     <div className="space-y-6">
-      {/* Header con acciones */}
       <div className="flex gap-4">
-        <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">
+        <button
+          onClick={() => setShowCreateModal(true)}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+        >
           + Nuevo producto
         </button>
         <button
@@ -71,36 +85,22 @@ export default function DolibarrProducts() {
         </button>
       </div>
 
-      {/* Mensajes de error */}
       {error && (
         <div className="bg-red-50 border-l-4 border-red-400 p-4 rounded text-sm text-red-700">
           {error}
         </div>
       )}
 
-      {/* Tabla de productos */}
       <div className="overflow-x-auto rounded-lg border border-gray-200">
         <table className="w-full">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-                Ref
-              </th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-                Nombre
-              </th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-                Precio
-              </th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-                Tipo
-              </th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-                Estado
-              </th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-                Acciones
-              </th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Ref</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Nombre</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Precio</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Tipo</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Estado</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
@@ -122,13 +122,15 @@ export default function DolibarrProducts() {
                   <td className="px-6 py-4 text-sm text-gray-900">{p.ref}</td>
                   <td className="px-6 py-4 text-sm text-gray-900">{p.label}</td>
                   <td className="px-6 py-4 text-sm text-gray-900">
-                    €{p.price.toFixed(2)}
+                    €{Number(p.price).toFixed(2)}
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-600">{p.type}</td>
+                  <td className="px-6 py-4 text-sm text-gray-600">
+                    {p.type === 0 ? 'Producto' : 'Servicio'}
+                  </td>
                   <td className="px-6 py-4 text-sm">
                     <span
                       className={`px-2 py-1 rounded text-xs font-medium ${
-                        p.status === 1
+                        Number(p.status) === 1
                           ? 'bg-green-100 text-green-800'
                           : 'bg-gray-100 text-gray-800'
                       }`}
@@ -138,7 +140,10 @@ export default function DolibarrProducts() {
                   </td>
                   <td className="px-6 py-4 text-sm">
                     <div className="flex gap-3">
-                      <button className="text-blue-600 hover:text-blue-800 text-xs font-medium">
+                      <button
+                        onClick={() => setEditingProduct(p)}
+                        className="text-blue-600 hover:text-blue-800 text-xs font-medium"
+                      >
                         Editar
                       </button>
                       <button
@@ -156,24 +161,28 @@ export default function DolibarrProducts() {
         </table>
       </div>
 
-      {/* Paginación */}
       {pagination.total > 0 && (
         <div className="flex items-center justify-between text-sm text-gray-600">
           <div>
-            {pagination.offset + 1} - {Math.min(pagination.offset + pagination.limit, pagination.total)} de{' '}
+            {pagination.offset + 1} -{' '}
+            {Math.min(pagination.offset + pagination.limit, pagination.total)} de{' '}
             {pagination.total}
           </div>
           <div className="flex gap-2">
             <button
               disabled={pagination.offset === 0}
-              onClick={() => loadProducts(pagination.limit, Math.max(0, pagination.offset - pagination.limit))}
+              onClick={() =>
+                loadProducts(pagination.limit, Math.max(0, pagination.offset - pagination.limit))
+              }
               className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
             >
               Anterior
             </button>
             <button
               disabled={!pagination.has_more}
-              onClick={() => loadProducts(pagination.limit, pagination.offset + pagination.limit)}
+              onClick={() =>
+                loadProducts(pagination.limit, pagination.offset + pagination.limit)
+              }
               className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
             >
               Siguiente
@@ -182,7 +191,27 @@ export default function DolibarrProducts() {
         </div>
       )}
 
-      {/* Modal de sincronización */}
+      {showCreateModal && (
+        <CreateProductModal
+          onClose={() => setShowCreateModal(false)}
+          onSuccess={() => {
+            setShowCreateModal(false)
+            loadProducts(pagination.limit, pagination.offset)
+          }}
+        />
+      )}
+
+      {editingProduct && (
+        <EditProductModal
+          product={editingProduct}
+          onClose={() => setEditingProduct(null)}
+          onSuccess={() => {
+            setEditingProduct(null)
+            loadProducts(pagination.limit, pagination.offset)
+          }}
+        />
+      )}
+
       {showSyncModal && (
         <SyncFromJobModal
           onClose={() => setShowSyncModal(false)}
@@ -195,6 +224,400 @@ export default function DolibarrProducts() {
     </div>
   )
 }
+
+// ── Dynamic form helpers ─────────────────────────────────────────────────
+
+const INPUT_CLS =
+  'w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm'
+const LABEL_CLS = 'block text-xs font-medium text-gray-700 mb-1'
+const SECTION_CLS = 'border border-gray-100 rounded-lg p-4 space-y-3'
+const SECTION_TITLE_CLS = 'text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3'
+
+function renderFieldInput(
+  field: DolibarrFieldSchema,
+  value: string,
+  onChange: (v: string) => void,
+): React.ReactElement {
+  switch (field.type as DolibarrFieldType) {
+    case 'textarea':
+      return (
+        <textarea
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          rows={3}
+          className={INPUT_CLS}
+        />
+      )
+    case 'select': {
+      const opts: DolibarrFieldOption[] = field.options ?? []
+      return (
+        <select value={value} onChange={(e) => onChange(e.target.value)} className={INPUT_CLS}>
+          {!field.required && <option value="">— Sin valor —</option>}
+          {opts.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      )
+    }
+    case 'boolean':
+      return (
+        <select value={value} onChange={(e) => onChange(e.target.value)} className={INPUT_CLS}>
+          <option value="0">No</option>
+          <option value="1">Sí</option>
+        </select>
+      )
+    case 'number':
+      return (
+        <input
+          type="number"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className={INPUT_CLS}
+          step="any"
+        />
+      )
+    case 'date':
+      return (
+        <input
+          type="date"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className={INPUT_CLS}
+        />
+      )
+    default:
+      return (
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className={INPUT_CLS}
+        />
+      )
+  }
+}
+
+/** Coerce form string values to appropriate types for the API payload. */
+function buildPayload(
+  values: Record<string, string>,
+  fields: DolibarrFieldSchema[],
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {}
+  const arrayOptions: Record<string, unknown> = {}
+
+  for (const field of fields) {
+    const raw = values[field.key]
+    if (raw === undefined || raw === null || raw === '') continue
+
+    let coerced: unknown = raw
+    if (field.type === 'number') {
+      const n = parseFloat(raw)
+      if (isNaN(n)) continue
+      coerced = n
+    }
+
+    if (field.is_extra) {
+      arrayOptions[field.key] = coerced
+    } else {
+      payload[field.key] = coerced
+    }
+  }
+
+  if (Object.keys(arrayOptions).length > 0) {
+    payload.array_options = arrayOptions
+  }
+
+  return payload
+}
+
+/** Build initial form values from an existing product + field schema. */
+function initFromProduct(
+  product: DolibarrProduct,
+  fields: DolibarrFieldSchema[],
+): Record<string, string> {
+  const productAny = product as unknown as Record<string, unknown>
+  const values: Record<string, string> = {}
+
+  for (const field of fields) {
+    if (field.is_extra) {
+      const extraVal = product.array_options?.[field.key]
+      values[field.key] = extraVal != null ? String(extraVal) : ''
+    } else {
+      const val = productAny[field.key]
+      values[field.key] = val != null ? String(val) : ''
+    }
+  }
+
+  return values
+}
+
+/** Build empty initial form values with sensible defaults. */
+function initEmpty(fields: DolibarrFieldSchema[]): Record<string, string> {
+  const defaults: Record<string, string> = {
+    status: '1',
+    type: '0',
+    weight_units: '0',
+    length_units: '0',
+    surface_units: '0',
+    volume_units: '0',
+  }
+  const values: Record<string, string> = {}
+
+  for (const field of fields) {
+    if (defaults[field.key] !== undefined) {
+      values[field.key] = defaults[field.key]
+    } else if (
+      field.type === 'select' &&
+      field.options &&
+      field.options.length > 0 &&
+      !field.is_extra
+    ) {
+      values[field.key] = field.options[0].value
+    } else {
+      values[field.key] = ''
+    }
+  }
+
+  return values
+}
+
+// ── Dynamic form component ───────────────────────────────────────────────
+
+interface DynamicProductFormProps {
+  fields: DolibarrFieldSchema[]
+  values: Record<string, string>
+  onChange: (key: string, value: string) => void
+}
+
+function DynamicProductForm({ fields, values, onChange }: DynamicProductFormProps) {
+  const sections = useMemo(() => {
+    const map = new Map<string, DolibarrFieldSchema[]>()
+    for (const f of fields) {
+      const existing = map.get(f.section) ?? []
+      map.set(f.section, [...existing, f])
+    }
+    return map
+  }, [fields])
+
+  return (
+    <div className="space-y-4">
+      {Array.from(sections.entries()).map(([section, sectionFields]) => (
+        <div key={section} className={SECTION_CLS}>
+          <p className={SECTION_TITLE_CLS}>
+            {section}
+            {section === 'Campos personalizados' && (
+              <span className="ml-2 normal-case text-purple-500 font-normal">
+                (extra fields de esta instancia)
+              </span>
+            )}
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            {sectionFields.map((field) => (
+              <div
+                key={field.key}
+                className={field.type === 'textarea' ? 'col-span-2' : ''}
+              >
+                <label className={LABEL_CLS}>
+                  {field.label}
+                  {field.required && <span className="text-red-500 ml-1">*</span>}
+                </label>
+                {renderFieldInput(field, values[field.key] ?? '', (v) =>
+                  onChange(field.key, v),
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Create modal ─────────────────────────────────────────────────────────
+
+interface CreateProductModalProps {
+  onClose: () => void
+  onSuccess: () => void
+}
+
+function CreateProductModal({ onClose, onSuccess }: CreateProductModalProps) {
+  const [fields, setFields] = useState<DolibarrFieldSchema[]>([])
+  const [fieldsLoading, setFieldsLoading] = useState(true)
+  const [values, setValues] = useState<Record<string, string>>({})
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    getDolibarrProductFields()
+      .then((f) => {
+        setFields(f)
+        setValues(initEmpty(f))
+      })
+      .catch((err) => setError((err as Error).message ?? 'Error cargando campos'))
+      .finally(() => setFieldsLoading(false))
+  }, [])
+
+  const handleChange = (key: string, value: string) =>
+    setValues((prev) => ({ ...prev, [key]: value }))
+
+  const handleSubmit = async () => {
+    if (!values.ref || !values.label) {
+      setError('Referencia y nombre son obligatorios')
+      return
+    }
+    try {
+      setSubmitting(true)
+      setError(null)
+      await createDolibarrProduct(buildPayload(values, fields) as Partial<DolibarrProduct>)
+      onSuccess()
+    } catch (err) {
+      setError((err as Error).message ?? 'Error creando producto')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-gray-900">Nuevo producto</h3>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+          >
+            &times;
+          </button>
+        </div>
+        <div className="overflow-y-auto flex-1 px-6 py-4">
+          {fieldsLoading ? (
+            <div className="flex items-center justify-center py-12 text-gray-500 text-sm">
+              Cargando campos de esta instancia Dolibarr...
+            </div>
+          ) : (
+            <DynamicProductForm fields={fields} values={values} onChange={handleChange} />
+          )}
+        </div>
+        <div className="px-6 py-4 border-t border-gray-200 space-y-3">
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <div className="flex gap-3">
+            <button
+              onClick={onClose}
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={submitting || fieldsLoading}
+              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
+            >
+              {submitting ? 'Creando...' : 'Crear producto'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Edit modal ───────────────────────────────────────────────────────────
+
+interface EditProductModalProps {
+  product: DolibarrProduct
+  onClose: () => void
+  onSuccess: () => void
+}
+
+function EditProductModal({ product, onClose, onSuccess }: EditProductModalProps) {
+  const [fields, setFields] = useState<DolibarrFieldSchema[]>([])
+  const [fieldsLoading, setFieldsLoading] = useState(true)
+  const [values, setValues] = useState<Record<string, string>>({})
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    getDolibarrProductFields()
+      .then((f) => {
+        setFields(f)
+        setValues(initFromProduct(product, f))
+      })
+      .catch((err) => setError((err as Error).message ?? 'Error cargando campos'))
+      .finally(() => setFieldsLoading(false))
+  }, [product])
+
+  const handleChange = (key: string, value: string) =>
+    setValues((prev) => ({ ...prev, [key]: value }))
+
+  const handleSubmit = async () => {
+    if (!values.ref || !values.label) {
+      setError('Referencia y nombre son obligatorios')
+      return
+    }
+    try {
+      setSubmitting(true)
+      setError(null)
+      await updateDolibarrProduct(
+        product.id,
+        buildPayload(values, fields) as Partial<DolibarrProduct>,
+      )
+      onSuccess()
+    } catch (err) {
+      setError((err as Error).message ?? 'Error actualizando producto')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-gray-900">
+            Editar producto — {product.ref}
+          </h3>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+          >
+            &times;
+          </button>
+        </div>
+        <div className="overflow-y-auto flex-1 px-6 py-4">
+          {fieldsLoading ? (
+            <div className="flex items-center justify-center py-12 text-gray-500 text-sm">
+              Cargando campos de esta instancia Dolibarr...
+            </div>
+          ) : (
+            <DynamicProductForm fields={fields} values={values} onChange={handleChange} />
+          )}
+        </div>
+        <div className="px-6 py-4 border-t border-gray-200 space-y-3">
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <div className="flex gap-3">
+            <button
+              onClick={onClose}
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={submitting || fieldsLoading}
+              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
+            >
+              {submitting ? 'Guardando...' : 'Guardar cambios'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Sync modal (unchanged) ───────────────────────────────────────────────
 
 interface SyncModalProps {
   onClose: () => void
@@ -216,7 +639,6 @@ function SyncFromJobModal({ onClose, onSuccess }: SyncModalProps) {
       alert('Selecciona un job')
       return
     }
-
     try {
       setLoading(true)
       const results = await syncDolibarrFromJob({
@@ -224,12 +646,11 @@ function SyncFromJobModal({ onClose, onSuccess }: SyncModalProps) {
         product_codes: [],
         overwrite,
       })
-
-      const created = results.filter((r) => r.action === 'created').length
-      const updated = results.filter((r) => r.action === 'updated').length
-      const omitted = results.filter((r) => r.error !== null).length
-
-      setResult({ created, updated, omitted })
+      setResult({
+        created: results.filter((r) => r.action === 'created').length,
+        updated: results.filter((r) => r.action === 'updated').length,
+        omitted: results.filter((r) => r.error !== null).length,
+      })
     } catch (err) {
       alert(`Error: ${(err as Error).message}`)
     } finally {
@@ -240,16 +661,12 @@ function SyncFromJobModal({ onClose, onSuccess }: SyncModalProps) {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-lg max-w-md w-full mx-4 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          Sincronizar desde job
-        </h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Sincronizar desde job</h3>
 
         {!result ? (
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                ID del job
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">ID del job</label>
               <input
                 type="text"
                 value={jobId}
@@ -264,9 +681,7 @@ function SyncFromJobModal({ onClose, onSuccess }: SyncModalProps) {
                 checked={overwrite}
                 onChange={(e) => setOverwrite(e.target.checked)}
               />
-              <span className="text-sm text-gray-700">
-                Sobreescribir productos existentes
-              </span>
+              <span className="text-sm text-gray-700">Sobreescribir productos existentes</span>
             </label>
             <div className="flex gap-3 pt-4">
               <button
@@ -288,8 +703,9 @@ function SyncFromJobModal({ onClose, onSuccess }: SyncModalProps) {
           <div className="space-y-4">
             <div className="bg-green-50 border border-green-200 rounded p-4">
               <p className="text-sm text-green-800">
-                <strong>{result.created}</strong> creados · <strong>{result.updated}</strong>{' '}
-                actualizados · <strong>{result.omitted}</strong> omitidos
+                <strong>{result.created}</strong> creados ·{' '}
+                <strong>{result.updated}</strong> actualizados ·{' '}
+                <strong>{result.omitted}</strong> omitidos
               </p>
             </div>
             <button
