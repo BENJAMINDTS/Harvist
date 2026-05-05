@@ -353,11 +353,11 @@ async def save_config(request: DolibarrConfigRequest) -> DolibarrConfigResponse:
 # ── Productos ────────────────────────────────────────────────────────────
 
 
-@router_products.get("", response_model=PaginatedResponse)
+@router_products.get("")
 async def list_products(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-) -> PaginatedResponse:
+) -> JSONResponse:
     """
     Lista productos de Dolibarr con paginación.
 
@@ -387,13 +387,13 @@ async def list_products(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         )
-    return PaginatedResponse(
+    return JSONResponse(content=_ok(PaginatedResponse(
         items=items,
         total=len(items),
         limit=limit,
         offset=offset,
         has_more=len(items) == limit,
-    )
+    ).model_dump()))
 
 
 @router_products.get("/{product_id}")
@@ -607,12 +607,12 @@ async def _get_category_service() -> DolibarrCategoryService:
     return DolibarrCategoryService(client)
 
 
-@categories_router.get("", response_model=PaginatedResponse)
+@categories_router.get("")
 async def list_categories(
     type: str = Query(default="product"),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-) -> PaginatedResponse:
+) -> JSONResponse:
     """
     Lista categorías de Dolibarr con paginación.
 
@@ -633,13 +633,13 @@ async def list_categories(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         )
-    return PaginatedResponse(
+    return JSONResponse(content=_ok(PaginatedResponse(
         items=items,
         total=len(items),
         limit=limit,
         offset=offset,
         has_more=len(items) == limit,
-    )
+    ).model_dump()))
 
 
 @categories_router.get("/tree")
@@ -823,12 +823,12 @@ async def remove_product(category_id: int, product_id: int) -> JSONResponse:
     return JSONResponse(content={"success": True, "message": "Producto eliminado de categoría."})
 
 
-@categories_router.get("/{category_id}/products", response_model=PaginatedResponse)
+@categories_router.get("/{category_id}/products")
 async def list_products_in_category(
     category_id: int,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-) -> PaginatedResponse:
+) -> JSONResponse:
     """
     Lista productos asignados a una categoría.
 
@@ -853,13 +853,13 @@ async def list_products_in_category(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         )
-    return PaginatedResponse(
+    return JSONResponse(content=_ok(PaginatedResponse(
         items=items,
         total=len(items),
         limit=limit,
         offset=offset,
         has_more=len(items) == limit,
-    )
+    ).model_dump()))
 
 
 # ── Terceros ─────────────────────────────────────────────────────
@@ -891,12 +891,12 @@ def _get_thirdparty_service() -> DolibarrThirdpartyService:
     return DolibarrThirdpartyService(client)
 
 
-@thirdparties_router.get("", response_model=PaginatedResponse)
+@thirdparties_router.get("")
 async def list_thirdparties(
     mode: str = Query(default="all"),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-) -> PaginatedResponse:
+) -> JSONResponse:
     """
     Lista terceros de Dolibarr con paginación y filtro por modo.
 
@@ -921,13 +921,13 @@ async def list_thirdparties(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         )
-    return PaginatedResponse(
+    return JSONResponse(content=_ok(PaginatedResponse(
         items=items,
         total=len(items),
         limit=limit,
         offset=offset,
         has_more=len(items) == limit,
-    )
+    ).model_dump()))
 
 
 @thirdparties_router.get("/search")
@@ -1069,13 +1069,13 @@ async def delete_thirdparty(thirdparty_id: int) -> JSONResponse:
     return JSONResponse(content={"success": True, "message": "Tercero eliminado."})
 
 
-@thirdparties_router.get("/{thirdparty_id}/invoices", response_model=PaginatedResponse)
+@thirdparties_router.get("/{thirdparty_id}/invoices")
 async def get_thirdparty_invoices(
     thirdparty_id: int,
     type: str = Query(default="customer"),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-) -> PaginatedResponse:
+) -> JSONResponse:
     """
     Lista facturas asociadas a un tercero.
 
@@ -1102,22 +1102,22 @@ async def get_thirdparty_invoices(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         )
-    return PaginatedResponse(
+    return JSONResponse(content=_ok(PaginatedResponse(
         items=items,
         total=len(items),
         limit=limit,
         offset=offset,
         has_more=len(items) == limit,
-    )
+    ).model_dump()))
 
 
-@thirdparties_router.get("/{thirdparty_id}/orders", response_model=PaginatedResponse)
+@thirdparties_router.get("/{thirdparty_id}/orders")
 async def get_thirdparty_orders(
     thirdparty_id: int,
     type: str = Query(default="customer"),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-) -> PaginatedResponse:
+) -> JSONResponse:
     """
     Lista pedidos asociados a un tercero.
 
@@ -1144,13 +1144,13 @@ async def get_thirdparty_orders(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         )
-    return PaginatedResponse(
+    return JSONResponse(content=_ok(PaginatedResponse(
         items=items,
         total=len(items),
         limit=limit,
         offset=offset,
         has_more=len(items) == limit,
-    )
+    ).model_dump()))
 
 
 # ── Pedidos ──────────────────────────────────────────────────────
@@ -1179,14 +1179,14 @@ async def _get_order_service() -> DolibarrOrderService:
     return DolibarrOrderService(client)
 
 
-@orders_router.get("", response_model=PaginatedResponse)
+@orders_router.get("")
 async def list_orders(
     type: str = Query(default="customer"),
     status: int | None = Query(default=None),
     thirdparty_id: int | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-) -> PaginatedResponse:
+) -> JSONResponse:
     """
     Lista pedidos de cliente o proveedor.
 
@@ -1211,13 +1211,13 @@ async def list_orders(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         )
-    return PaginatedResponse(
+    return JSONResponse(content=_ok(PaginatedResponse(
         items=items,
         total=len(items),
         limit=limit,
         offset=offset,
         has_more=len(items) == limit,
-    )
+    ).model_dump()))
 
 
 @orders_router.get("/{order_id}")
@@ -1426,14 +1426,14 @@ async def _get_invoice_service() -> DolibarrInvoiceService:
     return DolibarrInvoiceService(client)
 
 
-@invoices_router.get("", response_model=PaginatedResponse)
+@invoices_router.get("")
 async def list_invoices(
     type: str = Query(default="customer"),
     status: int | None = Query(default=None),
     thirdparty_id: int | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-) -> PaginatedResponse:
+) -> JSONResponse:
     """
     Lista facturas de cliente o proveedor.
 
@@ -1458,13 +1458,13 @@ async def list_invoices(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         )
-    return PaginatedResponse(
+    return JSONResponse(content=_ok(PaginatedResponse(
         items=items,
         total=len(items),
         limit=limit,
         offset=offset,
         has_more=len(items) == limit,
-    )
+    ).model_dump()))
 
 
 @invoices_router.get("/{invoice_id}")
@@ -1771,11 +1771,11 @@ async def _get_stock_service() -> DolibarrStockService:
     return DolibarrStockService(client)
 
 
-@stocks_router.get("/warehouses", response_model=PaginatedResponse)
+@stocks_router.get("/warehouses")
 async def list_warehouses(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-) -> PaginatedResponse:
+) -> JSONResponse:
     """
     Lista almacenes de Dolibarr con paginación.
 
@@ -1795,13 +1795,13 @@ async def list_warehouses(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         )
-    return PaginatedResponse(
+    return JSONResponse(content=_ok(PaginatedResponse(
         items=items,
         total=len(items),
         limit=limit,
         offset=offset,
         has_more=len(items) == limit,
-    )
+    ).model_dump()))
 
 
 @stocks_router.get("/warehouses/{warehouse_id}")
@@ -1858,13 +1858,13 @@ async def get_product_stock(product_id: int) -> JSONResponse:
     return JSONResponse(content=_ok(stock_info, "Stock de producto obtenido."))
 
 
-@stocks_router.get("/movements", response_model=PaginatedResponse)
+@stocks_router.get("/movements")
 async def list_movements(
     product_id: int | None = Query(default=None),
     warehouse_id: int | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-) -> PaginatedResponse:
+) -> JSONResponse:
     """
     Lista movimientos de stock con filtros opcionales.
 
@@ -1891,13 +1891,13 @@ async def list_movements(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         )
-    return PaginatedResponse(
+    return JSONResponse(content=_ok(PaginatedResponse(
         items=items,
         total=len(items),
         limit=limit,
         offset=offset,
         has_more=len(items) == limit,
-    )
+    ).model_dump()))
 
 
 @stocks_router.post("/movements", status_code=status.HTTP_201_CREATED)
