@@ -69,7 +69,7 @@ export default function OdooConfig({ onSaved, status }: Props) {
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">URL</label>
           <input
-            type="url"
+            type="text"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             placeholder="http://localhost:8069"

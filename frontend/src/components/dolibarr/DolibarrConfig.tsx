@@ -161,7 +161,7 @@ export default function DolibarrConfig({ className = '', onSaved }: Props) {
             <div>
               <label className={LABEL_CLS}>URL de Dolibarr</label>
               <input
-                type="url"
+                type="text"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 placeholder="https://mi-dolibarr.com"
