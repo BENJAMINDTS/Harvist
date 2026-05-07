@@ -24,8 +24,6 @@ interface JobProgressProps {
   tipoJob: TipoJob
   /** Llamado cuando el job alcanza un estado terminal (completado o fallido) */
   onFinished: () => void
-  /** Llamado cuando el usuario pulsa "Nuevo trabajo" */
-  onReset: () => void
   /**
    * Llamado cuando el usuario pulsa "Reanudar" en un job cancelado o fallido.
    * Si no se proporciona, el botón no se muestra.
@@ -200,7 +198,6 @@ export const JobProgress: React.FC<JobProgressProps> = ({
   jobId,
   tipoJob,
   onFinished,
-  onReset,
   onResume,
 }) => {
   const { progress, wsStatus, isFinished } = useJobWebSocket(jobId)
@@ -451,13 +448,6 @@ export const JobProgress: React.FC<JobProgressProps> = ({
               Reanudar
             </button>
           )}
-          <button
-            type="button"
-            onClick={onReset}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-5 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-300 shadow-sm transition-colors hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-          >
-            Nuevo trabajo
-          </button>
         </div>
       )}
     </section>

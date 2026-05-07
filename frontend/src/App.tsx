@@ -366,7 +366,7 @@ const App: React.FC = () => {
             <nav className="flex gap-2 flex-shrink-0">
               <button
                 type="button"
-                onClick={() => setTab('nuevo')}
+                onClick={handleReset}
                 className={`px-4 py-1.5 text-sm font-medium rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
                   tab === 'nuevo'
                     ? 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-950 dark:text-blue-400'
@@ -461,7 +461,6 @@ const App: React.FC = () => {
                 jobId={jobId}
                 tipoJob={tipoJob}
                 onFinished={handleJobFinished}
-                onReset={handleReset}
                 onResume={resumeLoading ? undefined : handleResume}
               />
             )}
