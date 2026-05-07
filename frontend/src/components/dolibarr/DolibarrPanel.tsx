@@ -13,8 +13,9 @@ import DolibarrOrders from './DolibarrOrders'
 import DolibarrInvoices from './DolibarrInvoices'
 import DolibarrStocks from './DolibarrStocks'
 import DolibarrConfig from './DolibarrConfig'
+import DolibarrExtraFields from './DolibarrExtraFields'
 
-type DolibarrTab = 'productos' | 'terceros' | 'pedidos' | 'facturas' | 'stock' | 'config'
+type DolibarrTab = 'productos' | 'terceros' | 'pedidos' | 'facturas' | 'stock' | 'campos-extra' | 'config'
 
 interface Props {
   className?: string
@@ -129,6 +130,7 @@ export default function DolibarrPanel({ className = '' }: Props) {
               { id: 'pedidos', label: 'Pedidos' },
               { id: 'facturas', label: 'Facturas' },
               { id: 'stock', label: 'Stock' },
+              { id: 'campos-extra', label: 'Campos extra' },
               { id: 'config', label: 'Configuración' },
             ] as Array<{ id: DolibarrTab; label: string }>
           ).map((t) => {
@@ -156,6 +158,7 @@ export default function DolibarrPanel({ className = '' }: Props) {
           {tab === 'pedidos' && <DolibarrOrders />}
           {tab === 'facturas' && <DolibarrInvoices />}
           {tab === 'stock' && <DolibarrStocks />}
+          {tab === 'campos-extra' && <DolibarrExtraFields />}
           {tab === 'config' && <DolibarrConfig onSaved={handleConfigSaved} />}
         </div>
       </div>
