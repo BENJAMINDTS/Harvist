@@ -149,6 +149,7 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
           onClick={onSelectWordpress}
         />
       </div>
+
     </div>
   )
 }

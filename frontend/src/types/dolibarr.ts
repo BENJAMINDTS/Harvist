@@ -118,6 +118,22 @@ export type ThirdpartyMode = 'all' | 'customers' | 'suppliers'
 export type OrderType = 'customer' | 'supplier'
 export type InvoiceType = 'customer' | 'supplier'
 
+export interface DolibarrStats {
+  configured: boolean
+  thirdparties: {
+    total: number
+    customers: number
+    suppliers: number
+    has_more: boolean
+  } | null
+  invoices: {
+    customer: number
+    supplier: number
+    has_more_customer: boolean
+    has_more_supplier: boolean
+  } | null
+}
+
 export interface DolibarrDBConfig {
   host: string
   port: number

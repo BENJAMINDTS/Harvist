@@ -60,8 +60,14 @@ export default function DolibarrOrders() {
     return statusMap[status] ?? `Estado ${status}`
   }
 
-  const formatDate = (timestamp: number): string => {
-    return new Date(timestamp * 1000).toLocaleDateString('es-ES')
+  const formatDate = (timestamp: number | string | null | undefined): string => {
+    if (!timestamp) return '—'
+    return new Date(Number(timestamp) * 1000).toLocaleDateString('es-ES')
+  }
+
+  const formatAmount = (value: number | string | null | undefined): string => {
+    if (value === null || value === undefined) return '—'
+    return `€${parseFloat(String(value)).toFixed(2)}`
   }
 
   return (
@@ -139,7 +145,7 @@ export default function DolibarrOrders() {
                     </span>
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-900">
-                    €{o.total_ttc.toFixed(2)}
+                    {formatAmount(o.total_ttc)}
                   </td>
                 </tr>
               ))
