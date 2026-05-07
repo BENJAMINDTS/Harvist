@@ -11,6 +11,8 @@ validación, imagen, sincronización desde job Harvist.
 from __future__ import annotations
 
 import base64
+import csv
+import io
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -65,6 +67,30 @@ _STANDARD_FIELDS: list[dict[str, Any]] = [
     {"key": "customcode", "label": "Código HS", "type": "text", "required": False, "section": "Aduanas", "is_extra": False},
     {"key": "country_id", "label": "País de origen (ID Dolibarr)", "type": "number", "required": False, "section": "Aduanas", "is_extra": False},
 ]
+
+
+def _decode_csv(content: bytes) -> str:
+    """Decodifica bytes CSV intentando UTF-8 y latin-1 como fallback."""
+    try:
+        return content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return content.decode("latin-1")
+
+
+def _detect_delimiter(text: str) -> str:
+    """Detecta el delimitador CSV priorizando ; y , sobre tabulador y pipe.
+
+    Usa csv.Sniffer primero; si falla cuenta ocurrencias en la primera línea.
+    """
+    sample = text[:4096]
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+        return dialect.delimiter
+    except csv.Error:
+        first_line = sample.split("\n")[0]
+        counts = {d: first_line.count(d) for d in (";", ",", "\t", "|")}
+        best = max(counts, key=lambda d: counts[d])
+        return best if counts[best] > 0 else ","
 
 
 def _normalize_product(raw: dict[str, Any]) -> dict[str, Any]:
@@ -135,66 +161,79 @@ class DolibarrProductService:
         """
         self._client = client
 
-    async def get_product_fields(self) -> list[dict[str, Any]]:
+    async def get_product_fields(
+        self,
+        pre_fetched_extras: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
         """
         Devuelve el schema de campos para productos de esta instancia Dolibarr.
 
-        Combina los campos estándar (siempre presentes) con los campos extra
-        configurados en esta instancia específica vía GET /extrafields?attrname=product.
+        Combina los campos estándar con los campos extra. Si se proveen
+        ``pre_fetched_extras`` (ya normalizados por DolibarrExtraFieldService),
+        se usan directamente en vez de llamar a la REST API. Esto permite que
+        el endpoint use el fallback de BD sin duplicar la lógica aquí.
+
+        Args:
+            pre_fetched_extras: lista de extrafields ya normalizados, con las
+                claves ``attrname``, ``label``, ``type``, ``required`` y ``param``.
+                Si es None, se consulta la REST API de Dolibarr directamente.
 
         Returns:
             Lista de dicts con key, label, type, required, section, is_extra y options.
         """
         fields: list[dict[str, Any]] = [dict(f) for f in _STANDARD_FIELDS]
 
-        try:
-            response = await self._client._request(
-                "GET", "extrafields", params={"attrname": "product"}
-            )
-            if response.status_code == 200:
-                raw = response.json()
+        if pre_fetched_extras is not None:
+            extra_items = [
+                (str(ef.get("attrname", "")), ef)
+                for ef in pre_fetched_extras
+                if ef.get("attrname")
+            ]
+        else:
+            try:
+                response = await self._client._request(
+                    "GET", "extrafields", params={"attrname": "product"}
+                )
+                extra_items = []
+                if response.status_code == 200:
+                    raw = response.json()
+                    if isinstance(raw, dict):
+                        extra_items = [(k, v) for k, v in raw.items() if isinstance(v, dict)]
+                    elif isinstance(raw, list):
+                        extra_items = [
+                            (str(item["attrname"]), item)
+                            for item in raw
+                            if isinstance(item, dict) and "attrname" in item
+                        ]
+            except Exception as exc:
+                logger.warning("No se pudieron obtener extra fields de Dolibarr", exc_info=exc)
+                extra_items = []
 
-                extra_items: list[tuple[str, dict[str, Any]]] = []
-                if isinstance(raw, dict):
-                    for k, v in raw.items():
-                        if isinstance(v, dict):
-                            extra_items.append((k, v))
-                elif isinstance(raw, list):
-                    for item in raw:
-                        if isinstance(item, dict) and "attrname" in item:
-                            extra_items.append((str(item["attrname"]), item))
+        for field_key, field_def in extra_items:
+            field_type_raw = str(field_def.get("type", "varchar"))
+            field_type = _EXTRA_TYPE_MAP.get(field_type_raw, "text")
 
-                for field_key, field_def in extra_items:
-                    field_type_raw = str(field_def.get("type", "varchar"))
-                    field_type = _EXTRA_TYPE_MAP.get(field_type_raw, "text")
+            options: list[dict[str, str]] = []
+            if field_type == "select":
+                param = field_def.get("param") or {}
+                if isinstance(param, str):
+                    try:
+                        param = json.loads(param)
+                    except (json.JSONDecodeError, ValueError):
+                        param = {}
+                raw_opts = param.get("options", {}) if isinstance(param, dict) else {}
+                if isinstance(raw_opts, dict):
+                    options = [{"value": str(k), "label": str(v)} for k, v in raw_opts.items()]
 
-                    options: list[dict[str, str]] = []
-                    if field_type == "select":
-                        param = field_def.get("param") or {}
-                        if isinstance(param, str):
-                            try:
-                                param = json.loads(param)
-                            except (json.JSONDecodeError, ValueError):
-                                param = {}
-                        raw_opts = param.get("options", {}) if isinstance(param, dict) else {}
-                        if isinstance(raw_opts, dict):
-                            options = [{"value": str(k), "label": str(v)} for k, v in raw_opts.items()]
-
-                    fields.append({
-                        "key": f"options_{field_key}",
-                        "label": str(field_def.get("label", field_key)),
-                        "type": field_type,
-                        "required": str(field_def.get("required", "0")) == "1",
-                        "section": "Campos personalizados",
-                        "is_extra": True,
-                        "options": options if options else None,
-                    })
-
-        except Exception as exc:
-            logger.warning(
-                "No se pudieron obtener extra fields de Dolibarr",
-                exc_info=exc,
-            )
+            fields.append({
+                "key": f"options_{field_key}",
+                "label": str(field_def.get("label", field_key)),
+                "type": field_type,
+                "required": field_def.get("required", False) if isinstance(field_def.get("required"), bool) else str(field_def.get("required", "0")) == "1",
+                "section": "Campos personalizados",
+                "is_extra": True,
+                "options": options if options else None,
+            })
 
         return fields
 
@@ -243,15 +282,55 @@ class DolibarrProductService:
         """
         Crea un producto en Dolibarr.
 
+        Algunas versiones de Dolibarr devuelven HTTP 500 cuando se incluyen
+        ``array_options`` en la creación. Por eso se separa el proceso:
+          1. Crear el producto sin extrafields.
+          2. Si hay extrafields, actualizarlos con PUT en un segundo paso.
+
         Args:
             data: campos del producto. Campos esperados: ref, label, price,
                   description, type (0=producto, 1=servicio), status (0/1).
+                  Puede incluir ``array_options`` con extrafields.
 
         Returns:
             Dict con el producto creado, incluyendo el ID asignado por Dolibarr.
         """
-        raw = await self._client.create(_DOLIBARR_PRODUCTS_RESOURCE, data)
-        return _normalize_product(raw) if isinstance(raw, dict) else raw
+        payload = dict(data)
+        array_options = payload.pop("array_options", None)
+
+        raw = await self._client.create(_DOLIBARR_PRODUCTS_RESOURCE, payload)
+
+        product_id: int | None = None
+        if isinstance(raw, dict):
+            product_id = int(raw.get("id", 0)) or None
+        elif isinstance(raw, (int, str)):
+            try:
+                product_id = int(raw)
+            except (ValueError, TypeError):
+                pass
+
+        if product_id and array_options:
+            try:
+                await self._client.update(
+                    _DOLIBARR_PRODUCTS_RESOURCE,
+                    product_id,
+                    {"array_options": array_options},
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Extrafields no guardados en producto creado",
+                    exc_info=exc,
+                    extra={"product_id": product_id},
+                )
+
+        if product_id:
+            try:
+                full = await self._client.get(_DOLIBARR_PRODUCTS_RESOURCE, product_id)
+                return _normalize_product(full)
+            except Exception:
+                pass
+
+        return _normalize_product(raw) if isinstance(raw, dict) else {"id": product_id}
 
     async def update_product(
         self,
@@ -438,6 +517,139 @@ class DolibarrProductService:
                     exc_info=exc,
                     extra={"codigo": codigo, "job_id": job_id},
                 )
+                result["error"] = str(exc)
+
+            results.append(result)
+
+        return results
+
+    @staticmethod
+    def parse_csv_preview(
+        content: bytes,
+        preview_rows: int = 5,
+    ) -> dict[str, Any]:
+        """
+        Parsea las primeras filas de un CSV para previsualización.
+
+        Detecta delimitador automáticamente. Soporta UTF-8 y latin-1.
+
+        Args:
+            content:      contenido raw del archivo CSV.
+            preview_rows: número máximo de filas de previsualización.
+
+        Returns:
+            Dict con headers, preview (list of dicts) y total_rows.
+        """
+        text = _decode_csv(content)
+        delimiter = _detect_delimiter(text)
+        reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
+        headers = list(reader.fieldnames or [])
+        preview: list[dict[str, str]] = []
+        total = 0
+
+        for row in reader:
+            total += 1
+            if len(preview) < preview_rows:
+                preview.append({k: str(v or "") for k, v in row.items() if k is not None})
+
+        return {"headers": headers, "preview": preview, "total_rows": total}
+
+    async def import_from_csv(
+        self,
+        content: bytes,
+        mapping: dict[str, str],
+        overwrite: bool = False,
+    ) -> list[dict[str, Any]]:
+        """
+        Importa productos en masa a Dolibarr desde un CSV con mapeo de columnas.
+
+        Cada fila del CSV se convierte en un producto usando ``mapping``
+        (clave=columna CSV, valor=campo Dolibarr). El campo ``ref`` es
+        obligatorio: si no está en el mapping la fila se marca como error.
+
+        Campos cuya clave Dolibarr empiece por ``options_`` se tratan como
+        extrafields y se agrupan en ``array_options``.
+
+        Args:
+            content:  contenido raw del archivo CSV.
+            mapping:  dict que mapea nombre_columna_csv → campo_dolibarr.
+            overwrite: si True, actualiza productos existentes (busca por ref).
+
+        Returns:
+            Lista de dicts con row, ref, action, dolibarr_id y error.
+        """
+        text = _decode_csv(content)
+        delimiter = _detect_delimiter(text)
+        reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
+        results: list[dict[str, Any]] = []
+
+        for row_num, row in enumerate(reader, start=2):
+            payload: dict[str, Any] = {}
+            array_options: dict[str, Any] = {}
+
+            for csv_col, doli_field in mapping.items():
+                raw_val = (row.get(csv_col) or "").strip()
+                if not raw_val:
+                    continue
+                if doli_field.startswith("options_"):
+                    array_options[doli_field] = raw_val
+                else:
+                    payload[doli_field] = raw_val
+
+            ref = str(payload.get("ref", "")).strip()
+            result: dict[str, Any] = {
+                "row": row_num,
+                "ref": ref,
+                "action": None,
+                "dolibarr_id": None,
+                "error": None,
+            }
+
+            if not ref:
+                result["action"] = "error"
+                result["error"] = "Columna 'ref' vacía o no mapeada."
+                results.append(result)
+                continue
+
+            if array_options:
+                payload["array_options"] = array_options
+
+            try:
+                existing = await self._find_product_by_ref(ref)
+
+                if existing is not None:
+                    dolibarr_id = int(existing["id"])
+                    if overwrite:
+                        await self.update_product(dolibarr_id, payload)
+                        result["action"] = "updated"
+                        logger.info(
+                            "Producto actualizado via CSV import",
+                            extra={"ref": ref, "dolibarr_id": dolibarr_id, "row": row_num},
+                        )
+                    else:
+                        result["action"] = "skipped"
+                        result["dolibarr_id"] = dolibarr_id
+                        logger.debug("Producto ya existe, omitido", extra={"ref": ref})
+                        results.append(result)
+                        continue
+                else:
+                    created = await self.create_product(payload)
+                    dolibarr_id = int(created["id"]) if isinstance(created, dict) else int(created)
+                    result["action"] = "created"
+                    logger.info(
+                        "Producto creado via CSV import",
+                        extra={"ref": ref, "dolibarr_id": dolibarr_id, "row": row_num},
+                    )
+
+                result["dolibarr_id"] = dolibarr_id
+
+            except Exception as exc:
+                logger.error(
+                    "Error importando fila CSV a Dolibarr",
+                    exc_info=exc,
+                    extra={"row": row_num, "ref": ref},
+                )
+                result["action"] = "error"
                 result["error"] = str(exc)
 
             results.append(result)
