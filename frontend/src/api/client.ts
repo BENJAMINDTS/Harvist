@@ -32,6 +32,20 @@ import {
   type CsvImportResponse,
   type DolibarrStats,
 } from '@/types/dolibarr'
+import {
+  type OdooProduct,
+  type OdooCategory,
+  type OdooPartner,
+  type OooPurchase,
+  type OdooSale,
+  type OdooInvoice,
+  type OdooStockLine,
+  type OdooLocation,
+  type OdooConfigRequest,
+  type OdooConfigResponse,
+  type PartnerMode,
+  type OdooInvoiceType,
+} from '@/types/odoo'
 
 /** Estructura estándar de respuesta de la API */
 export interface ApiResponse<T = unknown> {
@@ -914,4 +928,201 @@ export async function importDolibarrCsv(
     { timeout: 120_000 },
   )
   return response.data.data
+}
+
+// ────────────────────────────────────────────────────────────────
+// ODOO — Métodos de integración
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * Obtiene el estado de conexión a Odoo.
+ *
+ * @author Carlitos6712
+ */
+export async function getOdooStatus(): Promise<IntegrationStatus> {
+  const response = await apiClient.get<IntegrationStatus>('/odoo/status')
+  return response.data
+}
+
+/**
+ * Guarda credenciales de Odoo en Redis.
+ *
+ * @author Carlitos6712
+ * @param data - url, db, user y password de Odoo.
+ */
+export async function saveOdooConfig(data: OdooConfigRequest): Promise<void> {
+  await apiClient.post('/odoo/config', data)
+}
+
+/**
+ * Obtiene la configuración actual de Odoo.
+ *
+ * @author Carlitos6712
+ */
+export async function getOdooConfig(): Promise<OdooConfigResponse> {
+  const response = await apiClient.get<OdooConfigResponse>('/odoo/config')
+  return response.data
+}
+
+/**
+ * Lista productos Odoo con paginación.
+ *
+ * @author Carlitos6712
+ */
+export async function listOdooProducts(
+  limit?: number,
+  offset?: number,
+  search?: string,
+): Promise<PaginatedResponse<OdooProduct>> {
+  const params: Record<string, unknown> = {}
+  if (limit !== undefined) params.limit = limit
+  if (offset !== undefined) params.offset = offset
+  if (search) params.search = search
+  const response = await apiClient.get<ApiResponse<PaginatedResponse<OdooProduct>>>(
+    '/odoo/products',
+    { params },
+  )
+  return response.data.data
+}
+
+/**
+ * Lista categorías Odoo con paginación.
+ *
+ * @author Carlitos6712
+ */
+export async function listOdooCategories(
+  limit?: number,
+  offset?: number,
+): Promise<PaginatedResponse<OdooCategory>> {
+  const params: Record<string, unknown> = {}
+  if (limit !== undefined) params.limit = limit
+  if (offset !== undefined) params.offset = offset
+  const response = await apiClient.get<ApiResponse<PaginatedResponse<OdooCategory>>>(
+    '/odoo/categories',
+    { params },
+  )
+  return response.data.data
+}
+
+/**
+ * Lista partners Odoo (clientes / proveedores / todos).
+ *
+ * @author Carlitos6712
+ * @param mode - 'customer', 'supplier' o 'all'.
+ */
+export async function listOdooPartners(
+  mode: PartnerMode = 'all',
+  limit?: number,
+  offset?: number,
+  search?: string,
+): Promise<PaginatedResponse<OdooPartner>> {
+  const params: Record<string, unknown> = { mode }
+  if (limit !== undefined) params.limit = limit
+  if (offset !== undefined) params.offset = offset
+  if (search) params.search = search
+  const response = await apiClient.get<ApiResponse<PaginatedResponse<OdooPartner>>>(
+    '/odoo/partners',
+    { params },
+  )
+  return response.data.data
+}
+
+/**
+ * Lista pedidos de compra Odoo.
+ *
+ * @author Carlitos6712
+ */
+export async function listOooPurchases(
+  limit?: number,
+  offset?: number,
+  state?: string,
+): Promise<PaginatedResponse<OooPurchase>> {
+  const params: Record<string, unknown> = {}
+  if (limit !== undefined) params.limit = limit
+  if (offset !== undefined) params.offset = offset
+  if (state) params.state = state
+  const response = await apiClient.get<ApiResponse<PaginatedResponse<OooPurchase>>>(
+    '/odoo/purchases',
+    { params },
+  )
+  return response.data.data
+}
+
+/**
+ * Lista pedidos de venta Odoo.
+ *
+ * @author Carlitos6712
+ */
+export async function listOdooSales(
+  limit?: number,
+  offset?: number,
+  state?: string,
+): Promise<PaginatedResponse<OdooSale>> {
+  const params: Record<string, unknown> = {}
+  if (limit !== undefined) params.limit = limit
+  if (offset !== undefined) params.offset = offset
+  if (state) params.state = state
+  const response = await apiClient.get<ApiResponse<PaginatedResponse<OdooSale>>>(
+    '/odoo/sales',
+    { params },
+  )
+  return response.data.data
+}
+
+/**
+ * Lista facturas Odoo (cliente o proveedor).
+ *
+ * @author Carlitos6712
+ * @param type - 'customer' o 'supplier'.
+ */
+export async function listOdooInvoices(
+  type: OdooInvoiceType = 'customer',
+  limit?: number,
+  offset?: number,
+  state?: string,
+): Promise<PaginatedResponse<OdooInvoice>> {
+  const params: Record<string, unknown> = { type }
+  if (limit !== undefined) params.limit = limit
+  if (offset !== undefined) params.offset = offset
+  if (state) params.state = state
+  const response = await apiClient.get<ApiResponse<PaginatedResponse<OdooInvoice>>>(
+    '/odoo/invoices',
+    { params },
+  )
+  return response.data.data
+}
+
+/**
+ * Lista stock Odoo.
+ *
+ * @author Carlitos6712
+ */
+export async function listOdooStock(
+  limit?: number,
+  offset?: number,
+  productId?: number,
+  locationId?: number,
+): Promise<PaginatedResponse<OdooStockLine>> {
+  const params: Record<string, unknown> = {}
+  if (limit !== undefined) params.limit = limit
+  if (offset !== undefined) params.offset = offset
+  if (productId !== undefined) params.product_id = productId
+  if (locationId !== undefined) params.location_id = locationId
+  const response = await apiClient.get<ApiResponse<PaginatedResponse<OdooStockLine>>>(
+    '/odoo/inventory',
+    { params },
+  )
+  return response.data.data
+}
+
+/**
+ * Lista ubicaciones de stock Odoo.
+ *
+ * @author Carlitos6712
+ */
+export async function listOdooLocations(): Promise<OdooLocation[]> {
+  const response = await apiClient.get<ApiResponse<{ items: OdooLocation[] }>>(
+    '/odoo/inventory/locations',
+  )
+  return response.data.data.items
 }

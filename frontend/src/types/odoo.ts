@@ -1,0 +1,129 @@
+/**
+ * Tipos TypeScript para la integración Odoo.
+ *
+ * @author Carlitos6712
+ */
+
+export interface OdooProduct {
+  id: number
+  name: string
+  default_code: string | false
+  description: string | false
+  description_sale: string | false
+  list_price: number
+  standard_price: number
+  type: 'consu' | 'service' | 'product'
+  categ_id: [number, string] | false
+  active: boolean
+  sale_ok: boolean
+  purchase_ok: boolean
+  qty_available: number
+}
+
+export interface OdooCategory {
+  id: number
+  name: string
+  complete_name: string
+  parent_id: [number, string] | false
+  child_id: number[]
+}
+
+export interface OdooPartner {
+  id: number
+  name: string
+  email: string | false
+  phone: string | false
+  mobile: string | false
+  street: string | false
+  city: string | false
+  zip: string | false
+  country_id: [number, string] | false
+  vat: string | false
+  customer_rank: number
+  supplier_rank: number
+  active: boolean
+  is_company: boolean
+  comment: string | false
+}
+
+export interface OooPurchase {
+  id: number
+  name: string
+  partner_id: [number, string] | false
+  date_order: string | false
+  date_approve: string | false
+  state: 'draft' | 'sent' | 'purchase' | 'done' | 'cancel'
+  amount_total: number
+  currency_id: [number, string] | false
+  order_line: number[]
+  notes: string | false
+  user_id: [number, string] | false
+}
+
+export interface OdooSale {
+  id: number
+  name: string
+  partner_id: [number, string] | false
+  date_order: string | false
+  validity_date: string | false
+  state: 'draft' | 'sent' | 'sale' | 'done' | 'cancel'
+  amount_total: number
+  currency_id: [number, string] | false
+  order_line: number[]
+  note: string | false
+  user_id: [number, string] | false
+  invoice_status: 'upselling' | 'invoiced' | 'to invoice' | 'no'
+}
+
+export interface OdooInvoice {
+  id: number
+  name: string
+  partner_id: [number, string] | false
+  invoice_date: string | false
+  invoice_date_due: string | false
+  move_type: 'out_invoice' | 'in_invoice' | 'out_refund' | 'in_refund'
+  state: 'draft' | 'posted' | 'cancel'
+  amount_untaxed: number
+  amount_tax: number
+  amount_total: number
+  amount_residual: number
+  currency_id: [number, string] | false
+  invoice_line_ids: number[]
+  payment_state: 'not_paid' | 'in_payment' | 'paid' | 'partial' | 'reversed' | 'invoicing_legacy'
+}
+
+export interface OdooStockLine {
+  id: number
+  product_id: [number, string] | false
+  location_id: [number, string] | false
+  quantity: number
+  reserved_quantity: number
+  lot_id: [number, string] | false
+  package_id: [number, string] | false
+}
+
+export interface OdooLocation {
+  id: number
+  name: string
+  complete_name: string
+  usage: string
+  active: boolean
+}
+
+export interface OdooConfigRequest {
+  url: string
+  db: string
+  user: string
+  password: string
+}
+
+export interface OdooConfigResponse {
+  url: string
+  db: string
+  user: string
+  password: string
+  configured: boolean
+}
+
+export type PartnerMode = 'customer' | 'supplier' | 'all'
+export type OdooInvoiceType = 'customer' | 'supplier'
