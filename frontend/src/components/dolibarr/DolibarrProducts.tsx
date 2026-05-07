@@ -6,7 +6,7 @@
  *
  * @author BenjaminDTS
  */
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   listDolibarrProducts,
   deleteDolibarrProduct,
@@ -14,12 +14,16 @@ import {
   createDolibarrProduct,
   updateDolibarrProduct,
   getDolibarrProductFields,
+  previewDolibarrCsv,
+  importDolibarrCsv,
 } from '@/api/client'
 import {
   type DolibarrProduct,
   type DolibarrFieldSchema,
   type DolibarrFieldType,
   type DolibarrFieldOption,
+  type CsvImportPreview,
+  type CsvImportResponse,
 } from '@/types/dolibarr'
 
 export default function DolibarrProducts() {
@@ -34,6 +38,7 @@ export default function DolibarrProducts() {
   })
   const [showSyncModal, setShowSyncModal] = useState(false)
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showCsvImportModal, setShowCsvImportModal] = useState(false)
   const [editingProduct, setEditingProduct] = useState<DolibarrProduct | null>(null)
 
   const loadProducts = async (limit = 10, offset = 0) => {
@@ -82,6 +87,12 @@ export default function DolibarrProducts() {
           className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
         >
           ↓ Sincronizar desde job
+        </button>
+        <button
+          onClick={() => setShowCsvImportModal(true)}
+          className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium"
+        >
+          ↑ Importar CSV
         </button>
       </div>
 
@@ -221,6 +232,16 @@ export default function DolibarrProducts() {
           }}
         />
       )}
+
+      {showCsvImportModal && (
+        <CsvImportModal
+          onClose={() => setShowCsvImportModal(false)}
+          onSuccess={() => {
+            setShowCsvImportModal(false)
+            loadProducts()
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -316,6 +337,9 @@ function buildPayload(
       const n = parseFloat(raw)
       if (isNaN(n)) continue
       coerced = n
+    } else if ((field.type === 'select' || field.type === 'boolean') && !field.is_extra) {
+      // Dolibarr expects integer values for standard select fields (type, status, weight_units…)
+      if (/^-?\d+$/.test(raw)) coerced = parseInt(raw, 10)
     }
 
     if (field.is_extra) {
@@ -611,6 +635,301 @@ function EditProductModal({ product, onClose, onSuccess }: EditProductModalProps
               {submitting ? 'Guardando...' : 'Guardar cambios'}
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── CSV Import modal ─────────────────────────────────────────────────────
+
+type CsvImportStep = 'upload' | 'mapping' | 'importing' | 'results'
+
+interface CsvImportModalProps {
+  onClose: () => void
+  onSuccess: () => void
+}
+
+/**
+ * Modal multi-paso para importación masiva de productos desde CSV a Dolibarr.
+ *
+ * Paso 1 — Upload: usuario selecciona el CSV.
+ * Paso 2 — Mapping: mapea cada columna CSV a un campo Dolibarr.
+ * Paso 3 — Importing: progreso en curso.
+ * Paso 4 — Results: resumen de creados/actualizados/omitidos/errores.
+ *
+ * @author BenjaminDTS | Carlos Vico
+ */
+function CsvImportModal({ onClose, onSuccess }: CsvImportModalProps) {
+  const [step, setStep] = useState<CsvImportStep>('upload')
+  const [file, setFile] = useState<File | null>(null)
+  const [preview, setPreview] = useState<CsvImportPreview | null>(null)
+  const [fields, setFields] = useState<DolibarrFieldSchema[]>([])
+  const [mapping, setMapping] = useState<Record<string, string>>({})
+  const [overwrite, setOverwrite] = useState(false)
+  const [result, setResult] = useState<CsvImportResponse | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    getDolibarrProductFields()
+      .then(setFields)
+      .catch(() => {})
+  }, [])
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]
+    if (!f) return
+    setFile(f)
+    setError(null)
+    setLoading(true)
+    try {
+      const data = await previewDolibarrCsv(f)
+      setPreview(data)
+      const initial: Record<string, string> = {}
+      data.headers.forEach((h) => { initial[h] = '' })
+      setMapping(initial)
+      setStep('mapping')
+    } catch (err) {
+      setError((err as { message?: string }).message ?? 'Error analizando CSV')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleImport = async () => {
+    const activeMapping = Object.fromEntries(
+      Object.entries(mapping).filter(([, v]) => v !== '')
+    )
+    if (!Object.values(activeMapping).includes('ref')) {
+      setError("Debes asignar al menos una columna al campo 'ref' (Referencia).")
+      return
+    }
+    if (!file) return
+    setError(null)
+    setStep('importing')
+    try {
+      const res = await importDolibarrCsv(file, activeMapping, overwrite)
+      setResult(res)
+      setStep('results')
+    } catch (err) {
+      setError((err as { message?: string }).message ?? 'Error durante la importación')
+      setStep('mapping')
+    }
+  }
+
+  const allFieldOptions = useMemo(() => {
+    const opts: { value: string; label: string }[] = [{ value: '', label: '— Ignorar columna —' }]
+    for (const f of fields) {
+      opts.push({ value: f.key, label: `${f.label}${f.required ? ' *' : ''} (${f.section})` })
+    }
+    return opts
+  }, [fields])
+
+  const refMapped = Object.values(mapping).includes('ref')
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-3xl max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Importar productos desde CSV</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {step === 'upload' && 'Selecciona el archivo CSV'}
+              {step === 'mapping' && `${preview?.total_rows ?? 0} filas detectadas — asigna las columnas`}
+              {step === 'importing' && 'Importando productos a Dolibarr...'}
+              {step === 'results' && 'Importación completada'}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+        </div>
+
+        {/* Body */}
+        <div className="overflow-y-auto flex-1 px-6 py-5">
+
+          {/* ── Step 1: Upload ── */}
+          {step === 'upload' && (
+            <div className="space-y-4">
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                className="border-2 border-dashed border-gray-300 rounded-lg p-10 text-center cursor-pointer hover:border-purple-400 hover:bg-purple-50 transition-colors"
+              >
+                <p className="text-gray-500 text-sm">Haz clic para seleccionar un archivo CSV</p>
+                <p className="text-gray-400 text-xs mt-1">UTF-8 o Latin-1 · Máximo 10 MB</p>
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={handleFileChange}
+              />
+              {loading && (
+                <p className="text-sm text-gray-500 text-center">Analizando CSV...</p>
+              )}
+              {error && <p className="text-sm text-red-600">{error}</p>}
+            </div>
+          )}
+
+          {/* ── Step 2: Mapping ── */}
+          {step === 'mapping' && preview && (
+            <div className="space-y-5">
+              {/* Preview table */}
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                  Previsualización — primeras {preview.preview.length} filas
+                </p>
+                <div className="overflow-x-auto rounded border border-gray-200 text-xs">
+                  <table className="min-w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        {preview.headers.map((h) => (
+                          <th key={h} className="px-3 py-2 text-left font-medium text-gray-700 whitespace-nowrap">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {preview.preview.map((row, i) => (
+                        <tr key={i} className="hover:bg-gray-50">
+                          {preview.headers.map((h) => (
+                            <td key={h} className="px-3 py-2 text-gray-600 max-w-[160px] truncate">{row[h]}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Mapping */}
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                  Mapeo de columnas
+                </p>
+                <div className="space-y-2">
+                  {preview.headers.map((header) => (
+                    <div key={header} className="flex items-center gap-3">
+                      <span className="w-40 text-xs font-mono bg-gray-100 px-2 py-1 rounded truncate flex-shrink-0 text-gray-700">
+                        {header}
+                      </span>
+                      <span className="text-gray-400 text-xs">→</span>
+                      <select
+                        value={mapping[header] ?? ''}
+                        onChange={(e) => setMapping((prev) => ({ ...prev, [header]: e.target.value }))}
+                        className="flex-1 text-xs px-2 py-1.5 border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      >
+                        {allFieldOptions.map((o) => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Overwrite toggle */}
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={overwrite}
+                  onChange={(e) => setOverwrite(e.target.checked)}
+                  className="rounded"
+                />
+                Sobreescribir productos existentes (busca por referencia)
+              </label>
+
+              {!refMapped && (
+                <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                  Asigna al menos una columna al campo <strong>Referencia (ref)</strong> para poder importar.
+                </p>
+              )}
+
+              {error && <p className="text-sm text-red-600">{error}</p>}
+            </div>
+          )}
+
+          {/* ── Step 3: Importing ── */}
+          {step === 'importing' && (
+            <div className="flex flex-col items-center justify-center py-16 space-y-4">
+              <div className="w-10 h-10 border-4 border-purple-600 border-t-transparent rounded-full animate-spin" />
+              <p className="text-gray-600 text-sm">Importando {preview?.total_rows ?? '...'} productos a Dolibarr...</p>
+              <p className="text-gray-400 text-xs">Esto puede tardar varios minutos para catálogos grandes.</p>
+            </div>
+          )}
+
+          {/* ── Step 4: Results ── */}
+          {step === 'results' && result && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-4 gap-3">
+                {[
+                  { label: 'Creados', value: result.created, color: 'bg-green-100 text-green-800' },
+                  { label: 'Actualizados', value: result.updated, color: 'bg-blue-100 text-blue-800' },
+                  { label: 'Omitidos', value: result.skipped, color: 'bg-gray-100 text-gray-700' },
+                  { label: 'Errores', value: result.errors, color: 'bg-red-100 text-red-800' },
+                ].map(({ label, value, color }) => (
+                  <div key={label} className={`rounded-lg p-3 text-center ${color}`}>
+                    <p className="text-2xl font-bold">{value}</p>
+                    <p className="text-xs font-medium mt-0.5">{label}</p>
+                  </div>
+                ))}
+              </div>
+
+              {result.errors > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Filas con error</p>
+                  <div className="max-h-48 overflow-y-auto space-y-1">
+                    {result.results
+                      .filter((r) => r.action === 'error')
+                      .map((r) => (
+                        <div key={r.row} className="text-xs bg-red-50 border border-red-200 rounded px-3 py-2">
+                          <span className="font-medium">Fila {r.row}</span>
+                          {r.ref && <span className="text-gray-500 ml-1">({r.ref})</span>}
+                          {' — '}{r.error}
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-gray-200 flex gap-3">
+          {step === 'upload' && (
+            <button onClick={onClose} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm">
+              Cancelar
+            </button>
+          )}
+
+          {step === 'mapping' && (
+            <>
+              <button
+                onClick={() => { setStep('upload'); setPreview(null); setFile(null) }}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm"
+              >
+                ← Cambiar archivo
+              </button>
+              <button
+                onClick={handleImport}
+                disabled={!refMapped}
+                className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 text-sm font-medium"
+              >
+                Importar {preview?.total_rows ?? ''} productos →
+              </button>
+            </>
+          )}
+
+          {step === 'results' && (
+            <button
+              onClick={onSuccess}
+              className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-medium"
+            >
+              Cerrar y actualizar lista
+            </button>
+          )}
         </div>
       </div>
     </div>

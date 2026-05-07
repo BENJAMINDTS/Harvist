@@ -24,6 +24,12 @@ import {
   type OrderType,
   type InvoiceType,
   type DolibarrFieldSchema,
+  type DolibarrDBConfig,
+  type DolibarrDBConfigCreate,
+  type DolibarrExtraField,
+  type DolibarrExtraFieldCreate,
+  type CsvImportPreview,
+  type CsvImportResponse,
 } from '@/types/dolibarr'
 
 /** Estructura estándar de respuesta de la API */
@@ -781,5 +787,119 @@ export async function getDolibarrProductStock(
       }>
     }>
   >(`/dolibarr/stocks/products/${productId}`)
+  return response.data.data
+}
+
+/**
+ * Lista los campos extra configurados en Dolibarr para un tipo de elemento.
+ *
+ * @author Carlitos6712
+ * @param elementtype - Tipo de elemento (product, societe, etc.).
+ * @returns Lista de campos extra con su definición.
+ */
+export async function listDolibarrExtraFields(
+  elementtype = 'product',
+): Promise<DolibarrExtraField[]> {
+  const response = await apiClient.get<ApiResponse<DolibarrExtraField[]>>(
+    '/dolibarr/extrafields',
+    { params: { elementtype } },
+  )
+  return response.data.data
+}
+
+/**
+ * Crea un nuevo campo extra en Dolibarr.
+ *
+ * @author Carlitos6712
+ * @param data - Definición del nuevo campo extra.
+ * @returns Campo extra creado.
+ */
+export async function createDolibarrExtraField(
+  data: DolibarrExtraFieldCreate,
+): Promise<DolibarrExtraField> {
+  const response = await apiClient.post<ApiResponse<DolibarrExtraField>>(
+    '/dolibarr/extrafields',
+    data,
+  )
+  return response.data.data
+}
+
+/**
+ * Elimina un campo extra de Dolibarr.
+ *
+ * @author Carlitos6712
+ * @param attrname - Nombre interno del campo a eliminar.
+ * @param elementtype - Tipo de elemento al que pertenece.
+ */
+export async function deleteDolibarrExtraField(
+  attrname: string,
+  elementtype = 'product',
+): Promise<void> {
+  await apiClient.delete(`/dolibarr/extrafields/${attrname}`, {
+    params: { elementtype },
+  })
+}
+
+/**
+ * Obtiene la configuración de BD directa de Dolibarr guardada en Redis.
+ *
+ * @author Carlitos6712
+ */
+export async function getDolibarrDBConfig(): Promise<DolibarrDBConfig> {
+  const response = await apiClient.get<DolibarrDBConfig>('/dolibarr/db-config')
+  return response.data
+}
+
+/**
+ * Guarda las credenciales de BD directa de Dolibarr en Redis.
+ *
+ * @author Carlitos6712
+ * @param data - Credenciales de acceso a MySQL/MariaDB.
+ */
+export async function saveDolibarrDBConfig(data: DolibarrDBConfigCreate): Promise<DolibarrDBConfig> {
+  const response = await apiClient.post<DolibarrDBConfig>('/dolibarr/db-config', data)
+  return response.data
+}
+
+/**
+ * Pre-analiza un CSV de productos: devuelve cabeceras, filas de muestra y total.
+ *
+ * @author BenjaminDTS | Carlos Vico
+ * @param file - Archivo CSV seleccionado por el usuario.
+ * @returns CsvImportPreview con headers, preview y total_rows.
+ */
+export async function previewDolibarrCsv(file: File): Promise<CsvImportPreview> {
+  const form = new FormData()
+  form.append('file', file)
+  const response = await apiClient.post<ApiResponse<CsvImportPreview>>(
+    '/dolibarr/products/csv-preview',
+    form,
+  )
+  return response.data.data
+}
+
+/**
+ * Importa productos en masa a Dolibarr desde un CSV con mapeo de columnas.
+ *
+ * @author BenjaminDTS | Carlos Vico
+ * @param file      - Archivo CSV.
+ * @param mapping   - Mapeo columna_csv → campo_dolibarr.
+ * @param overwrite - Si true, actualiza productos existentes.
+ * @returns CsvImportResponse con contadores y resultados por fila.
+ */
+export async function importDolibarrCsv(
+  file: File,
+  mapping: Record<string, string>,
+  overwrite: boolean,
+): Promise<CsvImportResponse> {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('mapping', JSON.stringify(mapping))
+  form.append('overwrite', String(overwrite))
+  const response = await apiClient.post<ApiResponse<CsvImportResponse>>(
+    '/dolibarr/products/import',
+    form,
+    { timeout: 120_000 },
+  )
   return response.data.data
 }
