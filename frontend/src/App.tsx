@@ -27,6 +27,7 @@ import type { ApiError, BrandEntry, BrandPendingEntry, BrandValidationResult } f
 import type { SearchConfigValues, TipoJob } from '@/components/SearchConfig'
 
 const DolibarrPanel = React.lazy(() => import('@/components/dolibarr/DolibarrPanel'))
+const OdooPanel = React.lazy(() => import('@/components/odoo/OdooPanel'))
 
 /** Módulos disponibles */
 type Module = 'dashboard' | 'harvist' | 'dolibarr' | 'odoo' | 'wordpress'
@@ -656,11 +657,24 @@ const App: React.FC = () => {
           </Suspense>
         )}
 
-        {/* Módulos Odoo y WordPress — pendientes */}
-        {(currentModule === 'odoo' || currentModule === 'wordpress') && (
+        {/* Módulo Odoo */}
+        {currentModule === 'odoo' && (
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center h-64">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500" />
+              </div>
+            }
+          >
+            <OdooPanel />
+          </Suspense>
+        )}
+
+        {/* Módulo WordPress — pendiente */}
+        {currentModule === 'wordpress' && (
           <div className="text-center py-12">
             <p className="text-gray-500 dark:text-gray-400">
-              Módulo {currentModule.charAt(0).toUpperCase() + currentModule.slice(1)} en desarrollo
+              Módulo WordPress en desarrollo
             </p>
           </div>
         )}
