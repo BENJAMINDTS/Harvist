@@ -62,20 +62,17 @@ class DolibarrInvoiceService:
             IntegrationError: Si Dolibarr falla.
         """
         endpoint = "invoices" if type == "customer" else "supplierinvoices"
-        filters = []
+        query_filters: dict[str, str] = {}
+        sql_parts = []
         if status is not None:
-            filters.append(f"status={status}")
+            sql_parts.append(f"status={status}")
         if thirdparty_id is not None:
-            filters.append(f"socid={thirdparty_id}")
-
-        filter_str = " AND ".join(filters) if filters else ""
-        params = {"limit": limit, "page": offset // limit if limit > 0 else 0}
-        if filter_str:
-            params["sqlfilters"] = filter_str
+            sql_parts.append(f"socid={thirdparty_id}")
+        if sql_parts:
+            query_filters["sqlfilters"] = " AND ".join(sql_parts)
 
         try:
-            response = await self._client.get(f"/{endpoint}", params=params)
-            return response if isinstance(response, list) else [response]
+            return await self._client.list(endpoint, limit=limit, offset=offset, filters=query_filters or None)
         except Exception as exc:
             logger.error(
                 "Error listando facturas",
