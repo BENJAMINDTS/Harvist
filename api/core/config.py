@@ -237,6 +237,34 @@ class Settings(BaseSettings):
             and self.dolibarr_db_user.strip()
         )
 
+    # ── Integración Odoo ────────────────────────────────────────────────────
+    odoo_url: str = Field(
+        default="",
+        description="URL base de la instancia Odoo. Ejemplo: http://localhost:8069",
+    )
+    odoo_db: str = Field(
+        default="",
+        description="Nombre de la base de datos PostgreSQL de Odoo.",
+    )
+    odoo_user: str = Field(
+        default="",
+        description="Email o login del usuario Odoo con acceso API.",
+    )
+    odoo_password: str = Field(
+        default="",
+        description="Contraseña del usuario Odoo.",
+    )
+
+    @property
+    def odoo_configured(self) -> bool:
+        """True si Odoo tiene URL, DB, usuario y contraseña definidas y no vacías."""
+        return bool(
+            self.odoo_url.strip()
+            and self.odoo_db.strip()
+            and self.odoo_user.strip()
+            and self.odoo_password.strip()
+        )
+
     # ── Logging ───────────────────────────────────────────────────────────────
     log_level: Literal["ERROR", "WARN", "INFO", "DEBUG"] = Field(default="INFO")
     log_dir: str = Field(default="logs")
