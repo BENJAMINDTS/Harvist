@@ -114,12 +114,16 @@ class DolibarrClient(IntegrationClient):
             try:
                 response = await self._client.request(method, path, **kwargs)
 
-                if response.status_code >= 500:
+                if response.status_code >= 500 and response.status_code != 501:
                     last_status = response.status_code
                     last_exc = None
                     logger.warning(
                         "Reintentando Dolibarr",
-                        extra={"attempt": attempt, "path": path},
+                        extra={
+                            "attempt": attempt,
+                            "path": path,
+                            "dolibarr_error": response.text[:400],
+                        },
                     )
                     await asyncio.sleep(2 ** attempt)
                     continue
