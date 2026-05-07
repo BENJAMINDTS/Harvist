@@ -19,9 +19,13 @@ class OdooProductService:
 
     _FIELDS = [
         "id", "name", "default_code", "description", "description_sale",
-        "list_price", "standard_price", "type", "categ_id",
-        "active", "sale_ok", "purchase_ok", "qty_available",
-        "image_1920",
+        "description_purchase", "list_price", "compare_list_price",
+        "standard_price", "detailed_type", "type", "categ_id",
+        "uom_id", "uom_po_id", "active", "sale_ok", "purchase_ok",
+        "qty_available", "volume", "weight", "tracking", "priority",
+        "hs_code", "sale_delay", "invoice_policy", "purchase_method",
+        "is_published", "available_in_pos",
+        "website_meta_title", "website_meta_description", "website_meta_keywords",
     ]
 
     def __init__(self, client: IntegrationClient) -> None:

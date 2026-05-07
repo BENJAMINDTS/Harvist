@@ -19,7 +19,8 @@ class OdooInventoryService:
 
     _QUANT_FIELDS = [
         "id", "product_id", "location_id", "quantity", "reserved_quantity",
-        "lot_id", "package_id",
+        "inventory_quantity", "inventory_diff_quantity", "inventory_date",
+        "lot_id", "package_id", "owner_id", "user_id", "in_date",
     ]
 
     def __init__(self, client: IntegrationClient) -> None:
@@ -124,6 +125,85 @@ class OdooInventoryService:
         except Exception as exc:
             logger.error("Error listando ubicaciones Odoo", exc_info=exc)
             raise IntegrationError("Fallo listando ubicaciones Odoo") from exc
+
+    async def update_quant(self, quant_id: int, data: dict) -> bool:
+        """
+        Actualiza campos de un stock.quant. Si incluye inventory_quantity,
+        aplica el ajuste de inventario automáticamente.
+
+        Args:
+            quant_id: ID del stock.quant.
+            data:     campos a actualizar.
+
+        Returns:
+            True si la operación tuvo éxito.
+
+        Raises:
+            IntegrationError: si Odoo falla.
+        """
+        from services.integrations.odoo.client import OdooClient
+        if not isinstance(self._client, OdooClient):
+            raise IntegrationError("Cliente Odoo no disponible")
+        try:
+            await self._client.update("stock.quant", quant_id, data)
+            if "inventory_quantity" in data:
+                await self._client._execute("stock.quant", "action_apply_inventory", [[quant_id]])
+            logger.info("stock.quant actualizado", extra={"quant_id": quant_id})
+            return True
+        except Exception as exc:
+            logger.error("Error actualizando stock.quant", exc_info=exc, extra={"quant_id": quant_id})
+            raise IntegrationError(f"Fallo actualizando quant {quant_id}") from exc
+
+    async def delete_quant(self, quant_id: int) -> bool:
+        """
+        Elimina un stock.quant. Solo funciona si el quant tiene cantidad 0
+        o si el usuario tiene permisos de administración de inventario.
+
+        Args:
+            quant_id: ID del stock.quant.
+
+        Returns:
+            True si se eliminó.
+
+        Raises:
+            IntegrationError: si Odoo falla o no hay permisos.
+        """
+        from services.integrations.odoo.client import OdooClient
+        if not isinstance(self._client, OdooClient):
+            raise IntegrationError("Cliente Odoo no disponible")
+        try:
+            await self._client._execute("stock.quant", "unlink", [[quant_id]])
+            logger.info("stock.quant eliminado", extra={"quant_id": quant_id})
+            return True
+        except Exception as exc:
+            logger.error("Error eliminando stock.quant", exc_info=exc, extra={"quant_id": quant_id})
+            raise IntegrationError(f"Fallo eliminando quant {quant_id}") from exc
+
+    async def adjust_stock(self, quant_id: int, inventory_quantity: float) -> bool:
+        """
+        Ajusta la cantidad inventariada de un quant y aplica el ajuste.
+
+        Args:
+            quant_id:            ID del stock.quant.
+            inventory_quantity:  nueva cantidad a fijar.
+
+        Returns:
+            True si el ajuste se aplicó correctamente.
+
+        Raises:
+            IntegrationError: si Odoo falla.
+        """
+        from services.integrations.odoo.client import OdooClient
+        if not isinstance(self._client, OdooClient):
+            raise IntegrationError("Cliente Odoo no disponible")
+        try:
+            await self._client.update("stock.quant", quant_id, {"inventory_quantity": inventory_quantity})
+            await self._client._execute("stock.quant", "action_apply_inventory", [[quant_id]])
+            logger.info("Stock ajustado en Odoo", extra={"quant_id": quant_id, "qty": inventory_quantity})
+            return True
+        except Exception as exc:
+            logger.error("Error ajustando stock Odoo", exc_info=exc, extra={"quant_id": quant_id})
+            raise IntegrationError(f"Fallo ajustando stock quant {quant_id}") from exc
 
     async def count_stock_lines(self) -> int:
         """

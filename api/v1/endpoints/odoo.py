@@ -753,3 +753,42 @@ async def get_product_stock(product_id: int) -> dict[str, Any]:
         return _ok({"product_id": product_id, "stock_lines": items})
     except IntegrationError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+
+@router_inventory.put("/{quant_id}", response_model=dict)
+async def update_quant(quant_id: int, body: dict) -> dict[str, Any]:
+    """Actualiza campos de un stock.quant. Si incluye inventory_quantity aplica el ajuste."""
+    client = await _build_client()
+    svc = OdooInventoryService(client)
+    try:
+        await svc.update_quant(quant_id, body)
+        return _ok({"quant_id": quant_id})
+    except IntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+
+@router_inventory.delete("/{quant_id}", response_model=dict)
+async def delete_quant(quant_id: int) -> dict[str, Any]:
+    """Elimina un stock.quant."""
+    client = await _build_client()
+    svc = OdooInventoryService(client)
+    try:
+        await svc.delete_quant(quant_id)
+        return _ok({"quant_id": quant_id})
+    except IntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+
+@router_inventory.post("/{quant_id}/adjust", response_model=dict)
+async def adjust_stock(quant_id: int, body: dict) -> dict[str, Any]:
+    """Ajusta la cantidad inventariada de un quant de stock."""
+    qty = body.get("inventory_quantity")
+    if qty is None:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="inventory_quantity requerido")
+    client = await _build_client()
+    svc = OdooInventoryService(client)
+    try:
+        await svc.adjust_stock(quant_id, float(qty))
+        return _ok({"quant_id": quant_id, "inventory_quantity": qty})
+    except IntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
