@@ -986,6 +986,38 @@ export async function listOdooProducts(
 }
 
 /**
+ * Crea un producto en Odoo.
+ *
+ * @author Carlitos6712
+ */
+export async function createOdooProduct(data: Partial<OdooProduct>): Promise<OdooProduct> {
+  const response = await apiClient.post<ApiResponse<OdooProduct>>('/odoo/products', data)
+  return response.data.data
+}
+
+/**
+ * Actualiza un producto Odoo por ID.
+ *
+ * @author Carlitos6712
+ */
+export async function updateOdooProduct(
+  id: number,
+  data: Partial<OdooProduct>,
+): Promise<OdooProduct> {
+  const response = await apiClient.put<ApiResponse<OdooProduct>>(`/odoo/products/${id}`, data)
+  return response.data.data
+}
+
+/**
+ * Elimina un producto Odoo por ID.
+ *
+ * @author Carlitos6712
+ */
+export async function deleteOdooProduct(id: number): Promise<void> {
+  await apiClient.delete(`/odoo/products/${id}`)
+}
+
+/**
  * Lista categorías Odoo con paginación.
  *
  * @author Carlitos6712
@@ -1125,4 +1157,110 @@ export async function listOdooLocations(): Promise<OdooLocation[]> {
     '/odoo/inventory/locations',
   )
   return response.data.data.items
+}
+
+/**
+ * Actualiza un partner Odoo por ID.
+ *
+ * @author Carlitos6712
+ */
+export async function updateOdooPartner(
+  id: number,
+  data: Partial<OdooPartner>,
+): Promise<OdooPartner> {
+  const response = await apiClient.put<ApiResponse<OdooPartner>>(`/odoo/partners/${id}`, data)
+  return response.data.data
+}
+
+/**
+ * Elimina un partner Odoo por ID.
+ *
+ * @author Carlitos6712
+ */
+export async function deleteOdooPartner(id: number): Promise<void> {
+  await apiClient.delete(`/odoo/partners/${id}`)
+}
+
+/**
+ * Confirma un pedido de compra Odoo.
+ *
+ * @author Carlitos6712
+ */
+export async function confirmOooPurchase(id: number): Promise<void> {
+  await apiClient.post(`/odoo/purchases/${id}/confirm`)
+}
+
+/**
+ * Cancela un pedido de compra Odoo.
+ *
+ * @author Carlitos6712
+ */
+export async function cancelOooPurchase(id: number): Promise<void> {
+  await apiClient.post(`/odoo/purchases/${id}/cancel`)
+}
+
+/**
+ * Confirma un pedido de venta Odoo.
+ *
+ * @author Carlitos6712
+ */
+export async function confirmOdooSale(id: number): Promise<void> {
+  await apiClient.post(`/odoo/sales/${id}/confirm`)
+}
+
+/**
+ * Cancela un pedido de venta Odoo.
+ *
+ * @author Carlitos6712
+ */
+export async function cancelOdooSale(id: number): Promise<void> {
+  await apiClient.post(`/odoo/sales/${id}/cancel`)
+}
+
+/**
+ * Valida (publica) una factura Odoo en borrador.
+ *
+ * @author Carlitos6712
+ */
+export async function validateOdooInvoice(id: number): Promise<void> {
+  await apiClient.post(`/odoo/invoices/${id}/validate`)
+}
+
+/**
+ * Cancela una factura Odoo.
+ *
+ * @author Carlitos6712
+ */
+export async function cancelOdooInvoice(id: number): Promise<void> {
+  await apiClient.post(`/odoo/invoices/${id}/cancel`)
+}
+
+/**
+ * Ajusta la cantidad inventariada de un quant de stock Odoo (legacy helper).
+ *
+ * @author Carlitos6712
+ */
+export async function adjustOdooStock(quantId: number, inventoryQuantity: number): Promise<void> {
+  await apiClient.post(`/odoo/inventory/${quantId}/adjust`, { inventory_quantity: inventoryQuantity })
+}
+
+/**
+ * Actualiza campos de un stock.quant. Si incluye inventory_quantity aplica el ajuste.
+ *
+ * @author Carlitos6712
+ */
+export async function updateOdooStockQuant(
+  id: number,
+  data: Partial<OdooStockLine>,
+): Promise<void> {
+  await apiClient.put(`/odoo/inventory/${id}`, data)
+}
+
+/**
+ * Elimina un stock.quant de Odoo.
+ *
+ * @author Carlitos6712
+ */
+export async function deleteOdooStockQuant(id: number): Promise<void> {
+  await apiClient.delete(`/odoo/inventory/${id}`)
 }

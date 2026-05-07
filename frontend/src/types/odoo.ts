@@ -10,14 +10,32 @@ export interface OdooProduct {
   default_code: string | false
   description: string | false
   description_sale: string | false
+  description_purchase: string | false
   list_price: number
+  compare_list_price: number
   standard_price: number
+  detailed_type: 'consu' | 'service' | 'product'
   type: 'consu' | 'service' | 'product'
   categ_id: [number, string] | false
+  uom_id: [number, string] | false
+  uom_po_id: [number, string] | false
   active: boolean
   sale_ok: boolean
   purchase_ok: boolean
   qty_available: number
+  volume: number
+  weight: number
+  tracking: 'none' | 'lot' | 'serial'
+  priority: string
+  hs_code: string | false
+  sale_delay: number
+  invoice_policy: string | false
+  purchase_method: string | false
+  is_published: boolean
+  available_in_pos: boolean
+  website_meta_title: string | false
+  website_meta_description: string | false
+  website_meta_keywords: string | false
 }
 
 export interface OdooCategory {
@@ -98,8 +116,14 @@ export interface OdooStockLine {
   location_id: [number, string] | false
   quantity: number
   reserved_quantity: number
+  inventory_quantity: number
+  inventory_diff_quantity: number
+  inventory_date: string | false
   lot_id: [number, string] | false
   package_id: [number, string] | false
+  owner_id: [number, string] | false
+  user_id: [number, string] | false
+  in_date: string | false
 }
 
 export interface OdooLocation {
