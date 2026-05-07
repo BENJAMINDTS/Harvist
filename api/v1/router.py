@@ -14,6 +14,7 @@ from fastapi import APIRouter
 
 from api.v1.endpoints.dolibarr import (
     categories_router,
+    extrafields_router,
     invoices_router,
     orders_router,
     router_main as dolibarr_router_main,
@@ -37,3 +38,4 @@ router.include_router(thirdparties_router)
 router.include_router(orders_router)
 router.include_router(invoices_router)
 router.include_router(stocks_router)
+router.include_router(extrafields_router)
