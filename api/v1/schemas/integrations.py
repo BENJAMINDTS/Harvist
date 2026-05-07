@@ -115,6 +115,25 @@ class DolibarrExtraField(BaseModel):
     fielddefault: str
 
 
+class OdooConfigRequest(BaseModel):
+    """Petición para guardar configuración de Odoo."""
+
+    url: str = Field(..., min_length=1, description="URL base de Odoo.")
+    db: str = Field(..., min_length=1, description="Nombre de la base de datos.")
+    user: str = Field(..., min_length=1, description="Email/login del usuario.")
+    password: str = Field(..., min_length=1, description="Contraseña del usuario.")
+
+
+class OdooConfigResponse(BaseModel):
+    """Respuesta con configuración actual de Odoo."""
+
+    url: str
+    db: str
+    user: str
+    password: str
+    configured: bool
+
+
 class CsvImportPreview(BaseModel):
     """Resultado del pre-análisis de un CSV de productos para importación masiva."""
 
