@@ -51,6 +51,7 @@ Todos los endpoints devuelven 503 si Dolibarr no está configurado.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import tempfile
 from pathlib import Path
@@ -274,6 +275,66 @@ async def get_status() -> IntegrationStatus:
             healthy=False,
             message=f"Error al verificar conexión: {str(exc)}",
         )
+
+
+# ── Stats endpoint ───────────────────────────────────────────────────────
+
+
+@router_main.get("/stats")
+async def get_dolibarr_stats() -> JSONResponse:
+    """
+    Devuelve estadísticas resumidas de terceros y facturas de Dolibarr.
+
+    Llama en paralelo a los recursos de terceros (all) y facturas (customer/supplier)
+    con limit=500. Devuelve conteos y flag has_more si existen más registros.
+
+    Returns:
+        Dict con configured, thirdparties (total/customers/suppliers) e invoices (customer/supplier).
+    """
+    settings = get_settings()
+    try:
+        url, api_key = await _get_dolibarr_credentials()
+        client = DolibarrClient(settings, override_url=url, override_api_key=api_key)
+    except IntegrationNotConfiguredError:
+        return JSONResponse(content=_ok({
+            "configured": False,
+            "thirdparties": None,
+            "invoices": None,
+        }))
+
+    thirdparty_svc = DolibarrThirdpartyService(client)
+
+    try:
+        all_thirds, customer_inv, supplier_inv = await asyncio.gather(
+            thirdparty_svc.list_thirdparties(mode="all", limit=500),
+            client.list("invoices", limit=500),
+            client.list("supplierinvoices", limit=500),
+        )
+    except IntegrationError as exc:
+        logger.error("Error obteniendo stats Dolibarr", exc_info=exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        )
+
+    customers = sum(1 for t in all_thirds if str(t.get("client", "0")) == "1")
+    suppliers = sum(1 for t in all_thirds if str(t.get("supplier", "0")) == "1")
+
+    return JSONResponse(content=_ok({
+        "configured": True,
+        "thirdparties": {
+            "total": len(all_thirds),
+            "customers": customers,
+            "suppliers": suppliers,
+            "has_more": len(all_thirds) >= 500,
+        },
+        "invoices": {
+            "customer": len(customer_inv),
+            "supplier": len(supplier_inv),
+            "has_more_customer": len(customer_inv) >= 500,
+            "has_more_supplier": len(supplier_inv) >= 500,
+        },
+    }))
 
 
 # ── Configuración ────────────────────────────────────────────────────────
@@ -1176,21 +1237,18 @@ async def list_products_in_category(
 thirdparties_router = APIRouter(prefix="/dolibarr/thirdparties", tags=["dolibarr-thirdparties"])
 
 
-def _get_thirdparty_service() -> DolibarrThirdpartyService:
+async def _get_thirdparty_service() -> DolibarrThirdpartyService:
     """
     Construye y devuelve una instancia de DolibarrThirdpartyService.
+    Lee credenciales desde Redis o .env.
 
     Raises:
         HTTPException 503: si Dolibarr no está configurado.
     """
     settings = get_settings()
-    if not settings.dolibarr_configured:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=_NOT_CONFIGURED_MSG,
-        )
     try:
-        client = DolibarrClient(settings)
+        url, api_key = await _get_dolibarr_credentials()
+        client = DolibarrClient(settings, override_url=url, override_api_key=api_key)
     except IntegrationNotConfiguredError:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -1216,7 +1274,7 @@ async def list_thirdparties(
     Returns:
         PaginatedResponse con los terceros encontrados.
     """
-    svc = _get_thirdparty_service()
+    svc = await _get_thirdparty_service()
     try:
         items = await svc.list_thirdparties(
             mode=mode,
@@ -1253,7 +1311,7 @@ async def search_thirdparties(
     Returns:
         Respuesta estándar con lista de terceros coincidentes.
     """
-    svc = _get_thirdparty_service()
+    svc = await _get_thirdparty_service()
     try:
         items = await svc.search_thirdparty(name=name, limit=limit)
     except IntegrationError as exc:
@@ -1276,7 +1334,7 @@ async def get_thirdparty(thirdparty_id: int) -> JSONResponse:
     Returns:
         Respuesta estándar con los datos del tercero.
     """
-    svc = _get_thirdparty_service()
+    svc = await _get_thirdparty_service()
     try:
         thirdparty = await svc.get_thirdparty(thirdparty_id)
     except IntegrationError as exc:
@@ -1305,7 +1363,7 @@ async def create_thirdparty(data: dict[str, Any]) -> JSONResponse:
     Returns:
         Respuesta estándar (201) con el tercero creado.
     """
-    svc = _get_thirdparty_service()
+    svc = await _get_thirdparty_service()
     try:
         created = await svc.create_thirdparty(data)
     except IntegrationError as exc:
@@ -1334,7 +1392,7 @@ async def update_thirdparty(
     Returns:
         Respuesta estándar con el tercero actualizado.
     """
-    svc = _get_thirdparty_service()
+    svc = await _get_thirdparty_service()
     try:
         updated = await svc.update_thirdparty(thirdparty_id, data)
     except IntegrationError as exc:
@@ -1357,7 +1415,7 @@ async def delete_thirdparty(thirdparty_id: int) -> JSONResponse:
         Respuesta estándar con confirmación de eliminación o error 409
         si tiene registros asociados.
     """
-    svc = _get_thirdparty_service()
+    svc = await _get_thirdparty_service()
     try:
         success = await svc.delete_thirdparty(thirdparty_id)
     except IntegrationError as exc:
@@ -1396,7 +1454,7 @@ async def get_thirdparty_invoices(
     Returns:
         PaginatedResponse con las facturas del tercero.
     """
-    svc = _get_thirdparty_service()
+    svc = await _get_thirdparty_service()
     try:
         items = await svc.get_thirdparty_invoices(
             thirdparty_id=thirdparty_id,
@@ -1438,7 +1496,7 @@ async def get_thirdparty_orders(
     Returns:
         PaginatedResponse con los pedidos del tercero.
     """
-    svc = _get_thirdparty_service()
+    svc = await _get_thirdparty_service()
     try:
         items = await svc.get_thirdparty_orders(
             thirdparty_id=thirdparty_id,
@@ -1737,7 +1795,7 @@ async def _get_invoice_service() -> DolibarrInvoiceService:
 @invoices_router.get("")
 async def list_invoices(
     type: str = Query(default="customer"),
-    status: int | None = Query(default=None),
+    invoice_status: int | None = Query(default=None, alias="status"),
     thirdparty_id: int | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
@@ -1747,7 +1805,7 @@ async def list_invoices(
 
     Args:
         type: "customer" (facturas cliente) o "supplier" (facturas proveedor).
-        status: filtro opcional por estado de la factura.
+        invoice_status: filtro opcional por estado de la factura.
         thirdparty_id: filtro opcional por ID del tercero.
         limit: máximo de facturas por página.
         offset: desplazamiento desde el inicio.
@@ -1758,7 +1816,7 @@ async def list_invoices(
     svc = await _get_invoice_service()
     try:
         items = await svc.list_invoices(
-            type=type, limit=limit, offset=offset, status=status, thirdparty_id=thirdparty_id
+            type=type, limit=limit, offset=offset, status=invoice_status, thirdparty_id=thirdparty_id
         )
     except IntegrationError as exc:
         logger.error("Error listando facturas Dolibarr", exc_info=exc)
