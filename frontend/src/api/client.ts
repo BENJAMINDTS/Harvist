@@ -30,6 +30,7 @@ import {
   type DolibarrExtraFieldCreate,
   type CsvImportPreview,
   type CsvImportResponse,
+  type DolibarrStats,
 } from '@/types/dolibarr'
 
 /** Estructura estándar de respuesta de la API */
@@ -473,6 +474,17 @@ export async function confirmPhotoSelection(
 export async function getDolibarrStatus(): Promise<IntegrationStatus> {
   const response = await apiClient.get<IntegrationStatus>('/dolibarr/status')
   return response.data
+}
+
+/**
+ * Obtiene estadísticas resumidas de Dolibarr (terceros y facturas).
+ *
+ * @author BenjaminDTS | Carlos Vico
+ * @returns DolibarrStats con conteos de terceros e invoices, o configured=false si no hay config.
+ */
+export async function getDolibarrStats(): Promise<DolibarrStats> {
+  const response = await apiClient.get<ApiResponse<DolibarrStats>>('/dolibarr/stats')
+  return response.data.data
 }
 
 /**
