@@ -52,6 +52,9 @@ dependencies = [
     # --- CORS / Seguridad ---
     "python-multipart==0.0.9",
     "httpx==0.27.0",
+
+    # --- BD directa Dolibarr (fallback extrafields) ---
+    "aiomysql==0.3.2",
 ]
 
 [project.optional-dependencies]

@@ -117,3 +117,66 @@ export interface SyncFromJobRequest {
 export type ThirdpartyMode = 'all' | 'customers' | 'suppliers'
 export type OrderType = 'customer' | 'supplier'
 export type InvoiceType = 'customer' | 'supplier'
+
+export interface DolibarrDBConfig {
+  host: string
+  port: number
+  db_name: string
+  user: string
+  password: string
+  prefix: string
+  configured: boolean
+}
+
+export interface DolibarrDBConfigCreate {
+  host: string
+  port: number
+  db_name: string
+  user: string
+  password: string
+  prefix: string
+}
+
+export interface DolibarrExtraField {
+  attrname: string
+  label: string
+  type: string
+  type_normalized: DolibarrFieldType
+  elementtype: string
+  size: string
+  required: boolean
+  fielddefault: string
+}
+
+export interface DolibarrExtraFieldCreate {
+  attrname: string
+  label: string
+  type: string
+  elementtype: string
+  size: string
+  required: boolean
+  fielddefault: string
+}
+
+export interface CsvImportPreview {
+  headers: string[]
+  preview: Record<string, string>[]
+  total_rows: number
+}
+
+export interface CsvImportRowResult {
+  row: number
+  ref: string
+  action: 'created' | 'updated' | 'skipped' | 'error'
+  dolibarr_id: number | null
+  error: string | null
+}
+
+export interface CsvImportResponse {
+  total: number
+  created: number
+  updated: number
+  skipped: number
+  errors: number
+  results: CsvImportRowResult[]
+}

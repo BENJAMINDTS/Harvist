@@ -57,14 +57,21 @@ from pathlib import Path
 from typing import Any
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import JSONResponse
 from loguru import logger
 
 from api.core.config import get_settings
 from api.v1.schemas.integrations import (
+    CsvImportPreview,
+    CsvImportResponse,
+    CsvImportRowResult,
     DolibarrConfigRequest,
     DolibarrConfigResponse,
+    DolibarrDBConfigRequest,
+    DolibarrDBConfigResponse,
+    DolibarrExtraField,
+    DolibarrExtraFieldCreate,
     IntegrationStatus,
     PaginatedResponse,
     SyncFromJobRequest,
@@ -72,6 +79,7 @@ from api.v1.schemas.integrations import (
 from services.integrations.base import IntegrationError, IntegrationNotConfiguredError
 from services.integrations.dolibarr.categories import DolibarrCategoryService
 from services.integrations.dolibarr.client import DolibarrClient
+from services.integrations.dolibarr.extrafields import DolibarrExtraFieldService
 from services.integrations.dolibarr.invoices import DolibarrInvoiceService
 from services.integrations.dolibarr.orders import DolibarrOrderService
 from services.integrations.dolibarr.products import DolibarrProductService
@@ -351,6 +359,109 @@ async def save_config(request: DolibarrConfigRequest) -> DolibarrConfigResponse:
             await redis_client.aclose()
 
 
+# ── Configuración BD ─────────────────────────────────────────────────────
+
+_REDIS_DB_CONFIG_KEY = "integration:dolibarr:db_config"
+
+
+async def _get_dolibarr_db_config() -> dict:
+    """
+    Lee configuración de BD de Dolibarr desde Redis.
+    Fallback a variables de entorno si Redis no tiene la clave.
+
+    Returns:
+        Dict con host, port, db_name, user, password, prefix.
+    """
+    settings = get_settings()
+    redis_client: aioredis.Redis | None = None
+
+    try:
+        redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
+        stored = await redis_client.get(_REDIS_DB_CONFIG_KEY)
+        if stored:
+            return json.loads(stored)
+    except Exception as exc:
+        logger.debug("Redis no disponible para DB config Dolibarr", exc_info=exc)
+    finally:
+        if redis_client:
+            await redis_client.aclose()
+
+    return {
+        "host": settings.dolibarr_db_host,
+        "port": settings.dolibarr_db_port,
+        "db_name": settings.dolibarr_db_name,
+        "user": settings.dolibarr_db_user,
+        "password": settings.dolibarr_db_pass,
+        "prefix": settings.dolibarr_db_prefix,
+    }
+
+
+@router_main.get("/db-config", response_model=DolibarrDBConfigResponse)
+async def get_db_config() -> DolibarrDBConfigResponse:
+    """
+    Obtiene la configuración de BD de Dolibarr guardada en Redis o .env.
+
+    Returns:
+        DolibarrDBConfigResponse con credenciales y estado.
+    """
+    cfg = await _get_dolibarr_db_config()
+    configured = bool(
+        cfg.get("host", "").strip()
+        and cfg.get("db_name", "").strip()
+        and cfg.get("user", "").strip()
+    )
+    return DolibarrDBConfigResponse(
+        host=cfg.get("host", ""),
+        port=cfg.get("port", 3306),
+        db_name=cfg.get("db_name", ""),
+        user=cfg.get("user", ""),
+        password=cfg.get("password", ""),
+        prefix=cfg.get("prefix", "llx_"),
+        configured=configured,
+    )
+
+
+@router_main.post("/db-config", response_model=DolibarrDBConfigResponse)
+async def save_db_config(request: DolibarrDBConfigRequest) -> DolibarrDBConfigResponse:
+    """
+    Guarda las credenciales de BD de Dolibarr en Redis.
+
+    Args:
+        request: DolibarrDBConfigRequest con las credenciales de acceso a MySQL.
+
+    Returns:
+        DolibarrDBConfigResponse confirmando los datos guardados.
+    """
+    settings = get_settings()
+    redis_client: aioredis.Redis | None = None
+
+    try:
+        redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
+        config = {
+            "host": request.host.strip(),
+            "port": request.port,
+            "db_name": request.db_name.strip(),
+            "user": request.user.strip(),
+            "password": request.password,
+            "prefix": request.prefix.strip() or "llx_",
+        }
+        await redis_client.set(_REDIS_DB_CONFIG_KEY, json.dumps(config))
+        logger.info(
+            "Configuración BD Dolibarr guardada",
+            extra={"host": config["host"], "db_name": config["db_name"]},
+        )
+        return DolibarrDBConfigResponse(**config, configured=True)
+    except Exception as exc:
+        logger.error("Error guardando configuración BD Dolibarr", exc_info=exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error guardando configuración BD: {str(exc)}",
+        )
+    finally:
+        if redis_client:
+            await redis_client.aclose()
+
+
 # ── Productos ────────────────────────────────────────────────────────────
 
 
@@ -402,15 +513,19 @@ async def get_product_fields() -> JSONResponse:
     """
     Devuelve el schema de campos para productos de esta instancia Dolibarr.
 
-    Combina campos estándar con los campos extra configurados (extrafields).
-    El frontend usa este endpoint para renderizar el formulario de producto dinámicamente.
+    Combina campos estándar con los campos extra. Usa DolibarrExtraFieldService
+    (con fallback a BD MariaDB) para obtener los extrafields, garantizando que
+    los campos creados manualmente en Dolibarr se detecten aunque la API REST
+    de extrafields no esté disponible.
 
     Returns:
         Lista de DolibarrFieldSchema con key, label, type, required, section, is_extra, options.
     """
     svc = await _get_service_async()
+    extra_svc = await _get_extrafield_service()
     try:
-        fields = await svc.get_product_fields()
+        pre_fetched = await extra_svc.list_extrafields(elementtype="product")
+        fields = await svc.get_product_fields(pre_fetched_extras=pre_fetched)
     except Exception as exc:
         logger.error("Error obteniendo schema de campos Dolibarr", exc_info=exc)
         raise HTTPException(
@@ -420,44 +535,24 @@ async def get_product_fields() -> JSONResponse:
     return JSONResponse(content=_ok(fields, "Schema de campos obtenido."))
 
 
-@router_products.get("/{product_id}")
-async def get_product(product_id: int) -> JSONResponse:
-    """
-    Obtiene un producto de Dolibarr por su ID.
-
-    Args:
-        product_id: ID del producto en Dolibarr.
-
-    Returns:
-        Respuesta estándar con los datos del producto.
-    """
-    svc = await _get_service_async()
-    try:
-        product = await svc.get_product(product_id)
-    except IntegrationError as exc:
-        if exc.status_code == 404:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Producto {product_id} no encontrado en Dolibarr.",
-            )
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        )
-    return JSONResponse(content=_ok(product, "Producto obtenido."))
-
-
 @router_products.post("", status_code=status.HTTP_201_CREATED)
 async def create_product(data: dict) -> JSONResponse:
     """
     Crea un producto en Dolibarr.
 
+    Si el payload incluye ``array_options`` (extrafields), estos se guardan via
+    BD directa para evitar el error de Dolibarr "Field X doesn't have a default
+    value" que afecta al endpoint REST PUT /products/{id}.
+
     Args:
-        data: campos del producto (ref, label, price, description, type, status).
+        data: campos del producto (ref, label, price, description, type, status,
+              array_options opcional con extrafields).
 
     Returns:
         Respuesta estándar (201) con el producto creado.
     """
+    array_options: dict = data.pop("array_options", None) or {}
+
     svc = await _get_service_async()
     try:
         created = await svc.create_product(data)
@@ -466,6 +561,26 @@ async def create_product(data: dict) -> JSONResponse:
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         )
+
+    product_id: int | None = created.get("id") if isinstance(created, dict) else None
+
+    if array_options and product_id:
+        try:
+            db = await _get_extrafield_db()
+            await db.update_product_extrafields(
+                product_id=product_id,
+                array_options=array_options,
+                elementtype="product",
+            )
+        except HTTPException:
+            pass  # BD no configurada — extrafields omitidos sin romper la respuesta
+        except Exception as exc:
+            logger.warning(
+                "Extrafields no guardados tras crear producto",
+                exc_info=exc,
+                extra={"product_id": product_id},
+            )
+
     return JSONResponse(
         content=_ok(created, "Producto creado."),
         status_code=status.HTTP_201_CREATED,
@@ -477,13 +592,19 @@ async def update_product(product_id: int, data: dict) -> JSONResponse:
     """
     Actualiza un producto existente en Dolibarr.
 
+    Separa ``array_options`` (extrafields) del payload estándar y los persiste
+    via BD directa para evitar el error MySQL "Field X doesn't have a default
+    value" que devuelve Dolibarr al actualizar extrafields via REST.
+
     Args:
         product_id: ID del producto en Dolibarr.
-        data:       campos a actualizar.
+        data:       campos a actualizar (puede incluir array_options).
 
     Returns:
         Respuesta estándar con el producto actualizado.
     """
+    array_options: dict = data.pop("array_options", None) or {}
+
     svc = await _get_service_async()
     try:
         updated = await svc.update_product(product_id, data)
@@ -492,6 +613,24 @@ async def update_product(product_id: int, data: dict) -> JSONResponse:
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         )
+
+    if array_options:
+        try:
+            db = await _get_extrafield_db()
+            await db.update_product_extrafields(
+                product_id=product_id,
+                array_options=array_options,
+                elementtype="product",
+            )
+        except HTTPException:
+            pass  # BD no configurada — extrafields omitidos sin romper la respuesta
+        except Exception as exc:
+            logger.warning(
+                "Extrafields no guardados tras actualizar producto",
+                exc_info=exc,
+                extra={"product_id": product_id},
+            )
+
     return JSONResponse(content=_ok(updated, "Producto actualizado."))
 
 
@@ -564,6 +703,151 @@ async def upload_image(product_id: int, file: UploadFile) -> JSONResponse:
         tmp_path.unlink(missing_ok=True)
 
     return JSONResponse(content=_ok(result, "Imagen subida correctamente."))
+
+
+_MAX_CSV_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
+@router_products.post("/csv-preview")
+async def csv_preview(file: UploadFile) -> JSONResponse:
+    """
+    Pre-analiza un CSV de productos y devuelve cabeceras + filas de muestra.
+
+    No requiere conexión a Dolibarr. Sirve para que el frontend construya
+    la UI de mapeo de columnas antes de lanzar la importación real.
+
+    Args:
+        file: archivo CSV (multipart).
+
+    Returns:
+        CsvImportPreview con headers, preview (≤5 filas) y total_rows.
+    """
+    content = await file.read()
+    if len(content) > _MAX_CSV_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"El CSV supera el límite de 10 MB ({len(content)} bytes).",
+        )
+
+    svc = DolibarrProductService.__new__(DolibarrProductService)
+    try:
+        preview_data = svc.parse_csv_preview(content, preview_rows=5)
+    except Exception as exc:
+        logger.error("Error pre-analizando CSV", exc_info=exc)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"No se pudo parsear el CSV: {exc}",
+        )
+
+    result = CsvImportPreview(**preview_data)
+    return JSONResponse(content=_ok(result.model_dump(), "CSV analizado."))
+
+
+@router_products.post("/import")
+async def import_from_csv(
+    file: UploadFile,
+    mapping: str = Form(...),
+    overwrite: bool = Form(default=False),
+) -> JSONResponse:
+    """
+    Importa productos en masa a Dolibarr desde un CSV con mapeo de columnas.
+
+    El campo ``mapping`` debe ser un JSON que mapea nombre_columna_csv →
+    campo_dolibarr (e.g. ``{"Referencia": "ref", "Nombre": "label"}``).
+    El campo ``ref`` es obligatorio en el mapeo.
+
+    Args:
+        file:      CSV de productos (multipart).
+        mapping:   JSON string con el mapeo columna → campo Dolibarr.
+        overwrite: si True, actualiza productos que ya existen en Dolibarr.
+
+    Returns:
+        CsvImportResponse con contadores (created/updated/skipped/errors) y resultados por fila.
+    """
+    content = await file.read()
+    if len(content) > _MAX_CSV_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"El CSV supera el límite de 10 MB ({len(content)} bytes).",
+        )
+
+    try:
+        mapping_dict: dict[str, str] = json.loads(mapping)
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"El campo 'mapping' no es JSON válido: {exc}",
+        )
+
+    if not any(v == "ref" for v in mapping_dict.values()):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="El mapeo debe incluir al menos una columna asignada al campo 'ref'.",
+        )
+
+    svc = await _get_service_async()
+
+    logger.info(
+        "Iniciando importación CSV a Dolibarr",
+        extra={"mapped_fields": len(mapping_dict), "overwrite": overwrite},
+    )
+
+    try:
+        rows = await svc.import_from_csv(content, mapping=mapping_dict, overwrite=overwrite)
+    except Exception as exc:
+        logger.error("Error en importación CSV Dolibarr", exc_info=exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error durante la importación: {exc}",
+        )
+
+    created = sum(1 for r in rows if r["action"] == "created")
+    updated = sum(1 for r in rows if r["action"] == "updated")
+    skipped = sum(1 for r in rows if r["action"] == "skipped")
+    errors = sum(1 for r in rows if r["action"] == "error")
+
+    response = CsvImportResponse(
+        total=len(rows),
+        created=created,
+        updated=updated,
+        skipped=skipped,
+        errors=errors,
+        results=[CsvImportRowResult(**r) for r in rows],
+    )
+
+    logger.info(
+        "Importación CSV Dolibarr completada",
+        extra={"total": len(rows), "created": created, "updated": updated, "errors": errors},
+    )
+
+    return JSONResponse(content=_ok(response.model_dump(), f"Importación completada: {len(rows)} filas procesadas."))
+
+
+@router_products.get("/{product_id}")
+async def get_product(product_id: int) -> JSONResponse:
+    """
+    Obtiene un producto de Dolibarr por su ID.
+
+    Args:
+        product_id: ID del producto en Dolibarr.
+
+    Returns:
+        Respuesta estándar con los datos del producto.
+    """
+    svc = await _get_service_async()
+    try:
+        product = await svc.get_product(product_id)
+    except IntegrationError as exc:
+        if exc.status_code == 404:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Producto {product_id} no encontrado en Dolibarr.",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        )
+    return JSONResponse(content=_ok(product, "Producto obtenido."))
 
 
 @router_products.post("/sync")
@@ -2019,3 +2303,244 @@ async def transfer_stock(data: dict) -> JSONResponse:
         content=_ok(result, "Transferencia de stock completada."),
         status_code=status.HTTP_201_CREATED,
     )
+
+
+# ── Campos extra (extrafields) ────────────────────────────────────────────
+
+extrafields_router = APIRouter(prefix="/dolibarr/extrafields", tags=["dolibarr-extrafields"])
+
+
+async def _get_extrafield_service() -> DolibarrExtraFieldService:
+    """
+    Construye y devuelve una instancia de DolibarrExtraFieldService.
+    Lee credenciales desde Redis o .env.
+    Si DOLIBARR_DB_* está configurado, adjunta DolibarrExtraFieldDB como fallback
+    para cuando la REST API devuelve 501.
+
+    Raises:
+        HTTPException 503: si Dolibarr no está configurado.
+    """
+    from services.integrations.dolibarr.extrafields_db import DolibarrExtraFieldDB
+
+    settings = get_settings()
+    try:
+        url, api_key = await _get_dolibarr_credentials()
+        client = DolibarrClient(settings, override_url=url, override_api_key=api_key)
+    except IntegrationNotConfiguredError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=_NOT_CONFIGURED_MSG,
+        )
+
+    db_fallback = None
+    try:
+        db_cfg = await _get_dolibarr_db_config()
+        if db_cfg.get("host", "").strip() and db_cfg.get("db_name", "").strip() and db_cfg.get("user", "").strip():
+            db_fallback = DolibarrExtraFieldDB(
+                settings,
+                override_host=db_cfg.get("host", ""),
+                override_port=db_cfg.get("port"),
+                override_db=db_cfg.get("db_name", ""),
+                override_user=db_cfg.get("user", ""),
+                override_pass=db_cfg.get("password", ""),
+                override_prefix=db_cfg.get("prefix", ""),
+            )
+    except Exception as exc:
+        logger.warning("DB fallback para extrafields no disponible", exc_info=exc)
+
+    return DolibarrExtraFieldService(client, db_fallback=db_fallback)
+
+
+@extrafields_router.get("")
+async def list_extrafields(
+    elementtype: str = Query(default="product"),
+) -> JSONResponse:
+    """
+    Lista los campos extra configurados para un tipo de elemento Dolibarr.
+
+    Usa BD directa como fuente primaria (no requiere REST API configurada).
+    Solo recurre a la REST API si la BD no está configurada.
+
+    Args:
+        elementtype: tipo de elemento (product, societe, facture, etc.).
+
+    Returns:
+        Respuesta estándar con lista de campos extra.
+    """
+    # DB-direct path — does not require Dolibarr REST API credentials
+    try:
+        db = await _get_extrafield_db()
+        fields = await db.list_extrafields(elementtype=elementtype)
+        return JSONResponse(content=_ok(fields, f"{len(fields)} campos extra encontrados."))
+    except HTTPException as exc:
+        if "BD_NO_CONFIGURADA" not in str(exc.detail):
+            raise
+    except Exception as exc:
+        logger.error("Error listando extrafields via BD Dolibarr", exc_info=exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Error al conectar con la BD de Dolibarr: {exc}",
+        )
+
+    # Fallback: REST API when DB is not configured
+    try:
+        svc = await _get_extrafield_service()
+        fields = await svc.list_extrafields(elementtype=elementtype)
+    except IntegrationError as exc:
+        logger.error("Error listando extrafields Dolibarr via REST", exc_info=exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        )
+    return JSONResponse(content=_ok(fields, f"{len(fields)} campos extra encontrados."))
+
+
+async def _get_extrafield_db() -> "DolibarrExtraFieldDB":
+    """
+    Construye DolibarrExtraFieldDB con credenciales desde Redis o .env.
+
+    La lógica de creación/eliminación de campos extra siempre usa BD directa
+    porque la REST API de Dolibarr no soporta este operación en todas las versiones.
+    Es exactamente la misma lógica usada para crear los campos de prueba.
+
+    Raises:
+        HTTPException 400: si las credenciales de BD no están configuradas.
+        HTTPException 503: si no se puede conectar a la BD.
+    """
+    from services.integrations.dolibarr.extrafields_db import DolibarrExtraFieldDB
+
+    settings = get_settings()
+    db_cfg = await _get_dolibarr_db_config()
+
+    host = db_cfg.get("host", "").strip()
+    db_name = db_cfg.get("db_name", "").strip()
+    user = db_cfg.get("user", "").strip()
+
+    if not host or not db_name or not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "BD_NO_CONFIGURADA: Para crear o eliminar campos extra necesitas configurar "
+                "el acceso directo a la base de datos MySQL de Dolibarr. "
+                "Ve a la pestaña Configuración → BD Dolibarr e introduce: "
+                "host, puerto, nombre de BD, usuario y contraseña."
+            ),
+        )
+
+    try:
+        return DolibarrExtraFieldDB(
+            settings,
+            override_host=host,
+            override_port=db_cfg.get("port"),
+            override_db=db_name,
+            override_user=user,
+            override_pass=db_cfg.get("password", ""),
+            override_prefix=db_cfg.get("prefix", ""),
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"BD_NO_CONFIGURADA: {exc}",
+        )
+
+
+@extrafields_router.post("", status_code=status.HTTP_201_CREATED)
+async def create_extrafield(request: DolibarrExtraFieldCreate) -> JSONResponse:
+    """
+    Crea un nuevo campo extra en Dolibarr via acceso directo a BD MySQL.
+
+    Replica exactamente la lógica de los scripts de prueba:
+      1. INSERT en llx_extrafields (definición del campo)
+      2. ALTER TABLE llx_{element}_extrafields ADD COLUMN (columna de datos)
+
+    El campo queda disponible de inmediato en la interfaz de Dolibarr
+    y aparece automáticamente en el formulario dinámico de Harvist.
+
+    Args:
+        request: DolibarrExtraFieldCreate con los datos del nuevo campo.
+
+    Returns:
+        Respuesta estándar (201) con la definición del campo creado.
+    """
+    if not request.attrname or not request.attrname.replace("_", "").isalnum():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Nombre interno '{request.attrname}' inválido: solo letras, números y guión bajo.",
+        )
+
+    db = await _get_extrafield_db()
+
+    try:
+        created = await db.create_extrafield(
+            attrname=request.attrname.lower(),
+            label=request.label,
+            field_type=request.type,
+            elementtype=request.elementtype,
+            size=request.size,
+            required=request.required,
+            field_default=request.fielddefault,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        )
+    except RuntimeError as exc:
+        logger.error("Error creando extrafield via BD Dolibarr", exc_info=exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        )
+    except Exception as exc:
+        logger.error("Error inesperado creando extrafield: %s: %s", type(exc).__name__, exc, exc_info=exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"{type(exc).__name__}: {exc}",
+        )
+
+    logger.info(
+        "Campo extra creado desde dashboard",
+        extra={"attrname": request.attrname, "elementtype": request.elementtype, "type": request.type},
+    )
+    return JSONResponse(
+        content=_ok(created, f"Campo extra '{request.attrname}' creado correctamente."),
+        status_code=status.HTTP_201_CREATED,
+    )
+
+
+@extrafields_router.delete("/{attrname}")
+async def delete_extrafield(
+    attrname: str,
+    elementtype: str = Query(default="product"),
+) -> JSONResponse:
+    """
+    Elimina un campo extra de Dolibarr via acceso directo a BD MySQL.
+
+    Replica exactamente la lógica de los scripts de prueba:
+      1. DELETE de llx_extrafields
+      2. ALTER TABLE llx_{element}_extrafields DROP COLUMN
+
+    Args:
+        attrname:    nombre interno del campo a eliminar.
+        elementtype: tipo de elemento al que pertenece el campo.
+
+    Returns:
+        Respuesta estándar con confirmación de eliminación.
+    """
+    db = await _get_extrafield_db()
+
+    try:
+        await db.delete_extrafield(attrname=attrname, elementtype=elementtype)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        )
+    except RuntimeError as exc:
+        logger.error("Error eliminando extrafield via BD Dolibarr", exc_info=exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        )
+
+    return JSONResponse(content={"success": True, "message": f"Campo extra '{attrname}' eliminado."})

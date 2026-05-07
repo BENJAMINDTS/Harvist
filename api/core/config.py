@@ -212,12 +212,29 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ── Base de datos Dolibarr (para gestión de campos extra) ────────────────
+    dolibarr_db_host: str = Field(default="", description="Host MySQL/MariaDB de Dolibarr.")
+    dolibarr_db_port: int = Field(default=3306, ge=1, le=65535)
+    dolibarr_db_name: str = Field(default="", description="Nombre de la BD de Dolibarr.")
+    dolibarr_db_user: str = Field(default="", description="Usuario MySQL de Dolibarr.")
+    dolibarr_db_pass: str = Field(default="", description="Contraseña MySQL de Dolibarr.")
+    dolibarr_db_prefix: str = Field(default="llx_", description="Prefijo de tablas Dolibarr.")
+
     @property
     def dolibarr_configured(self) -> bool:
         """True si Dolibarr tiene URL y API key definidas y no vacías."""
         return bool(
             self.dolibarr_url.strip()
             and self.dolibarr_api_key.strip()
+        )
+
+    @property
+    def dolibarr_db_configured(self) -> bool:
+        """True si las credenciales de BD de Dolibarr están definidas."""
+        return bool(
+            self.dolibarr_db_host.strip()
+            and self.dolibarr_db_name.strip()
+            and self.dolibarr_db_user.strip()
         )
 
     # ── Logging ───────────────────────────────────────────────────────────────
