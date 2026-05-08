@@ -117,3 +117,4 @@ $RECYCLE.BIN/
 .idea/
 *.suo
 *.sw?
+.claude/settings.local.json
