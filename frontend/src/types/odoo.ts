@@ -151,3 +151,20 @@ export interface OdooConfigResponse {
 
 export type PartnerMode = 'customer' | 'supplier' | 'all'
 export type OdooInvoiceType = 'customer' | 'supplier'
+
+export type OdooPropertyType = 'char' | 'integer' | 'float' | 'boolean' | 'date' | 'many2one' | 'tags'
+
+export interface OdooPropertyDefinition {
+  name: string
+  type: OdooPropertyType
+  string: string
+  default: string | number | boolean
+  view_in_cards: boolean
+}
+
+export interface OdooPropertyValue {
+  name: string
+  type: OdooPropertyType
+  string: string
+  value: string | number | boolean | null
+}

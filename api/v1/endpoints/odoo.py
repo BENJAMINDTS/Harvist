@@ -84,6 +84,7 @@ from services.integrations.odoo.client import OdooClient
 from services.integrations.odoo.inventory import OdooInventoryService
 from services.integrations.odoo.invoices import OdooInvoiceService
 from services.integrations.odoo.partners import OdooPartnerService
+from services.integrations.odoo.product_properties import OdooProductPropertiesService
 from services.integrations.odoo.products import OdooProductService
 from services.integrations.odoo.purchases import OooPurchaseService
 from services.integrations.odoo.sales import OdooSaleService
@@ -113,6 +114,7 @@ router_purchases = APIRouter(prefix="/odoo/purchases", tags=["odoo-purchases"])
 router_sales = APIRouter(prefix="/odoo/sales", tags=["odoo-sales"])
 router_invoices = APIRouter(prefix="/odoo/invoices", tags=["odoo-invoices"])
 router_inventory = APIRouter(prefix="/odoo/inventory", tags=["odoo-inventory"])
+router_properties = APIRouter(prefix="/odoo", tags=["odoo-properties"])
 
 _NOT_CONFIGURED_MSG = (
     "Odoo no está configurado. "
@@ -928,3 +930,163 @@ async def adjust_stock(quant_id: int, body: dict) -> dict[str, Any]:
         return _ok({"quant_id": quant_id, "inventory_quantity": qty})
     except IntegrationError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+
+# ── Properties (campos extra) ────────────────────────────────────────────────
+
+
+@router_properties.get("/categories/{category_id}/properties", response_model=dict)
+async def get_category_properties(category_id: int) -> dict[str, Any]:
+    """
+    Devuelve las definiciones de campos extra de una categoría de productos.
+
+    Cada definición tiene: name (hex 16 chars), type, string, default, view_in_cards.
+    """
+    client = await _build_client()
+    svc = OdooProductPropertiesService(client)
+    try:
+        defs = await svc.get_category_properties(category_id)
+        return _ok({"category_id": category_id, "definitions": defs, "total": len(defs)})
+    except IntegrationError as exc:
+        http_status = status.HTTP_404_NOT_FOUND if exc.status_code == 404 else status.HTTP_502_BAD_GATEWAY
+        raise HTTPException(status_code=http_status, detail=str(exc))
+
+
+@router_properties.post("/categories/{category_id}/properties", response_model=dict, status_code=status.HTTP_201_CREATED)
+async def add_category_property(category_id: int, body: dict) -> dict[str, Any]:
+    """
+    Añade un campo extra (property) a una categoría de productos.
+
+    Body:
+      - type (str, obligatorio): char | integer | float | boolean | date | many2one | tags
+      - string (str, obligatorio): etiqueta visible en la UI de Odoo
+      - default (any, opcional): valor por defecto
+      - view_in_cards (bool, opcional): mostrar en vistas kanban
+    """
+    prop_type = str(body.get("type", "")).strip()
+    string = str(body.get("string", "")).strip()
+    VALID_TYPES = {"char", "integer", "float", "boolean", "date", "many2one", "tags"}
+    if not prop_type or prop_type not in VALID_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Campo 'type' obligatorio. Valores válidos: {', '.join(sorted(VALID_TYPES))}",
+        )
+    if not string:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Campo 'string' (etiqueta) obligatorio.",
+        )
+    client = await _build_client()
+    svc = OdooProductPropertiesService(client)
+    try:
+        new_def = await svc.add_category_property(
+            category_id,
+            prop_type=prop_type,  # type: ignore[arg-type]
+            string=string,
+            default=body.get("default", ""),
+            view_in_cards=bool(body.get("view_in_cards", False)),
+        )
+        return _ok(new_def, "Campo extra añadido a la categoría.")
+    except IntegrationError as exc:
+        http_status = status.HTTP_404_NOT_FOUND if exc.status_code == 404 else status.HTTP_502_BAD_GATEWAY
+        raise HTTPException(status_code=http_status, detail=str(exc))
+
+
+@router_properties.put("/categories/{category_id}/properties/{prop_name}", response_model=dict)
+async def update_category_property(
+    category_id: int, prop_name: str, body: dict
+) -> dict[str, Any]:
+    """
+    Actualiza un campo extra de categoría (string, default o view_in_cards).
+
+    El tipo no puede cambiarse. prop_name es el identificador hex de 16 chars.
+    """
+    client = await _build_client()
+    svc = OdooProductPropertiesService(client)
+    try:
+        updated = await svc.update_category_property(category_id, prop_name, body)
+        return _ok(updated, "Campo extra actualizado.")
+    except IntegrationError as exc:
+        http_status = status.HTTP_404_NOT_FOUND if exc.status_code == 404 else status.HTTP_502_BAD_GATEWAY
+        raise HTTPException(status_code=http_status, detail=str(exc))
+
+
+@router_properties.delete("/categories/{category_id}/properties/{prop_name}", response_model=dict)
+async def delete_category_property(
+    category_id: int, prop_name: str
+) -> dict[str, Any]:
+    """
+    Elimina un campo extra de una categoría.
+
+    También elimina los valores de ese campo en todos los productos de la categoría.
+    prop_name es el identificador hex de 16 chars.
+    """
+    client = await _build_client()
+    svc = OdooProductPropertiesService(client)
+    try:
+        await svc.delete_category_property(category_id, prop_name)
+        return _ok(None, "Campo extra eliminado de la categoría.")
+    except IntegrationError as exc:
+        http_status = status.HTTP_404_NOT_FOUND if exc.status_code == 404 else status.HTTP_502_BAD_GATEWAY
+        raise HTTPException(status_code=http_status, detail=str(exc))
+
+
+@router_properties.get("/products/{product_id}/properties", response_model=dict)
+async def get_product_properties(
+    product_id: int,
+    category_id: int | None = Query(default=None, description="ID de categoría para fusionar con definiciones"),
+) -> dict[str, Any]:
+    """
+    Devuelve los valores de campos extra de un producto.
+
+    Si se incluye category_id, fusiona valores con definiciones de la categoría
+    para mostrar también los campos sin valor asignado.
+    """
+    client = await _build_client()
+    svc = OdooProductPropertiesService(client)
+    try:
+        props = await svc.get_product_properties(product_id, category_id=category_id)
+        return _ok({"product_id": product_id, "properties": props, "total": len(props)})
+    except IntegrationError as exc:
+        http_status = status.HTTP_404_NOT_FOUND if exc.status_code == 404 else status.HTTP_502_BAD_GATEWAY
+        raise HTTPException(status_code=http_status, detail=str(exc))
+
+
+@router_properties.put("/products/{product_id}/properties", response_model=dict)
+async def set_product_properties(product_id: int, body: list) -> dict[str, Any]:
+    """
+    Establece o actualiza múltiples valores de campos extra en un producto.
+
+    Body: lista de {name, type, string, value}.
+    Hace merge sobre valores existentes (no borra los no mencionados).
+    """
+    if not isinstance(body, list):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Body debe ser una lista de propiedades.",
+        )
+    client = await _build_client()
+    svc = OdooProductPropertiesService(client)
+    try:
+        updated = await svc.set_product_properties(product_id, body)
+        return _ok({"product_id": product_id, "properties": updated}, "Campos extra guardados.")
+    except IntegrationError as exc:
+        http_status = status.HTTP_404_NOT_FOUND if exc.status_code == 404 else status.HTTP_502_BAD_GATEWAY
+        raise HTTPException(status_code=http_status, detail=str(exc))
+
+
+@router_properties.delete("/products/{product_id}/properties/{prop_name}", response_model=dict)
+async def delete_product_property(product_id: int, prop_name: str) -> dict[str, Any]:
+    """
+    Elimina el valor de un campo extra en un producto.
+
+    prop_name es el identificador hex de 16 chars.
+    """
+    client = await _build_client()
+    svc = OdooProductPropertiesService(client)
+    try:
+        updated = await svc.delete_product_property(product_id, prop_name)
+        return _ok({"product_id": product_id, "properties": updated}, "Valor de campo extra eliminado.")
+    except IntegrationError as exc:
+        http_status = status.HTTP_404_NOT_FOUND if exc.status_code == 404 else status.HTTP_502_BAD_GATEWAY
+        raise HTTPException(status_code=http_status, detail=str(exc))

@@ -14,8 +14,9 @@ import OooPurchases from './OdooPurchases'
 import OdooSales from './OdooSales'
 import OdooInvoices from './OdooInvoices'
 import OdooInventory from './OdooInventory'
+import OdooCamposExtra from './OdooCamposExtra'
 
-type OdooTab = 'productos' | 'partners' | 'compras' | 'ventas' | 'facturas' | 'inventario' | 'config'
+type OdooTab = 'productos' | 'partners' | 'compras' | 'ventas' | 'facturas' | 'inventario' | 'campos_extra' | 'config'
 
 interface Props {
   className?: string
@@ -131,6 +132,7 @@ export default function OdooPanel({ className = '' }: Props) {
               { id: 'ventas', label: 'Ventas' },
               { id: 'facturas', label: 'Facturas' },
               { id: 'inventario', label: 'Inventario' },
+              { id: 'campos_extra', label: 'Campos extra' },
               { id: 'config', label: 'Configuración' },
             ] as Array<{ id: OdooTab; label: string }>
           ).map((t) => {
@@ -159,6 +161,7 @@ export default function OdooPanel({ className = '' }: Props) {
           {tab === 'ventas' && configured && <OdooSales />}
           {tab === 'facturas' && configured && <OdooInvoices />}
           {tab === 'inventario' && configured && <OdooInventory />}
+          {tab === 'campos_extra' && configured && <OdooCamposExtra />}
           {tab === 'config' && <OdooConfig onSaved={handleConfigSaved} status={status} />}
         </div>
       </div>

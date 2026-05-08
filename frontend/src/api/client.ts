@@ -45,6 +45,8 @@ import {
   type OdooConfigResponse,
   type PartnerMode,
   type OdooInvoiceType,
+  type OdooPropertyDefinition,
+  type OdooPropertyValue,
 } from '@/types/odoo'
 
 /** Estructura estándar de respuesta de la API */
@@ -1324,4 +1326,124 @@ export async function updateOdooStockQuant(
  */
 export async function deleteOdooStockQuant(id: number): Promise<void> {
   await apiClient.delete(`/odoo/inventory/${id}`)
+}
+
+// ── Properties (campos extra) ──────────────────────────────────────────────
+
+/**
+ * Obtiene las definiciones de campos extra de una categoría de productos.
+ *
+ * @author Carlitos6712
+ * @param categoryId - ID de product.category.
+ */
+export async function getOdooCategoryProperties(
+  categoryId: number,
+): Promise<OdooPropertyDefinition[]> {
+  const response = await apiClient.get<ApiResponse<{ definitions: OdooPropertyDefinition[] }>>(
+    `/odoo/categories/${categoryId}/properties`,
+  )
+  return response.data.data.definitions
+}
+
+/**
+ * Añade un campo extra a una categoría de productos.
+ *
+ * @author Carlitos6712
+ * @param categoryId - ID de product.category.
+ * @param def        - type, string, default y view_in_cards.
+ */
+export async function addOdooCategoryProperty(
+  categoryId: number,
+  def: Omit<OdooPropertyDefinition, 'name'>,
+): Promise<OdooPropertyDefinition> {
+  const response = await apiClient.post<ApiResponse<OdooPropertyDefinition>>(
+    `/odoo/categories/${categoryId}/properties`,
+    def,
+  )
+  return response.data.data
+}
+
+/**
+ * Actualiza un campo extra de categoría (string, default o view_in_cards).
+ *
+ * @author Carlitos6712
+ * @param categoryId - ID de product.category.
+ * @param propName   - Identificador hex de 16 chars de la propiedad.
+ * @param updates    - Campos a actualizar.
+ */
+export async function updateOdooCategoryProperty(
+  categoryId: number,
+  propName: string,
+  updates: Partial<Pick<OdooPropertyDefinition, 'string' | 'default' | 'view_in_cards'>>,
+): Promise<OdooPropertyDefinition> {
+  const response = await apiClient.put<ApiResponse<OdooPropertyDefinition>>(
+    `/odoo/categories/${categoryId}/properties/${propName}`,
+    updates,
+  )
+  return response.data.data
+}
+
+/**
+ * Elimina un campo extra de una categoría de productos.
+ *
+ * @author Carlitos6712
+ * @param categoryId - ID de product.category.
+ * @param propName   - Identificador hex de 16 chars.
+ */
+export async function deleteOdooCategoryProperty(
+  categoryId: number,
+  propName: string,
+): Promise<void> {
+  await apiClient.delete(`/odoo/categories/${categoryId}/properties/${propName}`)
+}
+
+/**
+ * Obtiene los valores de campos extra de un producto.
+ *
+ * @author Carlitos6712
+ * @param productId  - ID de product.template.
+ * @param categoryId - ID de product.category (opcional, para merge con definiciones).
+ */
+export async function getOdooProductProperties(
+  productId: number,
+  categoryId?: number,
+): Promise<OdooPropertyValue[]> {
+  const params = categoryId !== undefined ? { category_id: categoryId } : {}
+  const response = await apiClient.get<ApiResponse<{ properties: OdooPropertyValue[] }>>(
+    `/odoo/products/${productId}/properties`,
+    { params },
+  )
+  return response.data.data.properties
+}
+
+/**
+ * Guarda múltiples valores de campos extra en un producto.
+ *
+ * @author Carlitos6712
+ * @param productId - ID de product.template.
+ * @param props     - Lista de {name, type, string, value}.
+ */
+export async function setOdooProductProperties(
+  productId: number,
+  props: OdooPropertyValue[],
+): Promise<OdooPropertyValue[]> {
+  const response = await apiClient.put<ApiResponse<{ properties: OdooPropertyValue[] }>>(
+    `/odoo/products/${productId}/properties`,
+    props,
+  )
+  return response.data.data.properties
+}
+
+/**
+ * Elimina el valor de un campo extra en un producto.
+ *
+ * @author Carlitos6712
+ * @param productId - ID de product.template.
+ * @param propName  - Identificador hex de 16 chars.
+ */
+export async function deleteOdooProductProperty(
+  productId: number,
+  propName: string,
+): Promise<void> {
+  await apiClient.delete(`/odoo/products/${productId}/properties/${propName}`)
 }

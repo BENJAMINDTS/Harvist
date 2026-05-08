@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react'
 import { listOdooProducts, deleteOdooProduct, updateOdooProduct, createOdooProduct, listOdooCategories } from '@/api/client'
 import type { OdooProduct, OdooCategory } from '@/types/odoo'
 import OdooCsvImport from './OdooCsvImport'
+import OdooProductProperties from './OdooProductProperties'
 
 const formatField = (v: [number, string] | false | string | undefined) => {
   if (!v) return '—'
@@ -323,7 +324,7 @@ function ProductModal({ product, onClose, onSuccess }: ProductModalProps) {
 
   useEffect(() => {
     listOdooCategories(200, 0)
-      .then((r) => setCategories(r.items))
+      .then((r) => setCategories(Array.isArray(r?.items) ? r.items : []))
       .catch(() => {})
   }, [])
 
@@ -575,6 +576,17 @@ function ProductModal({ product, onClose, onSuccess }: ProductModalProps) {
             <p className={SECTION_TITLE_CLS}>Descripción interna</p>
             <textarea rows={4} value={values.description} onChange={(e) => set('description', e.target.value)} className={INPUT_CLS} />
           </div>
+
+          {/* Campos extra (Properties) — solo en edición */}
+          {!isCreate && (
+            <div className={SECTION_CLS}>
+              <p className={SECTION_TITLE_CLS}>Campos extra</p>
+              <OdooProductProperties
+                productId={product!.id}
+                categoryId={Array.isArray(product!.categ_id) ? product!.categ_id[0] : false}
+              />
+            </div>
+          )}
 
         </div>
 

@@ -1,8 +1,8 @@
 """
 Router principal de la versión 1 de la API.
 
-Monta los sub-routers de jobs, files, history y todos los módulos Dolibarr
-bajo el prefijo /api/v1 (definido en api/main.py). Cualquier nuevo recurso
+Monta los sub-routers de jobs, files, history, todos los módulos Dolibarr
+y Odoo (incluyendo Properties) bajo el prefijo /api/v1. Cualquier nuevo recurso
 de v1 se registra aquí.
 
 :author: BenjaminDTS
@@ -34,6 +34,7 @@ from api.v1.endpoints.odoo import (
     router_sales as odoo_router_sales,
     router_invoices as odoo_router_invoices,
     router_inventory as odoo_router_inventory,
+    router_properties as odoo_router_properties,
 )
 
 router = APIRouter()
@@ -57,3 +58,4 @@ router.include_router(odoo_router_purchases)
 router.include_router(odoo_router_sales)
 router.include_router(odoo_router_invoices)
 router.include_router(odoo_router_inventory)
+router.include_router(odoo_router_properties)
