@@ -68,7 +68,7 @@ import json
 from typing import Any
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Body, File, Form, HTTPException, Query, UploadFile, status
 from loguru import logger
 
 from api.core.config import get_settings
@@ -1053,7 +1053,7 @@ async def get_product_properties(
 
 
 @router_properties.put("/products/{product_id}/properties", response_model=dict)
-async def set_product_properties(product_id: int, body: list) -> dict[str, Any]:
+async def set_product_properties(product_id: int, body: list = Body(...)) -> dict[str, Any]:
     """
     Establece o actualiza múltiples valores de campos extra en un producto.
 
