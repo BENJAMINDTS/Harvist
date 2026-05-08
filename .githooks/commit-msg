@@ -1,14 +1,20 @@
 #!/bin/bash
 # @author BenjaminDTS
-# Commit-msg hook: elimina líneas Co-Authored-By generadas por IA (Claude, Copilot, etc.)
+# Commit-msg hook: elimina líneas de autoría de IA (Claude, Copilot, etc.)
 
 COMMIT_FILE="$1"
 
-# Eliminar cualquier línea Co-Authored-By que mencione IA
-sed -i '/^Co-Authored-By:.*[Cc]laude/d' "$COMMIT_FILE"
-sed -i '/^Co-Authored-By:.*[Aa]nthrop/d' "$COMMIT_FILE"
-sed -i '/^Co-Authored-By:.*[Cc]opilot/d' "$COMMIT_FILE"
-sed -i '/^Co-Authored-By:.*noreply@anthropic/d' "$COMMIT_FILE"
-sed -i '/^Creado por: Claude Code (Caveman Mode)/d' "$COMMIT_FILE"
-sed -i '/^Creado por: Copilot/d' "$COMMIT_FILE"
-sed -i '🤖 Generated with [Claude Code](https://claude.ai/claude-code)/d' ""$COMMIT_FILE"
+# Co-Authored-By de Claude / Anthropic / Copilot
+sed -i '/^Co-[Aa]uthored-[Bb]y:.*[Cc]laude/d'    "$COMMIT_FILE"
+sed -i '/^Co-[Aa]uthored-[Bb]y:.*[Aa]nthrop/d'   "$COMMIT_FILE"
+sed -i '/^Co-[Aa]uthored-[Bb]y:.*[Cc]opilot/d'   "$COMMIT_FILE"
+sed -i '/^Co-[Aa]uthored-[Bb]y:.*noreply@/d'      "$COMMIT_FILE"
+
+# Líneas "Creado por" / "Generated with"
+sed -i '/^Creado por:.*[Cc]laude/d'                "$COMMIT_FILE"
+sed -i '/^Creado por:.*[Cc]opilot/d'               "$COMMIT_FILE"
+sed -i '/🤖.*[Cc]laude/d'                          "$COMMIT_FILE"
+sed -i '/🤖.*[Gg]enerated/d'                       "$COMMIT_FILE"
+
+# Trailing blank lines al final del archivo
+sed -i -e :a -e '/^\s*$/{$d;N;ba}' "$COMMIT_FILE"
