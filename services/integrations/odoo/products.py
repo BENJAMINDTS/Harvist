@@ -93,26 +93,78 @@ class OdooProductService:
             logger.error("Error obteniendo producto Odoo", exc_info=exc, extra={"id": product_id})
             raise IntegrationError(f"Producto Odoo {product_id} no encontrado") from exc
 
+    async def _find_product_by_default_code(self, default_code: str) -> dict | None:
+        """
+        Busca un producto por su referencia interna (campo default_code).
+
+        Args:
+            default_code: referencia interna del producto.
+
+        Returns:
+            Dict del producto si existe, None si no se encuentra.
+        """
+        try:
+            results = await self._client.list(
+                "product.template",
+                limit=1,
+                filters={"domain": [("default_code", "=", default_code)], "fields": self._FIELDS},
+            )
+            return results[0] if results else None
+        except IntegrationError:
+            return None
+
     async def create_product(self, data: dict) -> dict:
         """
         Crea un producto en Odoo.
 
         Args:
-            data: datos del producto (name obligatorio).
+            data: datos del producto (name y default_code obligatorios).
 
         Returns:
             Producto creado.
 
         Raises:
-            IntegrationError: si falla la creación.
+            IntegrationError: si falta default_code, o si falla la creación.
         """
+        if not str(data.get("default_code", "")).strip():
+            raise IntegrationError(
+                "El campo 'default_code' (referencia interna) es obligatorio al crear un producto Odoo.",
+                platform="odoo",
+            )
         try:
             result = await self._client.create("product.template", data)
-            logger.info("Producto Odoo creado", extra={"id": result.get("id")})
+            logger.info("Producto Odoo creado", extra={"id": result.get("id"), "ref": data["default_code"]})
             return result
+        except IntegrationError:
+            raise
         except Exception as exc:
             logger.error("Error creando producto Odoo", exc_info=exc)
             raise IntegrationError("Fallo creando producto Odoo") from exc
+
+    async def update_product_by_ref(self, default_code: str, data: dict) -> dict:
+        """
+        Actualiza un producto buscándolo por su referencia interna (default_code).
+
+        Args:
+            default_code: referencia interna del producto a actualizar.
+            data:         campos a actualizar.
+
+        Returns:
+            Producto actualizado.
+
+        Raises:
+            IntegrationError: si no existe producto con esa referencia, o si falla.
+        """
+        existing = await self._find_product_by_default_code(default_code)
+        if existing is None:
+            raise IntegrationError(
+                f"Producto con referencia interna '{default_code}' no encontrado en Odoo.",
+                platform="odoo",
+                status_code=404,
+            )
+        product_id = int(existing["id"])
+        logger.info("Actualizando producto Odoo por referencia", extra={"ref": default_code, "id": product_id})
+        return await self.update_product(product_id, data)
 
     async def update_product(self, product_id: int, data: dict) -> dict:
         """
@@ -233,28 +285,39 @@ class OdooProductService:
                 return False
         return val
 
-    async def bulk_create_products(
+    async def bulk_upsert_products(
         self,
         rows: list[dict[str, str]],
         mapping: dict[str, str],
-        concurrency: int = 5,
+        overwrite: bool = False,
+        concurrency: int = 10,
+        batch_size: int = 100,
     ) -> dict:
         """
-        Crea múltiples productos a partir de filas CSV y un mapeo de columnas.
-        Usa un semáforo para limitar llamadas concurrentes a Odoo.
+        Importa múltiples productos desde CSV con upsert por default_code.
+
+        Estrategia optimizada para volúmenes grandes:
+          1. Parseo y validación de todas las filas en memoria.
+          2. Búsqueda masiva de existentes en lotes (1 llamada XML-RPC por lote de 500).
+          3. Creación en lotes usando bulk_create (1 llamada XML-RPC por lote).
+          4. Actualización concurrente de existentes (N llamadas, sin búsqueda previa).
 
         Args:
             rows:        lista de dicts {columna_csv: valor_string}.
             mapping:     dict {columna_csv: campo_odoo}. Columnas mapeadas a "" se ignoran.
-            concurrency: máximo de creaciones simultáneas contra Odoo.
+            overwrite:   si True, actualiza productos existentes; si False, los omite.
+            concurrency: máximo de actualizaciones simultáneas contra Odoo.
+            batch_size:  tamaño del lote para búsquedas masivas y creaciones.
 
         Returns:
-            Dict con claves: created (int), failed (int),
-            errors (list[{row, error}]).
+            Dict con claves: created (int), updated (int), skipped (int),
+            failed (int), errors (list[{row, error}]).
         """
-        semaphore = asyncio.Semaphore(concurrency)
+        errors: list[dict] = []
 
-        async def _create_one(idx: int, row: dict[str, str]) -> tuple[bool, dict | None]:
+        # ── Fase 1: parseo y validación ───────────────────────────────────────
+        valid: list[tuple[int, dict, str]] = []  # (row_idx, product_data, default_code)
+        for idx, row in enumerate(rows, start=1):
             product_data: dict = {}
             for csv_col, odoo_field in mapping.items():
                 if not odoo_field or odoo_field not in self._CSV_FIELD_TYPES:
@@ -265,26 +328,93 @@ class OdooProductService:
                     product_data[odoo_field] = coerced
 
             if not product_data.get("name"):
-                return False, {"row": idx, "error": "Campo 'name' obligatorio y vacío."}
+                errors.append({"row": idx, "error": "Campo 'name' obligatorio y vacío."})
+                continue
+            default_code = str(product_data.get("default_code", "")).strip()
+            if not default_code:
+                errors.append({"row": idx, "error": "Campo 'default_code' obligatorio y vacío."})
+                continue
+            valid.append((idx, product_data, default_code))
 
-            async with semaphore:
-                try:
-                    await self.create_product(product_data)
-                    return True, None
-                except Exception as exc:
-                    logger.warning("Fallo importando fila CSV", extra={"row": idx, "exc": str(exc)})
-                    return False, {"row": idx, "error": str(exc)}
+        if not valid:
+            return {"created": 0, "updated": 0, "skipped": 0, "failed": len(errors), "errors": errors}
 
-        results = await asyncio.gather(
-            *[_create_one(idx, row) for idx, row in enumerate(rows, start=1)]
-        )
+        # ── Fase 2: búsqueda masiva de existentes (lotes de batch_size) ───────
+        all_refs = [ref for _, _, ref in valid]
+        existing_map: dict[str, int] = {}  # default_code → product.template id
+        search_batch = 500  # Odoo soporta dominios grandes; 500 es seguro
+        for i in range(0, len(all_refs), search_batch):
+            batch_refs = all_refs[i : i + search_batch]
+            try:
+                found = await self._client.list(
+                    "product.template",
+                    limit=len(batch_refs),
+                    filters={"domain": [("default_code", "in", batch_refs)], "fields": ["id", "default_code"]},
+                )
+                for record in found:
+                    code = record.get("default_code")
+                    if code:
+                        existing_map[str(code)] = int(record["id"])
+            except Exception as exc:
+                logger.warning("Fallo en búsqueda masiva Odoo", exc_info=exc)
 
-        created = sum(1 for ok, _ in results if ok)
-        failed = sum(1 for ok, _ in results if not ok)
-        errors = [err for ok, err in results if not ok and err is not None]
+        # ── Fase 3: separar en crear vs actualizar/omitir ─────────────────────
+        to_create: list[tuple[int, dict]] = []
+        to_update: list[tuple[int, dict, int]] = []  # (row_idx, data, odoo_id)
+        skipped = 0
 
+        for idx, data, ref in valid:
+            if ref in existing_map:
+                if overwrite:
+                    to_update.append((idx, data, existing_map[ref]))
+                else:
+                    skipped += 1
+            else:
+                to_create.append((idx, data))
+
+        # ── Fase 4: creación en lotes ─────────────────────────────────────────
+        created = 0
+        for i in range(0, len(to_create), batch_size):
+            batch = to_create[i : i + batch_size]
+            batch_data = [data for _, data in batch]
+            batch_indices = [idx for idx, _ in batch]
+            try:
+                from services.integrations.odoo.client import OdooClient
+                if isinstance(self._client, OdooClient):
+                    await self._client.bulk_create("product.template", batch_data)
+                else:
+                    for data in batch_data:
+                        await self._client.create("product.template", data)
+                created += len(batch)
+                logger.info("Lote creado", extra={"lote": i // batch_size + 1, "count": len(batch)})
+            except Exception as exc:
+                logger.warning("Fallo en lote de creación", exc_info=exc)
+                for idx, data in batch:
+                    errors.append({"row": idx, "error": str(exc)})
+
+        # ── Fase 5: actualizaciones concurrentes ──────────────────────────────
+        updated = 0
+        if to_update:
+            semaphore = asyncio.Semaphore(concurrency)
+
+            async def _update_one(idx: int, data: dict, product_id: int) -> tuple[bool, dict | None]:
+                async with semaphore:
+                    try:
+                        await self.update_product(product_id, data)
+                        return True, None
+                    except Exception as exc:
+                        logger.warning("Fallo actualizando producto Odoo", extra={"row": idx, "exc": str(exc)})
+                        return False, {"row": idx, "error": str(exc)}
+
+            update_results = await asyncio.gather(
+                *[_update_one(idx, data, pid) for idx, data, pid in to_update]
+            )
+            updated = sum(1 for ok, _ in update_results if ok)
+            errors.extend([err for ok, err in update_results if not ok and err is not None])
+
+        failed = len(errors)
         logger.info(
             "Importación CSV Odoo completada",
-            extra={"created": created, "failed": failed},
+            extra={"created": created, "updated": updated, "skipped": skipped, "failed": failed},
         )
-        return {"created": created, "failed": failed, "errors": errors}
+        return {"created": created, "updated": updated, "skipped": skipped, "failed": failed, "errors": errors}
