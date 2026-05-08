@@ -1053,7 +1053,7 @@ export async function importOdooCsv(
     errors: Array<{ row: number; error: string }>
   }>>('/odoo/products/csv/import', form, {
     headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 0,
+    timeout: 300_000,
   })
   return response.data.data
 }
