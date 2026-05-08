@@ -5,6 +5,8 @@ Servicio de gestión de productos en Odoo (product.template).
 :version: 1.0.0
 """
 
+import asyncio
+
 from loguru import logger
 
 from services.integrations.base import IntegrationClient, IntegrationError
@@ -170,3 +172,119 @@ class OdooProductService:
             return 0
         domain: list = [("active", "=", active_only)]
         return await self._client.search_count("product.template", domain)
+
+    # Tipos de cada campo aceptado en importación CSV.
+    _CSV_FIELD_TYPES: dict[str, str] = {
+        "name": "str",
+        "default_code": "str",
+        "active": "bool",
+        "priority": "str",
+        "detailed_type": "str",
+        "tracking": "str",
+        "categ_id": "int",
+        "list_price": "float",
+        "compare_list_price": "float",
+        "standard_price": "float",
+        "weight": "float",
+        "volume": "float",
+        "sale_delay": "int",
+        "hs_code": "str",
+        "sale_ok": "bool",
+        "invoice_policy": "str",
+        "description_sale": "str",
+        "purchase_ok": "bool",
+        "purchase_method": "str",
+        "description_purchase": "str",
+        "is_published": "bool",
+        "available_in_pos": "bool",
+        "website_meta_title": "str",
+        "website_meta_description": "str",
+        "website_meta_keywords": "str",
+        "description": "str",
+    }
+
+    @classmethod
+    def _coerce(cls, field: str, raw: str) -> object:
+        """
+        Convierte string CSV al tipo correcto para el campo Odoo.
+
+        Args:
+            field: nombre del campo Odoo.
+            raw:   valor crudo del CSV.
+
+        Returns:
+            Valor convertido al tipo adecuado, o False si está vacío.
+        """
+        kind = cls._CSV_FIELD_TYPES.get(field, "str")
+        val = raw.strip()
+        if not val:
+            return False
+        if kind == "bool":
+            return val.lower() in {"1", "true", "yes", "si", "sí", "on", "verdadero"}
+        if kind == "float":
+            try:
+                return float(val.replace(",", "."))
+            except ValueError:
+                return 0.0
+        if kind == "int":
+            try:
+                return int(float(val))
+            except ValueError:
+                return False
+        return val
+
+    async def bulk_create_products(
+        self,
+        rows: list[dict[str, str]],
+        mapping: dict[str, str],
+        concurrency: int = 5,
+    ) -> dict:
+        """
+        Crea múltiples productos a partir de filas CSV y un mapeo de columnas.
+        Usa un semáforo para limitar llamadas concurrentes a Odoo.
+
+        Args:
+            rows:        lista de dicts {columna_csv: valor_string}.
+            mapping:     dict {columna_csv: campo_odoo}. Columnas mapeadas a "" se ignoran.
+            concurrency: máximo de creaciones simultáneas contra Odoo.
+
+        Returns:
+            Dict con claves: created (int), failed (int),
+            errors (list[{row, error}]).
+        """
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def _create_one(idx: int, row: dict[str, str]) -> tuple[bool, dict | None]:
+            product_data: dict = {}
+            for csv_col, odoo_field in mapping.items():
+                if not odoo_field or odoo_field not in self._CSV_FIELD_TYPES:
+                    continue
+                raw = row.get(csv_col, "")
+                coerced = self._coerce(odoo_field, raw)
+                if coerced is not False:
+                    product_data[odoo_field] = coerced
+
+            if not product_data.get("name"):
+                return False, {"row": idx, "error": "Campo 'name' obligatorio y vacío."}
+
+            async with semaphore:
+                try:
+                    await self.create_product(product_data)
+                    return True, None
+                except Exception as exc:
+                    logger.warning("Fallo importando fila CSV", extra={"row": idx, "exc": str(exc)})
+                    return False, {"row": idx, "error": str(exc)}
+
+        results = await asyncio.gather(
+            *[_create_one(idx, row) for idx, row in enumerate(rows, start=1)]
+        )
+
+        created = sum(1 for ok, _ in results if ok)
+        failed = sum(1 for ok, _ in results if not ok)
+        errors = [err for ok, err in results if not ok and err is not None]
+
+        logger.info(
+            "Importación CSV Odoo completada",
+            extra={"created": created, "failed": failed},
+        )
+        return {"created": created, "failed": failed, "errors": errors}

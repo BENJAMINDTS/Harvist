@@ -61,11 +61,13 @@ Todos los endpoints devuelven 503 si Odoo no está configurado.
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 from typing import Any
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
 from loguru import logger
 
 from api.core.config import get_settings
@@ -321,6 +323,94 @@ async def list_products(
         total = await svc.count_products()
         return _ok(_paginated(items, total, limit, offset).model_dump())
     except IntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+
+@router_products.post("/csv/preview", response_model=dict)
+async def csv_preview_products(file: UploadFile = File(...)) -> dict[str, Any]:
+    """
+    Parsea un CSV (delimitador auto-detectado) y devuelve cabeceras + 5 filas de previsualización.
+
+    Returns:
+        Dict con headers, preview y row_count.
+    """
+    raw_bytes = await file.read()
+    try:
+        content = raw_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        content = raw_bytes.decode("latin-1")
+
+    try:
+        dialect = csv.Sniffer().sniff(content[:4096], delimiters=",;\t|")
+    except csv.Error:
+        dialect = csv.excel
+
+    reader = csv.DictReader(io.StringIO(content), dialect=dialect)
+    headers: list[str] = list(reader.fieldnames or [])
+    preview: list[dict] = []
+    row_count = 0
+    for row in reader:
+        row_count += 1
+        if len(preview) < 5:
+            preview.append(dict(row))
+
+    return _ok({
+        "headers": headers,
+        "preview": preview,
+        "row_count": row_count,
+        "odoo_fields": list(OdooProductService._CSV_FIELD_TYPES.keys()),
+    })
+
+
+@router_products.post("/csv/import", response_model=dict, status_code=status.HTTP_200_OK)
+async def csv_import_products(
+    file: UploadFile = File(...),
+    mapping: str = Form(...),
+) -> dict[str, Any]:
+    """
+    Importa productos masivamente desde CSV.
+
+    El parámetro ``mapping`` es un JSON ``{columna_csv: campo_odoo}``.
+    Columnas mapeadas a cadena vacía se ignoran.
+
+    Returns:
+        Dict con created, failed y errors.
+    """
+    raw_bytes = await file.read()
+    try:
+        content = raw_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        content = raw_bytes.decode("latin-1")
+
+    try:
+        col_mapping: dict[str, str] = json.loads(mapping)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="El parámetro 'mapping' no es JSON válido.",
+        ) from exc
+
+    try:
+        dialect = csv.Sniffer().sniff(content[:4096], delimiters=",;\t|")
+    except csv.Error:
+        dialect = csv.excel
+
+    reader = csv.DictReader(io.StringIO(content), dialect=dialect)
+    rows = [dict(row) for row in reader]
+
+    if not rows:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="El CSV no contiene filas de datos.",
+        )
+
+    client = await _build_client()
+    svc = OdooProductService(client)
+    try:
+        result = await svc.bulk_create_products(rows, col_mapping)
+        return _ok(result, f"{result['created']} productos creados, {result['failed']} fallidos.")
+    except Exception as exc:
+        logger.error("Error en importación CSV Odoo", exc_info=exc)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
 
