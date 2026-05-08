@@ -20,7 +20,7 @@ import { BrandsPanel } from '@/components/BrandsPanel'
 import { ReviewPanel } from '@/components/ReviewPanel'
 import BrandValidationPanel from '@/components/BrandValidationPanel'
 import PhotoSelectionPanel from '@/components/PhotoSelectionPanel'
-import { Breadcrumb } from '@/components/navigation/Breadcrumb'
+
 import { NsLogo } from '@/components/NsLogo'
 import { apiClient, getBrands, getBrandsPending, resumeJob, downloadTranslationCsv } from '@/api/client'
 import type { ApiError, BrandEntry, BrandPendingEntry, BrandValidationResult } from '@/api/client'
@@ -36,8 +36,22 @@ type AppState = 'home' | 'configuring' | 'running' | 'done'
 /** Pestañas de navegación */
 type Tab = 'nuevo' | 'historial'
 
+const MODULE_TO_HASH: Record<Module, string> = {
+  dashboard: '',
+  harvist: 'harvist',
+  dolibarr: 'dolibarr',
+  odoo: 'odoo',
+  wordpress: 'wordpress',
+}
+
+function getModuleFromHash(): Module {
+  const hash = window.location.hash.replace(/^#/, '').toLowerCase()
+  const valid: Module[] = ['harvist', 'dolibarr', 'odoo', 'wordpress']
+  return valid.includes(hash as Module) ? (hash as Module) : 'dashboard'
+}
+
 const App: React.FC = () => {
-  const [currentModule, setCurrentModule] = useState<Module>('dashboard')
+  const [currentModule, setCurrentModule] = useState<Module>(() => getModuleFromHash())
   const [tab, setTab] = useState<Tab>('nuevo')
   const [appState, setAppState] = useState<AppState>('home')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -57,6 +71,23 @@ const App: React.FC = () => {
   const [brandValidationDone, setBrandValidationDone] = useState(false)
   const [photoSelectionDone, setPhotoSelectionDone] = useState(false)
   const [selectPhotos, setSelectPhotos] = useState(false)
+
+  // ── Hash routing ────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    const hash = MODULE_TO_HASH[currentModule]
+    if (window.location.hash.replace(/^#/, '') !== hash) {
+      window.location.hash = hash
+    }
+  }, [currentModule])
+
+  useEffect(() => {
+    const onHashChange = (): void => {
+      setCurrentModule(getModuleFromHash())
+    }
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+  }, [])
 
   // ── Handlers del Dashboard ──────────────────────────────────────────────
 
@@ -343,26 +374,32 @@ const App: React.FC = () => {
             </div>
           </button>
 
-          {/* Navegación contextual */}
-          {currentModule !== 'dashboard' && (
-            <div className="flex-1">
-              <Breadcrumb
-                currentModule={currentModule}
-                currentLabel={
-                  currentModule === 'harvist'
-                    ? 'Harvist'
-                    : currentModule === 'dolibarr'
-                      ? 'Dolibarr'
-                      : currentModule === 'odoo'
-                        ? 'Odoo'
-                        : 'WordPress'
-                }
-                onBackToDashboard={handleBackToDashboard}
-              />
-            </div>
-          )}
+          {/* Navegación entre módulos */}
+          <nav className="flex gap-1 flex-1 justify-center" aria-label="Módulos">
+            {(
+              [
+                { key: 'harvist', label: 'Harvist' },
+                { key: 'dolibarr', label: 'Dolibarr' },
+                { key: 'odoo', label: 'Odoo' },
+                { key: 'wordpress', label: 'WordPress' },
+              ] as const
+            ).map(({ key, label }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => { setCurrentModule(key); setError(null) }}
+                className={`px-4 py-1.5 text-sm font-medium rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
+                  currentModule === key
+                    ? 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-950 dark:text-blue-400'
+                    : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
 
-          {/* Botones de módulos cuando estamos dentro de uno */}
+          {/* Sub-tabs de Harvist */}
           {currentModule === 'harvist' && appState !== 'home' && (
             <nav className="flex gap-2 flex-shrink-0">
               <button
@@ -388,20 +425,6 @@ const App: React.FC = () => {
                 Historial
               </button>
             </nav>
-          )}
-
-          {/* Botón historial para módulos ERP */}
-          {(currentModule === 'dolibarr' || currentModule === 'odoo' || currentModule === 'wordpress') && (
-            <button
-              type="button"
-              onClick={() => {
-                setCurrentModule('harvist')
-                setTab('historial')
-              }}
-              className="px-4 py-1.5 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 flex-shrink-0"
-            >
-              Historial
-            </button>
           )}
         </div>
       </header>

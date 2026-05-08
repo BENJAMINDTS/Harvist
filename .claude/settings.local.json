@@ -30,7 +30,20 @@
       "Bash(git reset *)",
       "Bash(pkill -f \"vite\")",
       "Bash(.venv/Scripts/celery.exe *)",
-      "Bash(.venv/Scripts/uvicorn.exe api.main:app *)"
+      "Bash(.venv/Scripts/uvicorn.exe api.main:app *)",
+      "Bash(Get-ChildItem *)",
+      "Bash(taskkill /F /FI \"WINDOWTITLE eq npm run dev*\")",
+      "Bash(taskkill /F /FI \"IMAGENAME eq node.exe\" /FI \"WINDOWTITLE eq *vite*\")",
+      "Bash(taskkill /F /FI \"IMAGENAME eq python.exe\" /FI \"WINDOWTITLE eq *uvicorn*\")",
+      "Bash(wmic process *)",
+      "Bash(ls .venv/Scripts/)",
+      "Bash(ls venv/Scripts/)",
+      "Bash(which celery *)",
+      "Bash(curl -s http://localhost:8000/api/docs)",
+      "Bash(curl -s http://localhost:5175)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Sort-Object)",
+      "Bash(npx tsc *)"
     ]
   }
 }
