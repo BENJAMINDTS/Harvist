@@ -4,8 +4,9 @@
  * @author Carlitos6712
  */
 import { useEffect, useState } from 'react'
-import { listOdooProducts, deleteOdooProduct, updateOdooProduct, listOdooCategories } from '@/api/client'
+import { listOdooProducts, deleteOdooProduct, updateOdooProduct, createOdooProduct, listOdooCategories } from '@/api/client'
 import type { OdooProduct, OdooCategory } from '@/types/odoo'
+import OdooCsvImport from './OdooCsvImport'
 
 const formatField = (v: [number, string] | false | string | undefined) => {
   if (!v) return '—'
@@ -19,6 +20,8 @@ export default function OdooProducts() {
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [editingProduct, setEditingProduct] = useState<OdooProduct | null>(null)
+  const [creatingProduct, setCreatingProduct] = useState(false)
+  const [importingCsv, setImportingCsv] = useState(false)
   const [pagination, setPagination] = useState({
     limit: 10,
     offset: 0,
@@ -68,6 +71,18 @@ export default function OdooProducts() {
           className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
         >
           Buscar
+        </button>
+        <button
+          onClick={() => setCreatingProduct(true)}
+          className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700"
+        >
+          + Nuevo producto
+        </button>
+        <button
+          onClick={() => setImportingCsv(true)}
+          className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700"
+        >
+          Importar CSV
         </button>
       </div>
 
@@ -156,7 +171,7 @@ export default function OdooProducts() {
       )}
 
       {editingProduct && (
-        <EditProductModal
+        <ProductModal
           product={editingProduct}
           onClose={() => setEditingProduct(null)}
           onSuccess={() => {
@@ -165,14 +180,32 @@ export default function OdooProducts() {
           }}
         />
       )}
+
+      {creatingProduct && (
+        <ProductModal
+          product={null}
+          onClose={() => setCreatingProduct(false)}
+          onSuccess={() => {
+            setCreatingProduct(false)
+            load(pagination.limit, pagination.offset)
+          }}
+        />
+      )}
+
+      {importingCsv && (
+        <OdooCsvImport
+          onClose={() => setImportingCsv(false)}
+          onSuccess={() => load(pagination.limit, pagination.offset)}
+        />
+      )}
     </div>
   )
 }
 
-// ── Edit modal ────────────────────────────────────────────────────────────
+// ── Create / Edit modal ───────────────────────────────────────────────────
 
-interface EditProductModalProps {
-  product: OdooProduct
+interface ProductModalProps {
+  product: OdooProduct | null
   onClose: () => void
   onSuccess: () => void
 }
@@ -185,9 +218,39 @@ const SECTION_TITLE_CLS = 'text-xs font-semibold text-gray-500 uppercase trackin
 
 type FormValues = Record<string, string>
 
-function initValues(p: OdooProduct): FormValues {
+function initValues(p: OdooProduct | null): FormValues {
   const str = (v: string | false | number | boolean | null | undefined) =>
     v == null || v === false ? '' : String(v)
+  if (!p) {
+    return {
+      name: '',
+      default_code: '',
+      active: '1',
+      priority: '0',
+      detailed_type: 'product',
+      tracking: 'none',
+      categ_id: '',
+      list_price: '0',
+      compare_list_price: '',
+      standard_price: '0',
+      weight: '',
+      volume: '',
+      sale_delay: '',
+      hs_code: '',
+      sale_ok: '1',
+      invoice_policy: 'order',
+      description_sale: '',
+      purchase_ok: '1',
+      purchase_method: 'purchase',
+      description_purchase: '',
+      is_published: '0',
+      available_in_pos: '0',
+      website_meta_title: '',
+      website_meta_description: '',
+      website_meta_keywords: '',
+      description: '',
+    }
+  }
   return {
     name: p.name,
     default_code: str(p.default_code),
@@ -251,7 +314,8 @@ function buildPayload(values: FormValues): Partial<OdooProduct> {
   return payload as Partial<OdooProduct>
 }
 
-function EditProductModal({ product, onClose, onSuccess }: EditProductModalProps) {
+function ProductModal({ product, onClose, onSuccess }: ProductModalProps) {
+  const isCreate = product === null
   const [values, setValues] = useState<FormValues>(() => initValues(product))
   const [categories, setCategories] = useState<OdooCategory[]>([])
   const [submitting, setSubmitting] = useState(false)
@@ -274,23 +338,29 @@ function EditProductModal({ product, onClose, onSuccess }: EditProductModalProps
     setError(null)
     setSubmitting(true)
     try {
-      await updateOdooProduct(product.id, buildPayload(values))
+      if (isCreate) {
+        await createOdooProduct(buildPayload(values))
+      } else {
+        await updateOdooProduct(product.id, buildPayload(values))
+      }
       onSuccess()
     } catch (err) {
-      setError((err as Error).message ?? 'Error actualizando producto')
+      setError((err as Error).message ?? (isCreate ? 'Error creando producto' : 'Error actualizando producto'))
     } finally {
       setSubmitting(false)
     }
   }
 
-  const uomLabel = product.uom_id ? `${product.uom_id[1]} (ID ${product.uom_id[0]})` : '—'
-  const uomPoLabel = product.uom_po_id ? `${product.uom_po_id[1]} (ID ${product.uom_po_id[0]})` : '—'
+  const uomLabel = product?.uom_id ? `${product.uom_id[1]} (ID ${product.uom_id[0]})` : '—'
+  const uomPoLabel = product?.uom_po_id ? `${product.uom_po_id[1]} (ID ${product.uom_po_id[0]})` : '—'
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl max-h-[90vh] flex flex-col">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
-          <h3 className="text-lg font-semibold text-gray-900">Editar producto — {product.name}</h3>
+          <h3 className="text-lg font-semibold text-gray-900">
+            {isCreate ? 'Nuevo producto' : `Editar producto — ${product.name}`}
+          </h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
         </div>
 
@@ -358,14 +428,18 @@ function EditProductModal({ product, onClose, onSuccess }: EditProductModalProps
                 <label className={LABEL_CLS}>HS Code</label>
                 <input type="text" value={values.hs_code} onChange={(e) => set('hs_code', e.target.value)} placeholder="p.ej. 8471300000" className={INPUT_CLS} />
               </div>
-              <div>
-                <label className={LABEL_CLS}>Unidad de medida</label>
-                <input type="text" value={uomLabel} disabled className={`${INPUT_CLS} bg-gray-50 text-gray-500`} />
-              </div>
-              <div>
-                <label className={LABEL_CLS}>UdM de compra</label>
-                <input type="text" value={uomPoLabel} disabled className={`${INPUT_CLS} bg-gray-50 text-gray-500`} />
-              </div>
+              {!isCreate && (
+                <>
+                  <div>
+                    <label className={LABEL_CLS}>Unidad de medida</label>
+                    <input type="text" value={uomLabel} disabled className={`${INPUT_CLS} bg-gray-50 text-gray-500`} />
+                  </div>
+                  <div>
+                    <label className={LABEL_CLS}>UdM de compra</label>
+                    <input type="text" value={uomPoLabel} disabled className={`${INPUT_CLS} bg-gray-50 text-gray-500`} />
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
@@ -509,7 +583,7 @@ function EditProductModal({ product, onClose, onSuccess }: EditProductModalProps
               disabled={submitting}
               className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
             >
-              {submitting ? 'Guardando...' : 'Guardar cambios'}
+              {submitting ? 'Guardando...' : isCreate ? 'Crear producto' : 'Guardar cambios'}
             </button>
           </div>
         </div>

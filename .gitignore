@@ -96,8 +96,7 @@ docker-compose.override.yml
 # ==========================================
 # 7. CLAUDE AI
 # ==========================================
-
-
+.claude/settings.local.json
 
 # ==========================================
 # 8. SISTEMAS OPERATIVOS Y EDITORES (IDE)
