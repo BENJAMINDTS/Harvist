@@ -1009,6 +1009,56 @@ export async function updateOdooProduct(
 }
 
 /**
+ * Sube un CSV a Odoo y devuelve cabeceras, previsualización y campos disponibles.
+ *
+ * @author BenjaminDTS
+ * @param file - Archivo CSV (cualquier delimitador).
+ */
+export async function previewOdooCsv(file: File): Promise<{
+  headers: string[]
+  preview: Record<string, string>[]
+  row_count: number
+  odoo_fields: string[]
+}> {
+  const form = new FormData()
+  form.append('file', file)
+  const response = await apiClient.post<ApiResponse<{
+    headers: string[]
+    preview: Record<string, string>[]
+    row_count: number
+    odoo_fields: string[]
+  }>>('/odoo/products/csv/preview', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return response.data.data
+}
+
+/**
+ * Importa productos en Odoo desde CSV con mapeo de columnas.
+ *
+ * @author BenjaminDTS
+ * @param file    - Archivo CSV (cualquier delimitador).
+ * @param mapping - Mapa {columna_csv: campo_odoo}. Vacío = ignorar.
+ */
+export async function importOdooCsv(
+  file: File,
+  mapping: Record<string, string>,
+): Promise<{ created: number; failed: number; errors: Array<{ row: number; error: string }> }> {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('mapping', JSON.stringify(mapping))
+  const response = await apiClient.post<ApiResponse<{
+    created: number
+    failed: number
+    errors: Array<{ row: number; error: string }>
+  }>>('/odoo/products/csv/import', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 0,
+  })
+  return response.data.data
+}
+
+/**
  * Elimina un producto Odoo por ID.
  *
  * @author Carlitos6712
