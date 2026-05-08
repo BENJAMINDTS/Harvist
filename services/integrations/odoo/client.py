@@ -281,6 +281,27 @@ class OdooClient(IntegrationClient):
         await self._execute(resource, "write", [[int(resource_id)], data])
         return await self.get(resource, resource_id)
 
+    async def bulk_create(
+        self,
+        resource: str,
+        data_list: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """
+        Crea múltiples registros en una sola llamada XML-RPC (Odoo 14+).
+
+        Args:
+            resource:  nombre del modelo.
+            data_list: lista de dicts con los datos de cada registro.
+
+        Returns:
+            Lista de dicts con los registros creados (incluyendo ID).
+        """
+        new_ids: list[int] = await self._execute(resource, "create", [data_list])
+        if not isinstance(new_ids, list):
+            new_ids = [new_ids]
+        records = await self._execute(resource, "read", [new_ids])
+        return records or []
+
     async def delete(
         self,
         resource: str,

@@ -7,11 +7,12 @@ Rutas bajo /api/v1/odoo:
   GET  /odoo/config                    — Leer credenciales actuales
 
 Rutas bajo /api/v1/odoo/products:
-  GET    /odoo/products                — Listar productos (paginado)
-  GET    /odoo/products/{id}           — Obtener producto
-  POST   /odoo/products                — Crear producto
-  PUT    /odoo/products/{id}           — Actualizar producto
-  DELETE /odoo/products/{id}           — Eliminar producto
+  GET    /odoo/products                        — Listar productos (paginado)
+  GET    /odoo/products/{id}                   — Obtener producto
+  POST   /odoo/products                        — Crear producto (default_code obligatorio)
+  PUT    /odoo/products/{id}                   — Actualizar producto por ID
+  PUT    /odoo/products/ref/{default_code}     — Actualizar producto por referencia interna
+  DELETE /odoo/products/{id}                   — Eliminar producto
 
 Rutas bajo /api/v1/odoo/categories:
   GET    /odoo/categories              — Listar categorías (paginado)
@@ -86,6 +87,23 @@ from services.integrations.odoo.partners import OdooPartnerService
 from services.integrations.odoo.products import OdooProductService
 from services.integrations.odoo.purchases import OooPurchaseService
 from services.integrations.odoo.sales import OdooSaleService
+
+def _detect_csv_delimiter(text: str) -> str:
+    """Detecta el delimitador CSV.
+
+    Usa csv.Sniffer primero; si falla cuenta ocurrencias en la primera línea
+    para no depender del fallback csv.excel que asume coma.
+    """
+    sample = text[:4096]
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+        return dialect.delimiter
+    except csv.Error:
+        first_line = sample.split("\n")[0]
+        counts = {d: first_line.count(d) for d in (";", ",", "\t", "|")}
+        best = max(counts, key=lambda d: counts[d])
+        return best if counts[best] > 0 else ","
+
 
 router_main = APIRouter(prefix="/odoo", tags=["odoo"])
 router_products = APIRouter(prefix="/odoo/products", tags=["odoo-products"])
@@ -340,12 +358,7 @@ async def csv_preview_products(file: UploadFile = File(...)) -> dict[str, Any]:
     except UnicodeDecodeError:
         content = raw_bytes.decode("latin-1")
 
-    try:
-        dialect = csv.Sniffer().sniff(content[:4096], delimiters=",;\t|")
-    except csv.Error:
-        dialect = csv.excel
-
-    reader = csv.DictReader(io.StringIO(content), dialect=dialect)
+    reader = csv.DictReader(io.StringIO(content), delimiter=_detect_csv_delimiter(content))
     headers: list[str] = list(reader.fieldnames or [])
     preview: list[dict] = []
     row_count = 0
@@ -366,15 +379,20 @@ async def csv_preview_products(file: UploadFile = File(...)) -> dict[str, Any]:
 async def csv_import_products(
     file: UploadFile = File(...),
     mapping: str = Form(...),
+    overwrite: bool = Form(default=False),
 ) -> dict[str, Any]:
     """
-    Importa productos masivamente desde CSV.
+    Importa productos masivamente desde CSV con upsert por default_code.
 
     El parámetro ``mapping`` es un JSON ``{columna_csv: campo_odoo}``.
     Columnas mapeadas a cadena vacía se ignoran.
+    El campo ``default_code`` es obligatorio en cada fila.
+
+    Args:
+        overwrite: si True, actualiza productos existentes; si False, los omite.
 
     Returns:
-        Dict con created, failed y errors.
+        Dict con created, updated, skipped, failed y errors.
     """
     raw_bytes = await file.read()
     try:
@@ -390,12 +408,7 @@ async def csv_import_products(
             detail="El parámetro 'mapping' no es JSON válido.",
         ) from exc
 
-    try:
-        dialect = csv.Sniffer().sniff(content[:4096], delimiters=",;\t|")
-    except csv.Error:
-        dialect = csv.excel
-
-    reader = csv.DictReader(io.StringIO(content), dialect=dialect)
+    reader = csv.DictReader(io.StringIO(content), delimiter=_detect_csv_delimiter(content))
     rows = [dict(row) for row in reader]
 
     if not rows:
@@ -407,8 +420,12 @@ async def csv_import_products(
     client = await _build_client()
     svc = OdooProductService(client)
     try:
-        result = await svc.bulk_create_products(rows, col_mapping)
-        return _ok(result, f"{result['created']} productos creados, {result['failed']} fallidos.")
+        result = await svc.bulk_upsert_products(rows, col_mapping, overwrite=overwrite)
+        msg = (
+            f"{result['created']} creados, {result['updated']} actualizados, "
+            f"{result['skipped']} omitidos, {result['failed']} fallidos."
+        )
+        return _ok(result, msg)
     except Exception as exc:
         logger.error("Error en importación CSV Odoo", exc_info=exc)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
@@ -427,7 +444,16 @@ async def get_product(product_id: int) -> dict[str, Any]:
 
 @router_products.post("", response_model=dict, status_code=status.HTTP_201_CREATED)
 async def create_product(body: dict) -> dict[str, Any]:
-    """Crea un producto en Odoo."""
+    """
+    Crea un producto en Odoo.
+
+    El campo ``default_code`` (referencia interna) es obligatorio.
+    """
+    if not str(body.get("default_code", "")).strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="El campo 'default_code' (referencia interna) es obligatorio.",
+        )
     client = await _build_client()
     svc = OdooProductService(client)
     try:
@@ -436,9 +462,29 @@ async def create_product(body: dict) -> dict[str, Any]:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
 
+@router_products.put("/ref/{default_code}", response_model=dict)
+async def update_product_by_ref(default_code: str, body: dict) -> dict[str, Any]:
+    """
+    Actualiza un producto Odoo buscándolo por su referencia interna (default_code).
+
+    Devuelve 404 si no existe ningún producto con esa referencia.
+    """
+    client = await _build_client()
+    svc = OdooProductService(client)
+    try:
+        return _ok(await svc.update_product_by_ref(default_code, body), "Producto actualizado.")
+    except IntegrationError as exc:
+        http_status = (
+            status.HTTP_404_NOT_FOUND
+            if exc.status_code == 404
+            else status.HTTP_502_BAD_GATEWAY
+        )
+        raise HTTPException(status_code=http_status, detail=str(exc))
+
+
 @router_products.put("/{product_id}", response_model=dict)
 async def update_product(product_id: int, body: dict) -> dict[str, Any]:
-    """Actualiza un producto Odoo."""
+    """Actualiza un producto Odoo por ID numérico."""
     client = await _build_client()
     svc = OdooProductService(client)
     try:
