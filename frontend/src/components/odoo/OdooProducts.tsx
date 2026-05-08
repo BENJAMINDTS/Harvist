@@ -4,8 +4,8 @@
  * @author Carlitos6712
  */
 import { useEffect, useState } from 'react'
-import { listOdooProducts, deleteOdooProduct, updateOdooProduct, createOdooProduct, listOdooCategories } from '@/api/client'
-import type { OdooProduct, OdooCategory } from '@/types/odoo'
+import { listOdooProducts, deleteOdooProduct, updateOdooProduct, createOdooProduct, listOdooCategories, setOdooProductProperties } from '@/api/client'
+import type { OdooProduct, OdooCategory, OdooPropertyValue } from '@/types/odoo'
 import OdooCsvImport from './OdooCsvImport'
 import OdooProductProperties from './OdooProductProperties'
 
@@ -321,6 +321,7 @@ function ProductModal({ product, onClose, onSuccess }: ProductModalProps) {
   const [categories, setCategories] = useState<OdooCategory[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [pendingProperties, setPendingProperties] = useState<OdooPropertyValue[]>([])
 
   useEffect(() => {
     listOdooCategories(200, 0)
@@ -344,9 +345,23 @@ function ProductModal({ product, onClose, onSuccess }: ProductModalProps) {
     setSubmitting(true)
     try {
       if (isCreate) {
-        await createOdooProduct(buildPayload(values))
+        const created = await createOdooProduct(buildPayload(values))
+        if (pendingProperties.length > 0) {
+          try {
+            await setOdooProductProperties(created.id, pendingProperties)
+          } catch {
+            // Properties save failed — product already created, close modal and reload
+          }
+        }
       } else {
         await updateOdooProduct(product.id, buildPayload(values))
+        if (pendingProperties.length > 0) {
+          try {
+            await setOdooProductProperties(product.id, pendingProperties)
+          } catch {
+            // Properties save failed — product fields already updated
+          }
+        }
       }
       onSuccess()
     } catch (err) {
@@ -577,13 +592,14 @@ function ProductModal({ product, onClose, onSuccess }: ProductModalProps) {
             <textarea rows={4} value={values.description} onChange={(e) => set('description', e.target.value)} className={INPUT_CLS} />
           </div>
 
-          {/* Campos extra (Properties) — solo en edición */}
-          {!isCreate && (
+          {/* Campos extra — visible cuando hay categoría seleccionada */}
+          {values.categ_id && (
             <div className={SECTION_CLS}>
               <p className={SECTION_TITLE_CLS}>Campos extra</p>
               <OdooProductProperties
-                productId={product!.id}
-                categoryId={Array.isArray(product!.categ_id) ? product!.categ_id[0] : false}
+                productId={isCreate ? null : product!.id}
+                categoryId={parseInt(values.categ_id, 10)}
+                onPropertiesChange={setPendingProperties}
               />
             </div>
           )}

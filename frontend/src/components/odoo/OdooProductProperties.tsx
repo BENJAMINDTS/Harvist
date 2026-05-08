@@ -9,8 +9,8 @@
  *
  * @author Carlitos6712
  */
-import { useEffect, useState } from 'react'
-import { getOdooProductProperties, setOdooProductProperties } from '@/api/client'
+import { useEffect, useRef, useState } from 'react'
+import { getOdooCategoryProperties, getOdooProductProperties } from '@/api/client'
 import type { OdooPropertyValue, OdooPropertyType } from '@/types/odoo'
 
 const INPUT_CLS =
@@ -28,19 +28,22 @@ const TYPE_LABELS: Record<OdooPropertyType, string> = {
 }
 
 interface Props {
-  productId: number
+  /** null = create mode (no product ID yet) */
+  productId: number | null
   categoryId: number | false
+  /** Called in create mode whenever field values change — parent collects for post-create save */
+  onPropertiesChange?: (props: OdooPropertyValue[]) => void
 }
 
-export default function OdooProductProperties({ productId, categoryId }: Props) {
+export default function OdooProductProperties({ productId, categoryId, onPropertiesChange }: Props) {
   const [properties, setProperties] = useState<OdooPropertyValue[]>([])
   const [values, setValues] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [successMsg, setSuccessMsg] = useState<string | null>(null)
 
   const catId = typeof categoryId === 'number' ? categoryId : null
+  const onPropertiesChangeRef = useRef(onPropertiesChange)
+  onPropertiesChangeRef.current = onPropertiesChange
 
   useEffect(() => {
     if (!catId) {
@@ -49,41 +52,55 @@ export default function OdooProductProperties({ productId, categoryId }: Props) 
     }
     setLoading(true)
     setError(null)
-    getOdooProductProperties(productId, catId)
-      .then((props) => {
-        const safe = Array.isArray(props) ? props : []
-        setProperties(safe)
-        const map: Record<string, string> = {}
-        for (const p of safe) {
-          map[p.name] = p.value == null || p.value === false ? '' : String(p.value)
-        }
-        setValues(map)
-      })
-      .catch((err) => setError((err as Error).message ?? 'Error cargando campos extra'))
-      .finally(() => setLoading(false))
+
+    if (productId === null) {
+      // Create mode: load definitions from the category, no existing values
+      getOdooCategoryProperties(catId)
+        .then((defs) => {
+          const safe = Array.isArray(defs) ? defs : []
+          const asValues: OdooPropertyValue[] = safe.map((d) => ({
+            name: d.name,
+            type: d.type,
+            string: d.string,
+            value: d.default ?? null,
+          }))
+          setProperties(asValues)
+          const map: Record<string, string> = {}
+          for (const p of asValues) {
+            map[p.name] = p.value == null || p.value === false ? '' : String(p.value)
+          }
+          setValues(map)
+        })
+        .catch((err) => setError((err as Error).message ?? 'Error cargando campos extra'))
+        .finally(() => setLoading(false))
+    } else {
+      // Edit mode: load existing product property values
+      getOdooProductProperties(productId, catId)
+        .then((props) => {
+          const safe = Array.isArray(props) ? props : []
+          setProperties(safe)
+          const map: Record<string, string> = {}
+          for (const p of safe) {
+            map[p.name] = p.value == null || p.value === false ? '' : String(p.value)
+          }
+          setValues(map)
+        })
+        .catch((err) => setError((err as Error).message ?? 'Error cargando campos extra'))
+        .finally(() => setLoading(false))
+    }
   }, [productId, catId])
 
-  const handleSave = async () => {
-    if (!catId) return
-    setSaving(true)
-    setError(null)
-    setSuccessMsg(null)
-    try {
-      const payload: OdooPropertyValue[] = properties.map((p) => ({
-        name: p.name,
-        type: p.type,
-        string: p.string,
-        value: coerceValue(values[p.name] ?? '', p.type),
-      }))
-      await setOdooProductProperties(productId, payload)
-      setSuccessMsg('Campos extra guardados.')
-      setTimeout(() => setSuccessMsg(null), 3000)
-    } catch (err) {
-      setError((err as Error).message ?? 'Error guardando campos extra')
-    } finally {
-      setSaving(false)
-    }
-  }
+  // Notify parent of current property values so it can include them in the main save
+  useEffect(() => {
+    if (!onPropertiesChangeRef.current || properties.length === 0) return
+    const payload: OdooPropertyValue[] = properties.map((p) => ({
+      name: p.name,
+      type: p.type,
+      string: p.string,
+      value: coerceValue(values[p.name] ?? '', p.type),
+    }))
+    onPropertiesChangeRef.current(payload)
+  }, [values, properties, productId])
 
   if (!catId) {
     return (
@@ -110,9 +127,6 @@ export default function OdooProductProperties({ productId, categoryId }: Props) 
       {error && (
         <div className="bg-red-50 border-l-4 border-red-400 p-3 rounded text-xs text-red-700">{error}</div>
       )}
-      {successMsg && (
-        <div className="bg-green-50 border-l-4 border-green-400 p-3 rounded text-xs text-green-700">{successMsg}</div>
-      )}
 
       {properties.map((prop) => (
         <div key={prop.name}>
@@ -129,14 +143,6 @@ export default function OdooProductProperties({ productId, categoryId }: Props) 
           />
         </div>
       ))}
-
-      <button
-        onClick={handleSave}
-        disabled={saving}
-        className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
-      >
-        {saving ? 'Guardando...' : 'Guardar campos extra'}
-      </button>
     </div>
   )
 }
