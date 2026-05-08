@@ -11,4 +11,4 @@ sed -i '/^Co-Authored-By:.*[Cc]opilot/d' "$COMMIT_FILE"
 sed -i '/^Co-Authored-By:.*noreply@anthropic/d' "$COMMIT_FILE"
 sed -i '/^Creado por: Claude Code (Caveman Mode)/d' "$COMMIT_FILE"
 sed -i '/^Creado por: Copilot/d' "$COMMIT_FILE"
-
+sed -i '🤖 Generated with [Claude Code](https://claude.ai/claude-code)/d' ""$COMMIT_FILE"

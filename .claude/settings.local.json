@@ -25,7 +25,12 @@
       "PowerShell(Get-Process *)",
       "Bash(gh label *)",
       "Bash(gh api *)",
-      "PowerShell(gh api *)"
+      "PowerShell(gh api *)",
+      "Bash(git branch *)",
+      "Bash(git reset *)",
+      "Bash(pkill -f \"vite\")",
+      "Bash(.venv/Scripts/celery.exe *)",
+      "Bash(.venv/Scripts/uvicorn.exe api.main:app *)"
     ]
   }
 }
