@@ -335,6 +335,10 @@ function ProductModal({ product, onClose, onSuccess }: ProductModalProps) {
       setError('El nombre es obligatorio.')
       return
     }
+    if (isCreate && !values.default_code.trim()) {
+      setError('La referencia interna es obligatoria al crear un producto.')
+      return
+    }
     setError(null)
     setSubmitting(true)
     try {
@@ -375,7 +379,9 @@ function ProductModal({ product, onClose, onSuccess }: ProductModalProps) {
                 <input type="text" value={values.name} onChange={(e) => set('name', e.target.value)} className={INPUT_CLS} />
               </div>
               <div>
-                <label className={LABEL_CLS}>Referencia interna</label>
+                <label className={LABEL_CLS}>
+                  Referencia interna {isCreate && <span className="text-red-500">*</span>}
+                </label>
                 <input type="text" value={values.default_code} onChange={(e) => set('default_code', e.target.value)} className={INPUT_CLS} />
               </div>
               <div>

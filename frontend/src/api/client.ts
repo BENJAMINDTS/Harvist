@@ -1034,26 +1034,37 @@ export async function previewOdooCsv(file: File): Promise<{
 }
 
 /**
- * Importa productos en Odoo desde CSV con mapeo de columnas.
+ * Importa productos en Odoo desde CSV con upsert por referencia interna.
  *
  * @author BenjaminDTS
- * @param file    - Archivo CSV (cualquier delimitador).
- * @param mapping - Mapa {columna_csv: campo_odoo}. Vacío = ignorar.
+ * @param file      - Archivo CSV (cualquier delimitador).
+ * @param mapping   - Mapa {columna_csv: campo_odoo}. Vacío = ignorar.
+ * @param overwrite - Si true, actualiza productos existentes; si false, los omite.
  */
 export async function importOdooCsv(
   file: File,
   mapping: Record<string, string>,
-): Promise<{ created: number; failed: number; errors: Array<{ row: number; error: string }> }> {
+  overwrite: boolean = false,
+): Promise<{
+  created: number
+  updated: number
+  skipped: number
+  failed: number
+  errors: Array<{ row: number; error: string }>
+}> {
   const form = new FormData()
   form.append('file', file)
   form.append('mapping', JSON.stringify(mapping))
+  form.append('overwrite', String(overwrite))
   const response = await apiClient.post<ApiResponse<{
     created: number
+    updated: number
+    skipped: number
     failed: number
     errors: Array<{ row: number; error: string }>
   }>>('/odoo/products/csv/import', form, {
     headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 300_000,
+    timeout: 7_200_000,
   })
   return response.data.data
 }
