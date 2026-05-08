@@ -74,25 +74,25 @@ export default function DolibarrProducts() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex gap-4">
+    <div className="space-y-4">
+      <div className="flex gap-2">
         <button
           onClick={() => setShowCreateModal(true)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium"
         >
           + Nuevo producto
         </button>
         <button
           onClick={() => setShowSyncModal(true)}
-          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
         >
           ↓ Sincronizar desde job
         </button>
         <button
           onClick={() => setShowCsvImportModal(true)}
-          className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium"
+          className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-medium"
         >
-          ↑ Importar CSV
+          Importar CSV
         </button>
       </div>
 
@@ -175,7 +175,7 @@ export default function DolibarrProducts() {
       {pagination.total > 0 && (
         <div className="flex items-center justify-between text-sm text-gray-600">
           <div>
-            {pagination.offset + 1} -{' '}
+            {pagination.offset + 1} –{' '}
             {Math.min(pagination.offset + pagination.limit, pagination.total)} de{' '}
             {pagination.total}
           </div>
@@ -524,7 +524,7 @@ function CreateProductModal({ onClose, onSuccess }: CreateProductModalProps) {
             <DynamicProductForm fields={fields} values={values} onChange={handleChange} />
           )}
         </div>
-        <div className="px-6 py-4 border-t border-gray-200 space-y-3">
+        <div className="px-6 py-4 border-t border-gray-200 space-y-3 flex-shrink-0">
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-3">
             <button
@@ -618,7 +618,7 @@ function EditProductModal({ product, onClose, onSuccess }: EditProductModalProps
             <DynamicProductForm fields={fields} values={values} onChange={handleChange} />
           )}
         </div>
-        <div className="px-6 py-4 border-t border-gray-200 space-y-3">
+        <div className="px-6 py-4 border-t border-gray-200 space-y-3 flex-shrink-0">
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-3">
             <button
@@ -678,9 +678,7 @@ function CsvImportModal({ onClose, onSuccess }: CsvImportModalProps) {
       .catch(() => {})
   }, [])
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0]
-    if (!f) return
+  const processFile = async (f: File) => {
     setFile(f)
     setError(null)
     setLoading(true)
@@ -698,6 +696,12 @@ function CsvImportModal({ onClose, onSuccess }: CsvImportModalProps) {
     }
   }
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]
+    if (!f) return
+    processFile(f)
+  }
+
   const handleImport = async () => {
     const activeMapping = Object.fromEntries(
       Object.entries(mapping).filter(([, v]) => v !== '')
@@ -713,6 +717,7 @@ function CsvImportModal({ onClose, onSuccess }: CsvImportModalProps) {
       const res = await importDolibarrCsv(file, activeMapping, overwrite)
       setResult(res)
       setStep('results')
+      if (res.created > 0 || res.updated > 0) onSuccess()
     } catch (err) {
       setError((err as { message?: string }).message ?? 'Error durante la importación')
       setStep('mapping')
@@ -731,16 +736,16 @@ function CsvImportModal({ onClose, onSuccess }: CsvImportModalProps) {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-3xl max-h-[90vh] flex flex-col">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
           <div>
             <h3 className="text-lg font-semibold text-gray-900">Importar productos desde CSV</h3>
             <p className="text-xs text-gray-500 mt-0.5">
-              {step === 'upload' && 'Selecciona el archivo CSV'}
-              {step === 'mapping' && `${preview?.total_rows ?? 0} filas detectadas — asigna las columnas`}
-              {step === 'importing' && 'Importando productos a Dolibarr...'}
-              {step === 'results' && 'Importación completada'}
+              {step === 'upload' && 'Paso 1 de 3 — Seleccionar archivo'}
+              {step === 'mapping' && `Paso 2 de 3 — Mapear columnas (${preview?.total_rows ?? 0} filas)`}
+              {step === 'importing' && 'Paso 3 de 3 — Importando...'}
+              {step === 'results' && 'Paso 3 de 3 — Resultado'}
             </p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
@@ -754,28 +759,69 @@ function CsvImportModal({ onClose, onSuccess }: CsvImportModalProps) {
             <div className="space-y-4">
               <div
                 onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-gray-300 rounded-lg p-10 text-center cursor-pointer hover:border-purple-400 hover:bg-purple-50 transition-colors"
+                onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) processFile(f) }}
+                onDragOver={(e) => e.preventDefault()}
+                className="border-2 border-dashed border-gray-300 rounded-lg p-10 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors"
               >
-                <p className="text-gray-500 text-sm">Haz clic para seleccionar un archivo CSV</p>
-                <p className="text-gray-400 text-xs mt-1">UTF-8 o Latin-1 · Máximo 10 MB</p>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".csv,.tsv,.txt"
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
+                <p className="text-4xl mb-3">📄</p>
+                {file ? (
+                  <p className="text-sm font-medium text-gray-800">{file.name}</p>
+                ) : (
+                  <>
+                    <p className="text-sm font-medium text-gray-700">Arrastra tu CSV aquí o haz clic para seleccionar</p>
+                    <p className="text-xs text-gray-400 mt-1">UTF-8 o Latin-1 · Máximo 10 MB</p>
+                  </>
+                )}
               </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".csv,text/csv"
-                className="hidden"
-                onChange={handleFileChange}
-              />
+
+              {file && (
+                <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-600">
+                  <span className="font-medium">{file.name}</span>
+                  {' · '}
+                  {(file.size / 1024).toFixed(1)} KB
+                </div>
+              )}
+
               {loading && (
                 <p className="text-sm text-gray-500 text-center">Analizando CSV...</p>
               )}
-              {error && <p className="text-sm text-red-600">{error}</p>}
+              {error && (
+                <div className="bg-red-50 border-l-4 border-red-400 p-3 rounded text-sm text-red-700">
+                  {error}
+                </div>
+              )}
             </div>
           )}
 
           {/* ── Step 2: Mapping ── */}
           {step === 'mapping' && preview && (
             <div className="space-y-5">
+              {/* Overwrite toggle */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={overwrite}
+                    onChange={(e) => setOverwrite(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-blue-900">Actualizar productos existentes</p>
+                    <p className="text-xs text-blue-700 mt-0.5">
+                      Si está activo, los productos con la misma <strong>Referencia</strong> se actualizarán con los datos del CSV.
+                      Si está inactivo, se omiten y solo se crean los nuevos.
+                    </p>
+                  </div>
+                </label>
+              </div>
+
               {/* Preview table */}
               <div>
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
@@ -806,19 +852,19 @@ function CsvImportModal({ onClose, onSuccess }: CsvImportModalProps) {
               {/* Mapping */}
               <div>
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                  Mapeo de columnas
+                  Mapeo de columnas — {Object.values(mapping).filter(Boolean).length} mapeadas de {preview.headers.length}
                 </p>
                 <div className="space-y-2">
                   {preview.headers.map((header) => (
                     <div key={header} className="flex items-center gap-3">
-                      <span className="w-40 text-xs font-mono bg-gray-100 px-2 py-1 rounded truncate flex-shrink-0 text-gray-700">
+                      <span className="w-40 text-sm font-medium text-gray-700 truncate shrink-0" title={header}>
                         {header}
                       </span>
-                      <span className="text-gray-400 text-xs">→</span>
+                      <span className="text-gray-400 shrink-0">→</span>
                       <select
                         value={mapping[header] ?? ''}
                         onChange={(e) => setMapping((prev) => ({ ...prev, [header]: e.target.value }))}
-                        className="flex-1 text-xs px-2 py-1.5 border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        className="flex-1 px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       >
                         {allFieldOptions.map((o) => (
                           <option key={o.value} value={o.value}>{o.label}</option>
@@ -829,31 +875,24 @@ function CsvImportModal({ onClose, onSuccess }: CsvImportModalProps) {
                 </div>
               </div>
 
-              {/* Overwrite toggle */}
-              <label className="flex items-center gap-2 text-sm text-gray-700">
-                <input
-                  type="checkbox"
-                  checked={overwrite}
-                  onChange={(e) => setOverwrite(e.target.checked)}
-                  className="rounded"
-                />
-                Sobreescribir productos existentes (busca por referencia)
-              </label>
-
               {!refMapped && (
                 <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">
                   Asigna al menos una columna al campo <strong>Referencia (ref)</strong> para poder importar.
                 </p>
               )}
 
-              {error && <p className="text-sm text-red-600">{error}</p>}
+              {error && (
+                <div className="bg-red-50 border-l-4 border-red-400 p-3 rounded text-sm text-red-700">
+                  {error}
+                </div>
+              )}
             </div>
           )}
 
           {/* ── Step 3: Importing ── */}
           {step === 'importing' && (
             <div className="flex flex-col items-center justify-center py-16 space-y-4">
-              <div className="w-10 h-10 border-4 border-purple-600 border-t-transparent rounded-full animate-spin" />
+              <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
               <p className="text-gray-600 text-sm">Importando {preview?.total_rows ?? '...'} productos a Dolibarr...</p>
               <p className="text-gray-400 text-xs">Esto puede tardar varios minutos para catálogos grandes.</p>
             </div>
@@ -863,27 +902,32 @@ function CsvImportModal({ onClose, onSuccess }: CsvImportModalProps) {
           {step === 'results' && result && (
             <div className="space-y-4">
               <div className="grid grid-cols-4 gap-3">
-                {[
-                  { label: 'Creados', value: result.created, color: 'bg-green-100 text-green-800' },
-                  { label: 'Actualizados', value: result.updated, color: 'bg-blue-100 text-blue-800' },
-                  { label: 'Omitidos', value: result.skipped, color: 'bg-gray-100 text-gray-700' },
-                  { label: 'Errores', value: result.errors, color: 'bg-red-100 text-red-800' },
-                ].map(({ label, value, color }) => (
-                  <div key={label} className={`rounded-lg p-3 text-center ${color}`}>
-                    <p className="text-2xl font-bold">{value}</p>
-                    <p className="text-xs font-medium mt-0.5">{label}</p>
-                  </div>
-                ))}
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
+                  <p className="text-3xl font-bold text-green-700">{result.created}</p>
+                  <p className="text-xs text-green-600 mt-1">Creados</p>
+                </div>
+                <div className={`border rounded-lg p-4 text-center ${result.updated > 0 ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'}`}>
+                  <p className={`text-3xl font-bold ${result.updated > 0 ? 'text-blue-700' : 'text-gray-400'}`}>{result.updated}</p>
+                  <p className={`text-xs mt-1 ${result.updated > 0 ? 'text-blue-600' : 'text-gray-400'}`}>Actualizados</p>
+                </div>
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
+                  <p className="text-3xl font-bold text-gray-400">{result.skipped}</p>
+                  <p className="text-xs text-gray-400 mt-1">Omitidos</p>
+                </div>
+                <div className={`border rounded-lg p-4 text-center ${result.errors > 0 ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}>
+                  <p className={`text-3xl font-bold ${result.errors > 0 ? 'text-red-700' : 'text-gray-400'}`}>{result.errors}</p>
+                  <p className={`text-xs mt-1 ${result.errors > 0 ? 'text-red-600' : 'text-gray-400'}`}>Errores</p>
+                </div>
               </div>
 
               {result.errors > 0 && (
                 <div>
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Filas con error</p>
-                  <div className="max-h-48 overflow-y-auto space-y-1">
+                  <div className="max-h-40 overflow-y-auto space-y-1">
                     {result.results
                       .filter((r) => r.action === 'error')
                       .map((r) => (
-                        <div key={r.row} className="text-xs bg-red-50 border border-red-200 rounded px-3 py-2">
+                        <div key={r.row} className="text-xs bg-red-50 border border-red-100 rounded px-3 py-2 text-red-700">
                           <span className="font-medium">Fila {r.row}</span>
                           {r.ref && <span className="text-gray-500 ml-1">({r.ref})</span>}
                           {' — '}{r.error}
@@ -897,38 +941,30 @@ function CsvImportModal({ onClose, onSuccess }: CsvImportModalProps) {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-200 flex gap-3">
-          {step === 'upload' && (
-            <button onClick={onClose} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm">
-              Cancelar
-            </button>
-          )}
+        <div className="px-6 py-4 border-t border-gray-200 flex gap-3 flex-shrink-0">
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm"
+          >
+            {step === 'results' ? 'Cerrar' : 'Cancelar'}
+          </button>
 
           {step === 'mapping' && (
             <>
               <button
                 onClick={() => { setStep('upload'); setPreview(null); setFile(null) }}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm"
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm"
               >
-                ← Cambiar archivo
+                ← Volver
               </button>
               <button
                 onClick={handleImport}
                 disabled={!refMapped}
-                className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 text-sm font-medium"
+                className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 text-sm font-medium"
               >
                 Importar {preview?.total_rows ?? ''} productos →
               </button>
             </>
-          )}
-
-          {step === 'results' && (
-            <button
-              onClick={onSuccess}
-              className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-medium"
-            >
-              Cerrar y actualizar lista
-            </button>
           )}
         </div>
       </div>
