@@ -150,6 +150,7 @@ class CsvImportRowResult(BaseModel):
     action: str
     dolibarr_id: int | None = None
     error: str | None = None
+    category_assigned: str | None = None
 
 
 class CsvImportResponse(BaseModel):
