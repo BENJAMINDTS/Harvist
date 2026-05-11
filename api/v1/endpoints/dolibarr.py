@@ -52,8 +52,12 @@ Todos los endpoints devuelven 503 si Dolibarr no está configurado.
 from __future__ import annotations
 
 import asyncio
+import base64
+import csv
+import io
 import json
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -180,6 +184,25 @@ def _get_service() -> DolibarrProductService:
             detail=_NOT_CONFIGURED_MSG,
         )
     return DolibarrProductService(client)
+
+
+async def _get_services_async() -> tuple[DolibarrProductService, DolibarrCategoryService]:
+    """
+    Construye y devuelve DolibarrProductService y DolibarrCategoryService compartiendo cliente.
+
+    Raises:
+        HTTPException 503: si Dolibarr no está configurado.
+    """
+    settings = get_settings()
+    try:
+        url, api_key = await _get_dolibarr_credentials()
+        client = DolibarrClient(settings, override_url=url, override_api_key=api_key)
+    except IntegrationNotConfiguredError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=_NOT_CONFIGURED_MSG,
+        )
+    return DolibarrProductService(client), DolibarrCategoryService(client)
 
 
 def _ok(data: Any, message: str = "OK") -> dict[str, Any]:
@@ -605,16 +628,36 @@ async def create_product(data: dict) -> JSONResponse:
     BD directa para evitar el error de Dolibarr "Field X doesn't have a default
     value" que afecta al endpoint REST PUT /products/{id}.
 
+    Si el payload incluye ``category_name``, el producto se asigna a esa
+    categoría tras la creación. La categoría debe existir previamente con ese
+    nombre exacto; si no existe se devuelve 422.
+
     Args:
         data: campos del producto (ref, label, price, description, type, status,
-              array_options opcional con extrafields).
+              array_options opcional con extrafields, category_name opcional).
 
     Returns:
         Respuesta estándar (201) con el producto creado.
     """
     array_options: dict = data.pop("array_options", None) or {}
+    category_name: str = (data.pop("category_name", None) or "").strip()
 
-    svc = await _get_service_async()
+    svc, cat_svc = await _get_services_async()
+
+    # Pre-validate category before creating the product to avoid partial state
+    category_id: int | None = None
+    if category_name:
+        cat = await cat_svc.find_category_by_name(category_name)
+        if cat is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"La categoría '{category_name}' no existe en Dolibarr. "
+                    "Créala primero desde el módulo de Categorías."
+                ),
+            )
+        category_id = int(cat["id"])
+
     try:
         created = await svc.create_product(data)
     except IntegrationError as exc:
@@ -642,6 +685,20 @@ async def create_product(data: dict) -> JSONResponse:
                 extra={"product_id": product_id},
             )
 
+    if category_id and product_id:
+        try:
+            await cat_svc.assign_product(category_id, product_id)
+            logger.info(
+                "Categoría asignada a producto creado",
+                extra={"product_id": product_id, "category": category_name},
+            )
+        except Exception as exc:
+            logger.warning(
+                "Error asignando categoría tras crear producto",
+                exc_info=exc,
+                extra={"product_id": product_id, "category": category_name},
+            )
+
     return JSONResponse(
         content=_ok(created, "Producto creado."),
         status_code=status.HTTP_201_CREATED,
@@ -657,16 +714,36 @@ async def update_product(product_id: int, data: dict) -> JSONResponse:
     via BD directa para evitar el error MySQL "Field X doesn't have a default
     value" que devuelve Dolibarr al actualizar extrafields via REST.
 
+    Si el payload incluye ``category_name``, asigna el producto a esa categoría
+    tras la actualización. La categoría debe existir previamente con ese nombre
+    exacto; si no existe se devuelve 422.
+
     Args:
         product_id: ID del producto en Dolibarr.
-        data:       campos a actualizar (puede incluir array_options).
+        data:       campos a actualizar (puede incluir array_options y category_name).
 
     Returns:
         Respuesta estándar con el producto actualizado.
     """
     array_options: dict = data.pop("array_options", None) or {}
+    category_name: str = (data.pop("category_name", None) or "").strip()
 
-    svc = await _get_service_async()
+    svc, cat_svc = await _get_services_async()
+
+    # Pre-validate category before updating
+    category_id: int | None = None
+    if category_name:
+        cat = await cat_svc.find_category_by_name(category_name)
+        if cat is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"La categoría '{category_name}' no existe en Dolibarr. "
+                    "Créala primero desde el módulo de Categorías."
+                ),
+            )
+        category_id = int(cat["id"])
+
     try:
         updated = await svc.update_product(product_id, data)
     except IntegrationError as exc:
@@ -690,6 +767,20 @@ async def update_product(product_id: int, data: dict) -> JSONResponse:
                 "Extrafields no guardados tras actualizar producto",
                 exc_info=exc,
                 extra={"product_id": product_id},
+            )
+
+    if category_id:
+        try:
+            await cat_svc.assign_product(category_id, product_id)
+            logger.info(
+                "Categoría asignada a producto actualizado",
+                extra={"product_id": product_id, "category": category_name},
+            )
+        except Exception as exc:
+            logger.warning(
+                "Error asignando categoría tras actualizar producto",
+                exc_info=exc,
+                extra={"product_id": product_id, "category": category_name},
             )
 
     return JSONResponse(content=_ok(updated, "Producto actualizado."))
@@ -804,27 +895,32 @@ async def csv_preview(file: UploadFile) -> JSONResponse:
     return JSONResponse(content=_ok(result.model_dump(), "CSV analizado."))
 
 
-@router_products.post("/import")
+@router_products.post("/import", status_code=status.HTTP_202_ACCEPTED)
 async def import_from_csv(
     file: UploadFile,
     mapping: str = Form(...),
     overwrite: bool = Form(default=False),
+    category_column: str = Form(default=""),
 ) -> JSONResponse:
     """
-    Importa productos en masa a Dolibarr desde un CSV con mapeo de columnas.
+    Inicia la importación masiva de productos desde CSV como tarea Celery asíncrona.
 
-    El campo ``mapping`` debe ser un JSON que mapea nombre_columna_csv →
-    campo_dolibarr (e.g. ``{"Referencia": "ref", "Nombre": "label"}``).
-    El campo ``ref`` es obligatorio en el mapeo.
+    Valida el CSV, el mapeo y las categorías de forma síncrona. Si todo es correcto,
+    encola la tarea y devuelve un ``task_id`` inmediatamente (HTTP 202).
+    El cliente debe hacer polling a ``GET /import/{task_id}/status`` para consultar
+    el progreso y obtener los resultados cuando la tarea termine.
 
     Args:
-        file:      CSV de productos (multipart).
-        mapping:   JSON string con el mapeo columna → campo Dolibarr.
-        overwrite: si True, actualiza productos que ya existen en Dolibarr.
+        file:            CSV de productos (multipart).
+        mapping:         JSON string con el mapeo columna → campo Dolibarr.
+        overwrite:       si True, actualiza productos que ya existen en Dolibarr.
+        category_column: nombre de la columna CSV que contiene el nombre de categoría.
 
     Returns:
-        CsvImportResponse con contadores (created/updated/skipped/errors) y resultados por fila.
+        HTTP 202 con ``{task_id, status: "pending"}``.
     """
+    from workers.tasks import importar_productos_dolibarr  # noqa: PLC0415
+
     content = await file.read()
     if len(content) > _MAX_CSV_BYTES:
         raise HTTPException(
@@ -846,42 +942,120 @@ async def import_from_csv(
             detail="El mapeo debe incluir al menos una columna asignada al campo 'ref'.",
         )
 
-    svc = await _get_service_async()
+    cat_col = category_column.strip()
+    _, cat_svc = await _get_services_async()
 
-    logger.info(
-        "Iniciando importación CSV a Dolibarr",
-        extra={"mapped_fields": len(mapping_dict), "overwrite": overwrite},
+    # Pre-validar categorías de forma síncrona antes de encolar
+    category_name_to_id: dict[str, int] = {}
+    if cat_col:
+        try:
+            text = content.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            text = content.decode("latin-1")
+        try:
+            dialect = csv.Sniffer().sniff(text[:4096], delimiters=",;\t|")
+            delimiter = dialect.delimiter
+        except csv.Error:
+            first_line = text.split("\n")[0]
+            counts = {d: first_line.count(d) for d in (";", ",", "\t", "|")}
+            best = max(counts, key=lambda d: counts[d])
+            delimiter = best if counts[best] > 0 else ","
+
+        reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
+        unique_names: set[str] = set()
+        for row in reader:
+            name = (row.get(cat_col) or "").strip()
+            if name:
+                unique_names.add(name)
+
+        missing: list[str] = []
+        for name in unique_names:
+            cat = await cat_svc.find_category_by_name(name)
+            if cat is None:
+                missing.append(name)
+            else:
+                category_name_to_id[name] = int(cat["id"])
+
+        if missing:
+            missing_list = ", ".join(f"'{c}'" for c in sorted(missing))
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"Categorías no encontradas en Dolibarr: {missing_list}. "
+                    "Créalas primero desde el módulo de Categorías con el nombre exacto."
+                ),
+            )
+
+    dolibarr_url, dolibarr_api_key = await _get_dolibarr_credentials()
+
+    task_id = str(uuid.uuid4())
+    settings = get_settings()
+    redis_client: aioredis.Redis | None = None
+    try:
+        redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
+        await redis_client.set(
+            f"dolibarr_import:{task_id}",
+            json.dumps({"task_id": task_id, "status": "pending", "progress": {"processed": 0, "total": 0}, "message": "En cola...", "results": None}),
+            ex=86400,
+        )
+    finally:
+        if redis_client:
+            await redis_client.aclose()
+
+    csv_b64 = base64.b64encode(content).decode()
+
+    importar_productos_dolibarr.delay(
+        task_id,
+        csv_b64,
+        mapping_dict,
+        overwrite,
+        cat_col,
+        category_name_to_id,
+        dolibarr_url,
+        dolibarr_api_key,
     )
 
+    logger.info(
+        "Importación CSV Dolibarr encolada",
+        extra={"task_id": task_id, "mapped_fields": len(mapping_dict), "overwrite": overwrite},
+    )
+
+    return JSONResponse(
+        content=_ok({"task_id": task_id, "status": "pending"}, "Importación iniciada. Consulta el estado con el task_id."),
+        status_code=status.HTTP_202_ACCEPTED,
+    )
+
+
+@router_products.get("/import/{task_id}/status")
+async def get_import_status(task_id: str) -> JSONResponse:
+    """
+    Consulta el estado de una tarea de importación CSV en curso o completada.
+
+    Args:
+        task_id: UUID de la tarea devuelto por ``POST /import``.
+
+    Returns:
+        Dict con task_id, status, progress, message y results (cuando completed).
+
+    Raises:
+        HTTPException 404: si el task_id no existe o ha expirado (TTL 24 h).
+    """
+    settings = get_settings()
+    redis_client: aioredis.Redis | None = None
     try:
-        rows = await svc.import_from_csv(content, mapping=mapping_dict, overwrite=overwrite)
-    except Exception as exc:
-        logger.error("Error en importación CSV Dolibarr", exc_info=exc)
+        redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
+        raw = await redis_client.get(f"dolibarr_import:{task_id}")
+    finally:
+        if redis_client:
+            await redis_client.aclose()
+
+    if not raw:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error durante la importación: {exc}",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Tarea '{task_id}' no encontrada o expirada (TTL 24 h).",
         )
 
-    created = sum(1 for r in rows if r["action"] == "created")
-    updated = sum(1 for r in rows if r["action"] == "updated")
-    skipped = sum(1 for r in rows if r["action"] == "skipped")
-    errors = sum(1 for r in rows if r["action"] == "error")
-
-    response = CsvImportResponse(
-        total=len(rows),
-        created=created,
-        updated=updated,
-        skipped=skipped,
-        errors=errors,
-        results=[CsvImportRowResult(**r) for r in rows],
-    )
-
-    logger.info(
-        "Importación CSV Dolibarr completada",
-        extra={"total": len(rows), "created": created, "updated": updated, "errors": errors},
-    )
-
-    return JSONResponse(content=_ok(response.model_dump(), f"Importación completada: {len(rows)} filas procesadas."))
+    return JSONResponse(content=_ok(json.loads(raw), "Estado de importación obtenido."))
 
 
 @router_products.get("/{product_id}")
