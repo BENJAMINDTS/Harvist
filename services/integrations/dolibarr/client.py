@@ -118,12 +118,8 @@ class DolibarrClient(IntegrationClient):
                     last_status = response.status_code
                     last_exc = None
                     logger.warning(
-                        "Reintentando Dolibarr",
-                        extra={
-                            "attempt": attempt,
-                            "path": path,
-                            "dolibarr_error": response.text[:400],
-                        },
+                        f"Reintentando Dolibarr [{method} {path}] intento {attempt+1}/{_MAX_RETRIES} "
+                        f"HTTP {response.status_code}: {response.text[:400]}",
                     )
                     await asyncio.sleep(2 ** attempt)
                     continue
