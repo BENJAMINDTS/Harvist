@@ -347,10 +347,15 @@ async def save_config(body: WordPressConfigRequest) -> dict[str, Any]:
 
     try:
         redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
+        existing: dict[str, str] = {}
+        stored = await redis_client.get("integration:wordpress:config")
+        if stored:
+            existing = json.loads(stored)
+
         payload = {
             "url": body.url.strip().rstrip("/"),
-            "consumer_key": body.consumer_key.strip(),
-            "consumer_secret": body.consumer_secret.strip(),
+            "consumer_key": body.consumer_key.strip() or existing.get("consumer_key", ""),
+            "consumer_secret": body.consumer_secret.strip() or existing.get("consumer_secret", ""),
         }
         await redis_client.set("integration:wordpress:config", json.dumps(payload))
         logger.info("Config WordPress guardada en Redis", extra={"url": body.url})

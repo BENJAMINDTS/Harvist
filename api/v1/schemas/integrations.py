@@ -138,8 +138,8 @@ class WordPressConfigRequest(BaseModel):
     """Petición para guardar configuración de WordPress/WooCommerce."""
 
     url: str = Field(..., min_length=1, description="URL base de la tienda WordPress.")
-    consumer_key: str = Field(..., min_length=1, description="Consumer Key de WooCommerce (ck_...).")
-    consumer_secret: str = Field(..., min_length=1, description="Consumer Secret de WooCommerce (cs_...).")
+    consumer_key: str = Field(default="", description="Consumer Key de WooCommerce (ck_...). Vacío = mantener valor existente.")
+    consumer_secret: str = Field(default="", description="Consumer Secret de WooCommerce (cs_...). Vacío = mantener valor existente.")
 
 
 class WordPressConfigResponse(BaseModel):
