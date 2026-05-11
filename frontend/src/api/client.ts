@@ -1567,3 +1567,369 @@ export async function deleteOdooProductProperty(
 ): Promise<void> {
   await apiClient.delete(`/odoo/products/${productId}/properties/${propName}`)
 }
+
+// ─── WordPress / WooCommerce ─────────────────────────────────────────────────
+
+import type {
+  WooProduct,
+  WooCategory,
+  WooOrder,
+  WooCustomer,
+  WooMedia,
+  WordPressConfigRequest,
+  WordPressConfigResponse,
+  WordPressDBConfigRequest,
+  WordPressDBConfigResponse,
+  DBTable,
+  WPSiteInfo,
+} from '@/types/wordpress'
+
+// ── Status & Config ──────────────────────────────────────────────────────────
+
+/**
+ * Obtiene el estado de configuración y salud de la integración WordPress.
+ *
+ * @author Carlos Vico
+ * @returns IntegrationStatus con platform, configured, healthy y message.
+ */
+export async function getWordPressStatus(): Promise<IntegrationStatus> {
+  const r = await apiClient.get<ApiResponse<IntegrationStatus>>('/wordpress/status')
+  return r.data.data
+}
+
+/**
+ * Lee la configuración actual de WordPress (credenciales enmascaradas).
+ *
+ * @author Carlos Vico
+ * @returns WordPressConfigResponse con las credenciales actuales.
+ */
+export async function getWordPressConfig(): Promise<WordPressConfigResponse> {
+  const r = await apiClient.get<ApiResponse<WordPressConfigResponse>>('/wordpress/config')
+  return r.data.data
+}
+
+/**
+ * Guarda las credenciales de WordPress en el servidor.
+ *
+ * @author Carlos Vico
+ * @param config - URL y API Key de WooCommerce.
+ */
+export async function saveWordPressConfig(config: WordPressConfigRequest): Promise<void> {
+  await apiClient.post('/wordpress/config', config)
+}
+
+/**
+ * Lee la configuración de BD MySQL de WordPress.
+ *
+ * @author Carlos Vico
+ * @returns WordPressDBConfigResponse con las credenciales de BD.
+ */
+export async function getWordPressDBConfig(): Promise<WordPressDBConfigResponse> {
+  const r = await apiClient.get<ApiResponse<WordPressDBConfigResponse>>('/wordpress/db/config')
+  return r.data.data
+}
+
+/**
+ * Guarda las credenciales de BD MySQL de WordPress.
+ *
+ * @author Carlos Vico
+ * @param config - host, port, db_name, user, password, prefix.
+ */
+export async function saveWordPressDBConfig(config: WordPressDBConfigRequest): Promise<void> {
+  await apiClient.post('/wordpress/db/config', config)
+}
+
+// ── Products ─────────────────────────────────────────────────────────────────
+
+/**
+ * Lista productos WooCommerce con paginación.
+ *
+ * @author Carlos Vico
+ * @param limit  - Elementos por página.
+ * @param offset - Desplazamiento.
+ * @param status - Filtro de estado.
+ * @returns Lista de WooProduct.
+ */
+export async function listWordPressProducts(
+  limit = 50,
+  offset = 0,
+  status = 'any',
+): Promise<WooProduct[]> {
+  const r = await apiClient.get<ApiResponse<{ items: WooProduct[] }>>(
+    '/wordpress/products',
+    { params: { limit, offset, status } },
+  )
+  return r.data.data.items
+}
+
+/**
+ * Obtiene un producto WooCommerce por ID.
+ *
+ * @author Carlos Vico
+ * @param id - ID del producto.
+ * @returns WooProduct.
+ */
+export async function getWordPressProduct(id: number): Promise<WooProduct> {
+  const r = await apiClient.get<ApiResponse<WooProduct>>(`/wordpress/products/${id}`)
+  return r.data.data
+}
+
+/**
+ * Crea un producto en WooCommerce.
+ *
+ * @author Carlos Vico
+ * @param data - Campos del producto.
+ * @returns WooProduct creado.
+ */
+export async function createWordPressProduct(data: Partial<WooProduct>): Promise<WooProduct> {
+  const r = await apiClient.post<ApiResponse<WooProduct>>('/wordpress/products', data)
+  return r.data.data
+}
+
+/**
+ * Actualiza un producto en WooCommerce.
+ *
+ * @author Carlos Vico
+ * @param id   - ID del producto.
+ * @param data - Campos a actualizar.
+ * @returns WooProduct actualizado.
+ */
+export async function updateWordPressProduct(
+  id: number,
+  data: Partial<WooProduct>,
+): Promise<WooProduct> {
+  const r = await apiClient.put<ApiResponse<WooProduct>>(`/wordpress/products/${id}`, data)
+  return r.data.data
+}
+
+/**
+ * Elimina un producto de WooCommerce.
+ *
+ * @author Carlos Vico
+ * @param id - ID del producto.
+ */
+export async function deleteWordPressProduct(id: number): Promise<void> {
+  await apiClient.delete(`/wordpress/products/${id}`)
+}
+
+/**
+ * Sincroniza productos de un job Harvist a WooCommerce.
+ *
+ * @author Carlos Vico
+ * @param jobId        - UUID del job.
+ * @param productCodes - Códigos de producto a sincronizar.
+ * @param overwrite    - Si True, sobreescribe productos existentes.
+ */
+export async function syncWordPressFromJob(
+  jobId: string,
+  productCodes: string[],
+  overwrite = false,
+): Promise<Record<string, unknown>> {
+  const r = await apiClient.post<ApiResponse<Record<string, unknown>>>(
+    '/wordpress/products/sync',
+    { job_id: jobId, product_codes: productCodes, overwrite },
+  )
+  return r.data.data
+}
+
+// ── Categories ────────────────────────────────────────────────────────────────
+
+/**
+ * Lista categorías WooCommerce.
+ *
+ * @author Carlos Vico
+ * @returns Lista de WooCategory.
+ */
+export async function listWordPressCategories(): Promise<WooCategory[]> {
+  const r = await apiClient.get<ApiResponse<WooCategory[]>>('/wordpress/categories')
+  return r.data.data
+}
+
+/**
+ * Obtiene el árbol jerárquico de categorías WooCommerce.
+ *
+ * @author Carlos Vico
+ * @returns Lista de categorías raíz con campo "children".
+ */
+export async function getWordPressCategoriesTree(): Promise<WooCategory[]> {
+  const r = await apiClient.get<ApiResponse<WooCategory[]>>('/wordpress/categories/tree')
+  return r.data.data
+}
+
+/**
+ * Crea una categoría en WooCommerce.
+ *
+ * @author Carlos Vico
+ * @param data - Campos de la categoría.
+ * @returns WooCategory creada.
+ */
+export async function createWordPressCategory(
+  data: Partial<WooCategory>,
+): Promise<WooCategory> {
+  const r = await apiClient.post<ApiResponse<WooCategory>>('/wordpress/categories', data)
+  return r.data.data
+}
+
+/**
+ * Elimina una categoría de WooCommerce.
+ *
+ * @author Carlos Vico
+ * @param id - ID de la categoría.
+ */
+export async function deleteWordPressCategory(id: number): Promise<void> {
+  await apiClient.delete(`/wordpress/categories/${id}`)
+}
+
+// ── Orders ────────────────────────────────────────────────────────────────────
+
+/**
+ * Lista pedidos WooCommerce.
+ *
+ * @author Carlos Vico
+ * @param limit  - Elementos por página.
+ * @param offset - Desplazamiento.
+ * @param status - Filtro de estado.
+ * @returns Lista de WooOrder.
+ */
+export async function listWordPressOrders(
+  limit = 50,
+  offset = 0,
+  status = 'any',
+): Promise<WooOrder[]> {
+  const r = await apiClient.get<ApiResponse<{ items: WooOrder[] }>>(
+    '/wordpress/orders',
+    { params: { limit, offset, status } },
+  )
+  return r.data.data.items
+}
+
+/**
+ * Cambia el estado de un pedido WooCommerce.
+ *
+ * @author Carlos Vico
+ * @param id        - ID del pedido.
+ * @param newStatus - Nuevo estado.
+ * @param note      - Nota interna opcional.
+ * @returns WooOrder actualizado.
+ */
+export async function updateWordPressOrderStatus(
+  id: number,
+  newStatus: string,
+  note = '',
+): Promise<WooOrder> {
+  const r = await apiClient.put<ApiResponse<WooOrder>>(
+    `/wordpress/orders/${id}/status`,
+    { status: newStatus, note },
+  )
+  return r.data.data
+}
+
+// ── Customers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Lista clientes WooCommerce.
+ *
+ * @author Carlos Vico
+ * @param limit  - Elementos por página.
+ * @param offset - Desplazamiento.
+ * @param search - Término de búsqueda.
+ * @returns Lista de WooCustomer.
+ */
+export async function listWordPressCustomers(
+  limit = 50,
+  offset = 0,
+  search = '',
+): Promise<WooCustomer[]> {
+  const r = await apiClient.get<ApiResponse<{ items: WooCustomer[] }>>(
+    '/wordpress/customers',
+    { params: { limit, offset, search } },
+  )
+  return r.data.data.items
+}
+
+/**
+ * Elimina un cliente de WooCommerce.
+ *
+ * @author Carlos Vico
+ * @param id - ID del cliente.
+ */
+export async function deleteWordPressCustomer(id: number): Promise<void> {
+  await apiClient.delete(`/wordpress/customers/${id}`)
+}
+
+// ── Media ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Lista archivos del Media Library de WordPress.
+ *
+ * @author Carlos Vico
+ * @param limit  - Elementos por página.
+ * @param offset - Desplazamiento.
+ * @returns Lista de WooMedia.
+ */
+export async function listWordPressMedia(limit = 50, offset = 0): Promise<WooMedia[]> {
+  const r = await apiClient.get<ApiResponse<{ items: WooMedia[] }>>(
+    '/wordpress/media',
+    { params: { limit, offset } },
+  )
+  return r.data.data.items
+}
+
+/**
+ * Sube un archivo al Media Library de WordPress.
+ *
+ * @author Carlos Vico
+ * @param file - Archivo a subir (image/jpeg, image/png, image/webp).
+ * @returns WooMedia creado.
+ */
+export async function uploadWordPressMedia(file: File): Promise<WooMedia> {
+  const form = new FormData()
+  form.append('file', file)
+  const r = await apiClient.post<ApiResponse<WooMedia>>('/wordpress/media', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return r.data.data
+}
+
+// ── Database (phpMyAdmin) ─────────────────────────────────────────────────────
+
+/**
+ * Lista las tablas de la BD MySQL de WordPress.
+ *
+ * @author Carlos Vico
+ * @returns Lista de DBTable con nombre, filas, tamaño y motor.
+ */
+export async function listWordPressDBTables(): Promise<DBTable[]> {
+  const r = await apiClient.get<ApiResponse<DBTable[]>>('/wordpress/db/tables')
+  return r.data.data
+}
+
+/**
+ * Obtiene información básica del sitio WordPress desde wp_options.
+ *
+ * @author Carlos Vico
+ * @returns WPSiteInfo con siteurl, blogname, etc.
+ */
+export async function getWordPressSiteInfo(): Promise<WPSiteInfo> {
+  const r = await apiClient.get<ApiResponse<WPSiteInfo>>('/wordpress/db/site-info')
+  return r.data.data
+}
+
+/**
+ * Ejecuta una consulta SQL SELECT contra la BD MySQL de WordPress.
+ *
+ * @author Carlos Vico
+ * @param sql    - Consulta SELECT.
+ * @param params - Parámetros parametrizados.
+ * @returns Filas resultantes.
+ */
+export async function queryWordPressDB(
+  sql: string,
+  params: unknown[] = [],
+): Promise<{ rows: Record<string, unknown>[]; count: number }> {
+  const r = await apiClient.post<ApiResponse<{ rows: Record<string, unknown>[]; count: number }>>(
+    '/wordpress/db/query',
+    { sql, params },
+  )
+  return r.data.data
+}

@@ -134,6 +134,46 @@ class OdooConfigResponse(BaseModel):
     configured: bool
 
 
+class WordPressConfigRequest(BaseModel):
+    """Petición para guardar configuración de WordPress/WooCommerce."""
+
+    url: str = Field(..., min_length=1, description="URL base de la tienda WordPress.")
+    consumer_key: str = Field(..., min_length=1, description="Consumer Key de WooCommerce (ck_...).")
+    consumer_secret: str = Field(..., min_length=1, description="Consumer Secret de WooCommerce (cs_...).")
+
+
+class WordPressConfigResponse(BaseModel):
+    """Respuesta con configuración actual de WordPress."""
+
+    url: str
+    consumer_key: str
+    consumer_secret: str
+    configured: bool
+
+
+class WordPressDBConfigRequest(BaseModel):
+    """Petición para guardar credenciales de BD MySQL de WordPress."""
+
+    host: str = Field(..., min_length=1, description="Host MySQL/MariaDB.")
+    port: int = Field(default=3306, ge=1, le=65535)
+    db_name: str = Field(..., min_length=1, description="Nombre de la base de datos.")
+    user: str = Field(..., min_length=1, description="Usuario MySQL.")
+    password: str = Field(default="", description="Contraseña MySQL.")
+    prefix: str = Field(default="wp_", description="Prefijo de tablas WordPress.")
+
+
+class WordPressDBConfigResponse(BaseModel):
+    """Respuesta con configuración de BD de WordPress."""
+
+    host: str
+    port: int
+    db_name: str
+    user: str
+    password: str
+    prefix: str
+    configured: bool
+
+
 class CsvImportPreview(BaseModel):
     """Resultado del pre-análisis de un CSV de productos para importación masiva."""
 

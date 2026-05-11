@@ -1,13 +1,13 @@
 """
 Router principal de la versión 1 de la API.
 
-Monta los sub-routers de jobs, files, history, todos los módulos Dolibarr
-y Odoo (incluyendo Properties) bajo el prefijo /api/v1. Cualquier nuevo recurso
-de v1 se registra aquí.
+Monta los sub-routers de jobs, files, history, todos los módulos Dolibarr,
+Odoo (incluyendo Properties) y WordPress/WooCommerce bajo el prefijo /api/v1.
+Cualquier nuevo recurso de v1 se registra aquí.
 
 :author: BenjaminDTS
 :author: Carlitos6712
-:version: 1.1.0
+:version: 1.2.0
 """
 
 from fastapi import APIRouter
@@ -36,6 +36,15 @@ from api.v1.endpoints.odoo import (
     router_inventory as odoo_router_inventory,
     router_properties as odoo_router_properties,
 )
+from api.v1.endpoints.wordpress import (
+    router_main as wordpress_router_main,
+    router_products as wordpress_router_products,
+    router_categories as wordpress_router_categories,
+    router_orders as wordpress_router_orders,
+    router_customers as wordpress_router_customers,
+    router_media as wordpress_router_media,
+    router_db as wordpress_router_db,
+)
 
 router = APIRouter()
 
@@ -59,3 +68,10 @@ router.include_router(odoo_router_sales)
 router.include_router(odoo_router_invoices)
 router.include_router(odoo_router_inventory)
 router.include_router(odoo_router_properties)
+router.include_router(wordpress_router_main)
+router.include_router(wordpress_router_products)
+router.include_router(wordpress_router_categories)
+router.include_router(wordpress_router_orders)
+router.include_router(wordpress_router_customers)
+router.include_router(wordpress_router_media)
+router.include_router(wordpress_router_db)

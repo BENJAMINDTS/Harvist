@@ -265,6 +265,46 @@ class Settings(BaseSettings):
             and self.odoo_password.strip()
         )
 
+    # ── Integración WordPress / WooCommerce ─────────────────────────────────
+    wordpress_url: str = Field(
+        default="",
+        description="URL base de la tienda WordPress. Ejemplo: https://mi-tienda.com",
+    )
+    wordpress_consumer_key: str = Field(
+        default="",
+        description="Consumer Key de WooCommerce REST API (ck_...).",
+    )
+    wordpress_consumer_secret: str = Field(
+        default="",
+        description="Consumer Secret de WooCommerce REST API (cs_...).",
+    )
+
+    # ── Base de datos WordPress (phpMyAdmin / MySQL directo) ─────────────────
+    wordpress_db_host: str = Field(default="", description="Host MySQL/MariaDB de WordPress.")
+    wordpress_db_port: int = Field(default=3306, ge=1, le=65535)
+    wordpress_db_name: str = Field(default="", description="Nombre de la BD de WordPress.")
+    wordpress_db_user: str = Field(default="", description="Usuario MySQL de WordPress.")
+    wordpress_db_pass: str = Field(default="", description="Contraseña MySQL de WordPress.")
+    wordpress_db_prefix: str = Field(default="wp_", description="Prefijo de tablas WordPress.")
+
+    @property
+    def wordpress_configured(self) -> bool:
+        """True si WordPress tiene URL, consumer_key y consumer_secret definidas y no vacías."""
+        return bool(
+            self.wordpress_url.strip()
+            and self.wordpress_consumer_key.strip()
+            and self.wordpress_consumer_secret.strip()
+        )
+
+    @property
+    def wordpress_db_configured(self) -> bool:
+        """True si las credenciales de BD de WordPress están definidas."""
+        return bool(
+            self.wordpress_db_host.strip()
+            and self.wordpress_db_name.strip()
+            and self.wordpress_db_user.strip()
+        )
+
     # ── Logging ───────────────────────────────────────────────────────────────
     log_level: Literal["ERROR", "WARN", "INFO", "DEBUG"] = Field(default="INFO")
     log_dir: str = Field(default="logs")
