@@ -29,8 +29,10 @@ import {
   type DolibarrExtraField,
   type DolibarrExtraFieldCreate,
   type CsvImportPreview,
-  type CsvImportResponse,
   type DolibarrStats,
+  type DolibarrCategory,
+  type DolibarrCategoryTree,
+  type DolibarrImportTask,
 } from '@/types/dolibarr'
 import {
   type OdooProduct,
@@ -919,17 +921,135 @@ export async function importDolibarrCsv(
   file: File,
   mapping: Record<string, string>,
   overwrite: boolean,
-): Promise<CsvImportResponse> {
+  categoryColumn?: string,
+): Promise<DolibarrImportTask> {
   const form = new FormData()
   form.append('file', file)
   form.append('mapping', JSON.stringify(mapping))
   form.append('overwrite', String(overwrite))
-  const response = await apiClient.post<ApiResponse<CsvImportResponse>>(
+  if (categoryColumn) form.append('category_column', categoryColumn)
+  const response = await apiClient.post<ApiResponse<DolibarrImportTask>>(
     '/dolibarr/products/import',
     form,
-    { timeout: 120_000 },
+    { timeout: 30_000 },
   )
   return response.data.data
+}
+
+/**
+ * Consulta el estado de una tarea de importación CSV de Dolibarr.
+ *
+ * @author BenjaminDTS
+ * @param taskId - UUID de la tarea devuelto por importDolibarrCsv.
+ */
+export async function getDolibarrImportStatus(taskId: string): Promise<DolibarrImportTask> {
+  const response = await apiClient.get<ApiResponse<DolibarrImportTask>>(
+    `/dolibarr/products/import/${taskId}/status`,
+  )
+  return response.data.data
+}
+
+// ── Categorías Dolibarr ──────────────────────────────────────────
+
+/**
+ * Lista categorías Dolibarr con paginación.
+ *
+ * @author BenjaminDTS
+ * @param type   - Tipo de categoría (product, customer, supplier, member).
+ * @param limit  - Máximo de resultados.
+ * @param offset - Desplazamiento.
+ */
+export async function listDolibarrCategories(
+  type = 'product',
+  limit = 50,
+  offset = 0,
+): Promise<PaginatedResponse<DolibarrCategory>> {
+  const response = await apiClient.get<ApiResponse<PaginatedResponse<DolibarrCategory>>>(
+    '/dolibarr/categories',
+    { params: { type, limit, offset } },
+  )
+  return response.data.data
+}
+
+/**
+ * Obtiene el árbol jerárquico completo de categorías.
+ *
+ * @author BenjaminDTS
+ * @param type - Tipo de categoría.
+ */
+export async function getDolibarrCategoryTree(type = 'product'): Promise<DolibarrCategoryTree[]> {
+  const response = await apiClient.get<ApiResponse<DolibarrCategoryTree[]>>(
+    '/dolibarr/categories/tree',
+    { params: { type } },
+  )
+  return response.data.data
+}
+
+/**
+ * Crea una categoría en Dolibarr.
+ *
+ * @author BenjaminDTS
+ * @param label       - Nombre de la categoría.
+ * @param type        - Tipo de categoría.
+ * @param parent_id   - ID de la categoría padre (opcional).
+ * @param description - Descripción (opcional).
+ */
+export async function createDolibarrCategory(
+  label: string,
+  type = 'product',
+  parent_id?: number | string | null,
+  description = '',
+): Promise<DolibarrCategory> {
+  const params: Record<string, string | number> = { label, type, description }
+  if (parent_id != null) params.parent_id = Number(parent_id)
+  const response = await apiClient.post<ApiResponse<DolibarrCategory>>(
+    '/dolibarr/categories',
+    null,
+    { params },
+  )
+  return response.data.data
+}
+
+/**
+ * Actualiza una categoría existente.
+ *
+ * @author BenjaminDTS
+ * @param id   - ID de la categoría.
+ * @param data - Campos a actualizar.
+ */
+export async function updateDolibarrCategory(
+  id: number | string,
+  data: Partial<Pick<DolibarrCategory, 'label' | 'description'>>,
+): Promise<DolibarrCategory> {
+  const response = await apiClient.put<ApiResponse<DolibarrCategory>>(
+    `/dolibarr/categories/${id}`,
+    data,
+  )
+  return response.data.data
+}
+
+/**
+ * Elimina una categoría de Dolibarr.
+ *
+ * @author BenjaminDTS
+ * @param id - ID de la categoría a eliminar.
+ */
+export async function deleteDolibarrCategory(id: number | string): Promise<void> {
+  await apiClient.delete(`/dolibarr/categories/${id}`)
+}
+
+/**
+ * Asigna un producto a una categoría existente en Dolibarr.
+ *
+ * @author BenjaminDTS
+ * @param categoryId - ID de la categoría.
+ * @param productId  - ID del producto a asignar.
+ */
+export async function assignDolibarrProductToCategory(
+  categoryId: number | string,
+  productId: number | string,
+): Promise<void> {
+  await apiClient.post(`/dolibarr/categories/${categoryId}/products/${productId}`)
 }
 
 // ────────────────────────────────────────────────────────────────
