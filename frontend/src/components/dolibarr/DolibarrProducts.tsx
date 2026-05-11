@@ -16,6 +16,8 @@ import {
   getDolibarrProductFields,
   previewDolibarrCsv,
   importDolibarrCsv,
+  getDolibarrImportStatus,
+  listDolibarrCategories,
 } from '@/api/client'
 import {
   type DolibarrProduct,
@@ -24,6 +26,7 @@ import {
   type DolibarrFieldOption,
   type CsvImportPreview,
   type CsvImportResponse,
+  type DolibarrCategory,
 } from '@/types/dolibarr'
 
 export default function DolibarrProducts() {
@@ -472,12 +475,18 @@ function CreateProductModal({ onClose, onSuccess }: CreateProductModalProps) {
   const [values, setValues] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [categories, setCategories] = useState<DolibarrCategory[]>([])
+  const [selectedCategory, setSelectedCategory] = useState('')
 
   useEffect(() => {
-    getDolibarrProductFields()
-      .then((f) => {
+    Promise.all([
+      getDolibarrProductFields(),
+      listDolibarrCategories('product', 200, 0).catch(() => ({ items: [] as DolibarrCategory[], total: 0, limit: 200, offset: 0, has_more: false })),
+    ])
+      .then(([f, cats]) => {
         setFields(f)
         setValues(initEmpty(f))
+        setCategories(cats.items)
       })
       .catch((err) => setError((err as Error).message ?? 'Error cargando campos'))
       .finally(() => setFieldsLoading(false))
@@ -494,10 +503,12 @@ function CreateProductModal({ onClose, onSuccess }: CreateProductModalProps) {
     try {
       setSubmitting(true)
       setError(null)
-      await createDolibarrProduct(buildPayload(values, fields) as Partial<DolibarrProduct>)
+      const payload = buildPayload(values, fields) as Record<string, unknown>
+      if (selectedCategory) payload.category_name = selectedCategory
+      await createDolibarrProduct(payload as Partial<DolibarrProduct>)
       onSuccess()
     } catch (err) {
-      setError((err as Error).message ?? 'Error creando producto')
+      setError((err as { message?: string }).message ?? 'Error creando producto')
     } finally {
       setSubmitting(false)
     }
@@ -515,13 +526,31 @@ function CreateProductModal({ onClose, onSuccess }: CreateProductModalProps) {
             &times;
           </button>
         </div>
-        <div className="overflow-y-auto flex-1 px-6 py-4">
+        <div className="overflow-y-auto flex-1 px-6 py-4 space-y-4">
           {fieldsLoading ? (
             <div className="flex items-center justify-center py-12 text-gray-500 text-sm">
               Cargando campos de esta instancia Dolibarr...
             </div>
           ) : (
-            <DynamicProductForm fields={fields} values={values} onChange={handleChange} />
+            <>
+              <DynamicProductForm fields={fields} values={values} onChange={handleChange} />
+              <div className="border border-amber-200 bg-amber-50 rounded-lg p-4 space-y-3">
+                <p className="text-xs font-semibold text-amber-800 uppercase tracking-wide">Categoría (opcional)</p>
+                <p className="text-xs text-amber-700">
+                  La categoría debe existir previamente en Dolibarr. El nombre debe coincidir exactamente.
+                </p>
+                <select
+                  value={selectedCategory}
+                  onChange={(e) => setSelectedCategory(e.target.value)}
+                  className="w-full px-3 py-2 border border-amber-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 focus:border-transparent bg-white"
+                >
+                  <option value="">— Sin categoría —</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.label}>{c.label}</option>
+                  ))}
+                </select>
+              </div>
+            </>
           )}
         </div>
         <div className="px-6 py-4 border-t border-gray-200 space-y-3 flex-shrink-0">
@@ -561,12 +590,18 @@ function EditProductModal({ product, onClose, onSuccess }: EditProductModalProps
   const [values, setValues] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [categories, setCategories] = useState<DolibarrCategory[]>([])
+  const [selectedCategory, setSelectedCategory] = useState('')
 
   useEffect(() => {
-    getDolibarrProductFields()
-      .then((f) => {
+    Promise.all([
+      getDolibarrProductFields(),
+      listDolibarrCategories('product', 200, 0).catch(() => ({ items: [] as DolibarrCategory[], total: 0, limit: 200, offset: 0, has_more: false })),
+    ])
+      .then(([f, cats]) => {
         setFields(f)
         setValues(initFromProduct(product, f))
+        setCategories(cats.items)
       })
       .catch((err) => setError((err as Error).message ?? 'Error cargando campos'))
       .finally(() => setFieldsLoading(false))
@@ -583,13 +618,12 @@ function EditProductModal({ product, onClose, onSuccess }: EditProductModalProps
     try {
       setSubmitting(true)
       setError(null)
-      await updateDolibarrProduct(
-        product.id,
-        buildPayload(values, fields) as Partial<DolibarrProduct>,
-      )
+      const payload = buildPayload(values, fields) as Record<string, unknown>
+      if (selectedCategory) payload.category_name = selectedCategory
+      await updateDolibarrProduct(product.id, payload as Partial<DolibarrProduct>)
       onSuccess()
     } catch (err) {
-      setError((err as Error).message ?? 'Error actualizando producto')
+      setError((err as { message?: string }).message ?? 'Error actualizando producto')
     } finally {
       setSubmitting(false)
     }
@@ -609,13 +643,31 @@ function EditProductModal({ product, onClose, onSuccess }: EditProductModalProps
             &times;
           </button>
         </div>
-        <div className="overflow-y-auto flex-1 px-6 py-4">
+        <div className="overflow-y-auto flex-1 px-6 py-4 space-y-4">
           {fieldsLoading ? (
             <div className="flex items-center justify-center py-12 text-gray-500 text-sm">
               Cargando campos de esta instancia Dolibarr...
             </div>
           ) : (
-            <DynamicProductForm fields={fields} values={values} onChange={handleChange} />
+            <>
+              <DynamicProductForm fields={fields} values={values} onChange={handleChange} />
+              <div className="border border-amber-200 bg-amber-50 rounded-lg p-4 space-y-3">
+                <p className="text-xs font-semibold text-amber-800 uppercase tracking-wide">Asignar a categoría (opcional)</p>
+                <p className="text-xs text-amber-700">
+                  La categoría debe existir previamente en Dolibarr. El nombre debe coincidir exactamente. Si el producto ya pertenece a una categoría, se añadirá a esta además.
+                </p>
+                <select
+                  value={selectedCategory}
+                  onChange={(e) => setSelectedCategory(e.target.value)}
+                  className="w-full px-3 py-2 border border-amber-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 focus:border-transparent bg-white"
+                >
+                  <option value="">— Sin cambiar —</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.label}>{c.label}</option>
+                  ))}
+                </select>
+              </div>
+            </>
           )}
         </div>
         <div className="px-6 py-4 border-t border-gray-200 space-y-3 flex-shrink-0">
@@ -667,10 +719,20 @@ function CsvImportModal({ onClose, onSuccess }: CsvImportModalProps) {
   const [fields, setFields] = useState<DolibarrFieldSchema[]>([])
   const [mapping, setMapping] = useState<Record<string, string>>({})
   const [overwrite, setOverwrite] = useState(false)
+  const [categoryColumn, setCategoryColumn] = useState('')
   const [result, setResult] = useState<CsvImportResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [importProgress, setImportProgress] = useState<{ processed: number; total: number }>({ processed: 0, total: 0 })
+  const [importMessage, setImportMessage] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     getDolibarrProductFields()
@@ -712,14 +774,38 @@ function CsvImportModal({ onClose, onSuccess }: CsvImportModalProps) {
     }
     if (!file) return
     setError(null)
+    setImportProgress({ processed: 0, total: 0 })
+    setImportMessage('')
     setStep('importing')
+
     try {
-      const res = await importDolibarrCsv(file, activeMapping, overwrite)
-      setResult(res)
-      setStep('results')
-      if (res.created > 0 || res.updated > 0) onSuccess()
+      const task = await importDolibarrCsv(file, activeMapping, overwrite, categoryColumn || undefined)
+
+      pollRef.current = setInterval(async () => {
+        try {
+          const status = await getDolibarrImportStatus(task.task_id)
+          setImportProgress(status.progress)
+          setImportMessage(status.message)
+
+          if (status.status === 'completed' && status.results) {
+            clearInterval(pollRef.current!)
+            pollRef.current = null
+            setResult(status.results)
+            setStep('results')
+            if (status.results.created > 0 || status.results.updated > 0) onSuccess()
+          } else if (status.status === 'failed') {
+            clearInterval(pollRef.current!)
+            pollRef.current = null
+            setError(status.message)
+            setStep('mapping')
+          }
+        } catch {
+          // Network blip — mantener polling
+        }
+      }, 2000)
+
     } catch (err) {
-      setError((err as { message?: string }).message ?? 'Error durante la importación')
+      setError((err as { message?: string }).message ?? 'Error iniciando importación')
       setStep('mapping')
     }
   }
@@ -875,6 +961,27 @@ function CsvImportModal({ onClose, onSuccess }: CsvImportModalProps) {
                 </div>
               </div>
 
+              {/* Category column selector */}
+              <div className="border border-amber-200 bg-amber-50 rounded-lg p-4 space-y-3">
+                <p className="text-xs font-semibold text-amber-800 uppercase tracking-wide">Categoría (opcional)</p>
+                <p className="text-xs text-amber-700">
+                  ⚠ La categoría debe existir previamente en Dolibarr y el nombre del CSV debe coincidir <strong>exactamente</strong>. Si alguna no existe, la importación se bloqueará con la lista de categorías faltantes.
+                </p>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-amber-800 shrink-0">Columna de categoría:</span>
+                  <select
+                    value={categoryColumn}
+                    onChange={(e) => setCategoryColumn(e.target.value)}
+                    className="flex-1 px-2 py-1.5 border border-amber-300 rounded text-sm focus:ring-2 focus:ring-amber-400 focus:border-transparent bg-white"
+                  >
+                    <option value="">— No asignar categoría —</option>
+                    {preview?.headers.map((h) => (
+                      <option key={h} value={h}>{h}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
               {!refMapped && (
                 <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">
                   Asigna al menos una columna al campo <strong>Referencia (ref)</strong> para poder importar.
@@ -891,10 +998,32 @@ function CsvImportModal({ onClose, onSuccess }: CsvImportModalProps) {
 
           {/* ── Step 3: Importing ── */}
           {step === 'importing' && (
-            <div className="flex flex-col items-center justify-center py-16 space-y-4">
+            <div className="flex flex-col items-center justify-center py-16 space-y-5">
               <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-              <p className="text-gray-600 text-sm">Importando {preview?.total_rows ?? '...'} productos a Dolibarr...</p>
-              <p className="text-gray-400 text-xs">Esto puede tardar varios minutos para catálogos grandes.</p>
+              {importProgress.total > 0 ? (
+                <>
+                  <p className="text-gray-700 text-sm font-medium">
+                    {importProgress.processed} / {importProgress.total} productos
+                  </p>
+                  <div className="w-full max-w-xs bg-gray-200 rounded-full h-2.5">
+                    <div
+                      className="bg-blue-600 h-2.5 rounded-full transition-all duration-500"
+                      style={{ width: `${Math.round((importProgress.processed / importProgress.total) * 100)}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    {Math.round((importProgress.processed / importProgress.total) * 100)}% completado
+                  </p>
+                  {importMessage && (
+                    <p className="text-xs text-gray-400 max-w-xs text-center">{importMessage}</p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <p className="text-gray-600 text-sm">Iniciando importación en segundo plano...</p>
+                  <p className="text-gray-400 text-xs">Las importaciones grandes pueden tardar más de una hora.</p>
+                </>
+              )}
             </div>
           )}
 
@@ -934,6 +1063,15 @@ function CsvImportModal({ onClose, onSuccess }: CsvImportModalProps) {
                         </div>
                       ))}
                   </div>
+                </div>
+              )}
+
+              {categoryColumn && result.results.some((r) => r.category_assigned) && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Categorías asignadas</p>
+                  <p className="text-xs text-gray-600">
+                    {result.results.filter((r) => r.category_assigned).length} productos asignados a categoría correctamente.
+                  </p>
                 </div>
               )}
             </div>

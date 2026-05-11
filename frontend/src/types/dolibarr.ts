@@ -174,6 +174,25 @@ export interface DolibarrExtraFieldCreate {
   fielddefault: string
 }
 
+export interface DolibarrCategory {
+  id: number | string
+  label: string
+  description: string
+  type: string | number
+  fk_parent: number | string | null
+}
+
+export interface DolibarrCategoryTree extends DolibarrCategory {
+  children: DolibarrCategoryTree[]
+}
+
+export interface DolibarrCategoryCreate {
+  label: string
+  type: string
+  parent_id?: number | null
+  description?: string
+}
+
 export interface CsvImportPreview {
   headers: string[]
   preview: Record<string, string>[]
@@ -186,6 +205,7 @@ export interface CsvImportRowResult {
   action: 'created' | 'updated' | 'skipped' | 'error'
   dolibarr_id: number | null
   error: string | null
+  category_assigned: string | null
 }
 
 export interface CsvImportResponse {
@@ -195,4 +215,12 @@ export interface CsvImportResponse {
   skipped: number
   errors: number
   results: CsvImportRowResult[]
+}
+
+export interface DolibarrImportTask {
+  task_id: string
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  progress: { processed: number; total: number }
+  message: string
+  results: CsvImportResponse | null
 }

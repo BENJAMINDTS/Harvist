@@ -10,6 +10,8 @@ del estado del job en Redis.
 :version: 1.0.0
 """
 
+import asyncio
+import base64
 import json
 import uuid
 from datetime import datetime
@@ -546,6 +548,144 @@ def ejecutar_scraping(
         job_status.mensaje = "El trabajo falló tras varios intentos."
         job_status.actualizado_en = datetime.utcnow()
         _actualizar_estado(redis_client, job_status)
+        return {"error": str(exc)}
+
+    finally:
+        redis_client.close()
+
+
+_DOLIBARR_IMPORT_KEY = "dolibarr_import:{task_id}"
+_DOLIBARR_IMPORT_TTL = 86400  # 24 horas
+
+
+@celery_app.task(
+    bind=True,
+    name="workers.tasks.importar_productos_dolibarr",
+)
+def importar_productos_dolibarr(
+    self,
+    task_id: str,
+    csv_b64: str,
+    mapping: dict,
+    overwrite: bool,
+    category_column: str,
+    category_name_to_id: dict,
+    dolibarr_url: str,
+    dolibarr_api_key: str,
+) -> dict:
+    """
+    Tarea Celery que importa productos en masa a Dolibarr desde un CSV.
+
+    Se ejecuta de forma asíncrona para soportar importaciones que duran horas.
+    Actualiza el progreso en Redis cada 10 filas para que el frontend pueda
+    consultarlo mediante polling.
+
+    Args:
+        self:                instancia de la tarea (bind=True).
+        task_id:             UUID de la tarea, usado como clave Redis.
+        csv_b64:             contenido del CSV codificado en base64.
+        mapping:             dict columna_csv → campo_dolibarr.
+        overwrite:           si True, actualiza productos existentes.
+        category_column:     nombre de la columna CSV con la categoría (vacío si no aplica).
+        category_name_to_id: mapa nombre_categoría → ID Dolibarr (ya validado).
+        dolibarr_url:        URL base de la API Dolibarr.
+        dolibarr_api_key:    clave API Dolibarr.
+
+    Returns:
+        Dict con resumen de la importación o ``{"error": str}`` si falla.
+
+    :author: BenjaminDTS
+    """
+    settings = get_settings()
+    redis_client = _get_redis_client()
+
+    def _set_state(state: dict) -> None:
+        redis_client.set(
+            _DOLIBARR_IMPORT_KEY.format(task_id=task_id),
+            json.dumps(state, ensure_ascii=False),
+            ex=_DOLIBARR_IMPORT_TTL,
+        )
+
+    def _progress(processed: int, total: int) -> None:
+        _set_state({
+            "task_id": task_id,
+            "status": "running",
+            "progress": {"processed": processed, "total": total},
+            "message": f"Importando {processed} de {total} productos...",
+            "results": None,
+        })
+
+    _set_state({
+        "task_id": task_id,
+        "status": "running",
+        "progress": {"processed": 0, "total": 0},
+        "message": "Iniciando importación...",
+        "results": None,
+    })
+
+    logger.info("Importación Dolibarr iniciada", extra={"task_id": task_id})
+
+    async def _run() -> list[dict]:
+        from services.integrations.dolibarr.categories import DolibarrCategoryService  # noqa: PLC0415
+        from services.integrations.dolibarr.client import DolibarrClient  # noqa: PLC0415
+        from services.integrations.dolibarr.products import DolibarrProductService  # noqa: PLC0415
+
+        client = DolibarrClient(settings, override_url=dolibarr_url, override_api_key=dolibarr_api_key)
+        svc = DolibarrProductService(client)
+        cat_svc = DolibarrCategoryService(client) if category_column else None
+
+        content = base64.b64decode(csv_b64.encode())
+
+        return await svc.import_from_csv(
+            content=content,
+            mapping=mapping,
+            overwrite=overwrite,
+            category_col=category_column or None,
+            category_svc=cat_svc,
+            category_name_to_id=category_name_to_id or None,
+            progress_callback=_progress,
+        )
+
+    try:
+        rows = asyncio.run(_run())
+
+        created = sum(1 for r in rows if r.get("action") == "created")
+        updated = sum(1 for r in rows if r.get("action") == "updated")
+        skipped = sum(1 for r in rows if r.get("action") == "skipped")
+        errors = sum(1 for r in rows if r.get("action") == "error")
+
+        results = {
+            "total": len(rows),
+            "created": created,
+            "updated": updated,
+            "skipped": skipped,
+            "errors": errors,
+            "results": rows,
+        }
+
+        _set_state({
+            "task_id": task_id,
+            "status": "completed",
+            "progress": {"processed": len(rows), "total": len(rows)},
+            "message": f"Completado: {created} creados, {updated} actualizados, {errors} errores.",
+            "results": results,
+        })
+
+        logger.info(
+            "Importación Dolibarr completada",
+            extra={"task_id": task_id, "total": len(rows), "created": created, "errors": errors},
+        )
+        return results
+
+    except Exception as exc:
+        logger.error("Error en importación Dolibarr", exc_info=exc, extra={"task_id": task_id})
+        _set_state({
+            "task_id": task_id,
+            "status": "failed",
+            "progress": {"processed": 0, "total": 0},
+            "message": f"Error: {exc}",
+            "results": None,
+        })
         return {"error": str(exc)}
 
     finally:
