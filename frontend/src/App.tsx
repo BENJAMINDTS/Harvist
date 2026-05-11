@@ -28,6 +28,7 @@ import type { SearchConfigValues, TipoJob } from '@/components/SearchConfig'
 
 const DolibarrPanel = React.lazy(() => import('@/components/dolibarr/DolibarrPanel'))
 const OdooPanel = React.lazy(() => import('@/components/odoo/OdooPanel'))
+const WordPressPanel = React.lazy(() => import('@/components/wordpress/WordPressPanel'))
 
 /** Módulos disponibles */
 type Module = 'dashboard' | 'harvist' | 'dolibarr' | 'odoo' | 'wordpress'
@@ -693,13 +694,15 @@ const App: React.FC = () => {
           </Suspense>
         )}
 
-        {/* Módulo WordPress — pendiente */}
+        {/* Módulo WordPress */}
         {currentModule === 'wordpress' && (
-          <div className="text-center py-12">
-            <p className="text-gray-500 dark:text-gray-400">
-              Módulo WordPress en desarrollo
-            </p>
-          </div>
+          <Suspense fallback={
+            <div className="flex items-center justify-center h-64">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500" />
+            </div>
+          }>
+            <WordPressPanel className="h-full" />
+          </Suspense>
         )}
       </main>
     </div>
