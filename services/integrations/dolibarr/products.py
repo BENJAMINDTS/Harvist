@@ -14,6 +14,7 @@ import base64
 import csv
 import io
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -23,6 +24,7 @@ from services.integrations.base import IntegrationError
 from services.integrations.dolibarr.client import DolibarrClient
 
 if TYPE_CHECKING:
+    from services.integrations.dolibarr.categories import DolibarrCategoryService
     from services.storage_service import StorageService
 
 _DOLIBARR_PRODUCTS_RESOURCE = "products"
@@ -298,6 +300,11 @@ class DolibarrProductService:
         payload = dict(data)
         array_options = payload.pop("array_options", None)
 
+        # Activar venta y compra por defecto si no se especifica lo contrario.
+        # Dolibarr deja tosell/tobuy a 0 si no se envían, lo que oculta el producto.
+        payload.setdefault("tosell", 1)
+        payload.setdefault("tobuy", 1)
+
         raw = await self._client.create(_DOLIBARR_PRODUCTS_RESOURCE, payload)
 
         product_id: int | None = None
@@ -309,16 +316,27 @@ class DolibarrProductService:
             except (ValueError, TypeError):
                 pass
 
-        if product_id and array_options:
+        if product_id:
+            # Activar explícitamente tosell/tobuy via PUT. Algunos Dolibarr ignoran
+            # estos campos en el POST inicial y requieren actualización posterior.
+            # Incluir ref y label (requeridos por Dolibarr) para evitar HTTP 400.
+            update_payload: dict[str, Any] = {
+                "tosell": 1,
+                "tobuy": 1,
+                "ref": data.get("ref", ""),
+                "label": data.get("label", data.get("ref", "")),
+            }
+            if array_options:
+                update_payload["array_options"] = array_options
             try:
                 await self._client.update(
                     _DOLIBARR_PRODUCTS_RESOURCE,
                     product_id,
-                    {"array_options": array_options},
+                    update_payload,
                 )
             except Exception as exc:
                 logger.warning(
-                    "Extrafields no guardados en producto creado",
+                    "PUT post-creación no aplicado",
                     exc_info=exc,
                     extra={"product_id": product_id},
                 )
@@ -559,6 +577,10 @@ class DolibarrProductService:
         content: bytes,
         mapping: dict[str, str],
         overwrite: bool = False,
+        category_col: str | None = None,
+        category_svc: "DolibarrCategoryService | None" = None,
+        category_name_to_id: dict[str, int] | None = None,
+        progress_callback: Callable[[int, int], None] | None = None,
     ) -> list[dict[str, Any]]:
         """
         Importa productos en masa a Dolibarr desde un CSV con mapeo de columnas.
@@ -570,18 +592,39 @@ class DolibarrProductService:
         Campos cuya clave Dolibarr empiece por ``options_`` se tratan como
         extrafields y se agrupan en ``array_options``.
 
+        Si se proporcionan ``category_col``, ``category_svc`` y
+        ``category_name_to_id``, tras crear/actualizar cada producto se asigna
+        la categoría correspondiente. Las categorías deben haber sido validadas
+        previamente (el endpoint comprueba su existencia antes de llamar aquí).
+
+        Si se proporciona ``progress_callback``, se llama cada 10 filas y al
+        terminar con ``(procesados, total)`` para que la tarea Celery pueda
+        actualizar Redis con el progreso en tiempo real.
+
         Args:
-            content:  contenido raw del archivo CSV.
-            mapping:  dict que mapea nombre_columna_csv → campo_dolibarr.
-            overwrite: si True, actualiza productos existentes (busca por ref).
+            content:              contenido raw del archivo CSV.
+            mapping:              dict que mapea nombre_columna_csv → campo_dolibarr.
+            overwrite:            si True, actualiza productos existentes (busca por ref).
+            category_col:         nombre de la columna CSV que contiene el nombre de categoría.
+            category_svc:         servicio de categorías para asignar el producto.
+            category_name_to_id:  mapa nombre_categoría → ID ya validado.
+            progress_callback:    función opcional ``(procesados, total) → None``.
 
         Returns:
-            Lista de dicts con row, ref, action, dolibarr_id y error.
+            Lista de dicts con row, ref, action, dolibarr_id, error y category_assigned.
         """
         text = _decode_csv(content)
         delimiter = _detect_delimiter(text)
+
+        # Contar filas totales para progreso (parse rápido extra si hay callback)
+        total_rows = 0
+        if progress_callback:
+            counter_reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
+            total_rows = sum(1 for _ in counter_reader)
+
         reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
         results: list[dict[str, Any]] = []
+        processed_count = 0
 
         for row_num, row in enumerate(reader, start=2):
             payload: dict[str, Any] = {}
@@ -603,6 +646,7 @@ class DolibarrProductService:
                 "action": None,
                 "dolibarr_id": None,
                 "error": None,
+                "category_assigned": None,
             }
 
             if not ref:
@@ -610,6 +654,10 @@ class DolibarrProductService:
                 result["error"] = "Columna 'ref' vacía o no mapeada."
                 results.append(result)
                 continue
+
+            # Garantizar que los productos importados queden activos en venta y compra.
+            payload.setdefault("tosell", 1)
+            payload.setdefault("tobuy", 1)
 
             if array_options:
                 payload["array_options"] = array_options
@@ -643,6 +691,24 @@ class DolibarrProductService:
 
                 result["dolibarr_id"] = dolibarr_id
 
+                if category_col and category_svc and category_name_to_id:
+                    cat_name = (row.get(category_col) or "").strip()
+                    cat_id = category_name_to_id.get(cat_name)
+                    if cat_id:
+                        try:
+                            await category_svc.assign_product(cat_id, dolibarr_id)
+                            result["category_assigned"] = cat_name
+                            logger.info(
+                                "Categoría asignada via CSV import",
+                                extra={"ref": ref, "category": cat_name, "dolibarr_id": dolibarr_id},
+                            )
+                        except Exception as cat_exc:
+                            logger.warning(
+                                "Error asignando categoría en CSV import",
+                                exc_info=cat_exc,
+                                extra={"ref": ref, "category": cat_name},
+                            )
+
             except Exception as exc:
                 logger.error(
                     "Error importando fila CSV a Dolibarr",
@@ -653,6 +719,13 @@ class DolibarrProductService:
                 result["error"] = str(exc)
 
             results.append(result)
+            processed_count += 1
+
+            if progress_callback and (processed_count % 10 == 0 or processed_count == total_rows):
+                progress_callback(processed_count, total_rows)
+
+        if progress_callback and total_rows > 0 and processed_count != total_rows:
+            progress_callback(processed_count, total_rows)
 
         return results
 
