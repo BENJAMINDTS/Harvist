@@ -37,7 +37,9 @@ export default function WordPressConfig({ onSaved }: Props) {
   useEffect(() => {
     getWordPressConfig().then((cfg) => {
       if (cfg.url) setUrl(cfg.url)
-      if (cfg.configured) setApiConfigured(true)
+      if (cfg.configured) {
+        setApiConfigured(true)
+      }
     }).catch(() => {})
 
     getWordPressDBConfig().then((cfg) => {
@@ -66,7 +68,11 @@ export default function WordPressConfig({ onSaved }: Props) {
     setSaving(true)
     setApiMessage({ type: '', text: '' })
     try {
-      const payload: WordPressConfigRequest = { url, consumer_key: consumerKey, consumer_secret: consumerSecret }
+      const payload: WordPressConfigRequest = {
+        url,
+        consumer_key: consumerKey,
+        consumer_secret: consumerSecret,
+      }
       await saveWordPressConfig(payload)
       setApiMessage({ type: 'success', text: 'Configuración guardada correctamente ✓' })
       setApiConfigured(true)
@@ -151,9 +157,12 @@ export default function WordPressConfig({ onSaved }: Props) {
                 type="password"
                 value={consumerKey}
                 onChange={(e) => setConsumerKey(e.target.value)}
-                placeholder={apiConfigured ? '(guardada — deja vacío para no cambiar)' : 'ck_••••••••••••••••••••••••••••••••••••••••'}
+                placeholder="ck_••••••••••••••••••••••••••••••••••••••••"
                 className={`${INPUT_CLS} font-mono`}
               />
+              {apiConfigured && !consumerKey && (
+                <p className="text-xs text-green-600 mt-1">✓ Guardada — escribe nueva clave para reemplazarla</p>
+              )}
             </div>
 
             <div>
@@ -164,12 +173,16 @@ export default function WordPressConfig({ onSaved }: Props) {
                 type="password"
                 value={consumerSecret}
                 onChange={(e) => setConsumerSecret(e.target.value)}
-                placeholder={apiConfigured ? '(guardada — deja vacío para no cambiar)' : 'cs_••••••••••••••••••••••••••••••••••••••••'}
+                placeholder="cs_••••••••••••••••••••••••••••••••••••••••"
                 className={`${INPUT_CLS} font-mono`}
               />
-              <p className="text-xs text-gray-500 mt-1">
-                WooCommerce → Ajustes → Avanzado → REST API → Añadir clave
-              </p>
+              {apiConfigured && !consumerSecret ? (
+                <p className="text-xs text-green-600 mt-1">✓ Guardada — escribe nuevo secret para reemplazarlo</p>
+              ) : (
+                <p className="text-xs text-gray-500 mt-1">
+                  WooCommerce → Ajustes → Avanzado → REST API → Añadir clave
+                </p>
+              )}
             </div>
 
             {apiMessage.text && (
