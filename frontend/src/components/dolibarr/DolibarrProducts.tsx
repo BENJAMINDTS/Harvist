@@ -6,7 +6,7 @@
  *
  * @author BenjaminDTS
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   listDolibarrProducts,
   deleteDolibarrProduct,
@@ -25,7 +25,7 @@ import {
   type DolibarrFieldType,
   type DolibarrFieldOption,
   type CsvImportPreview,
-  type CsvImportResponse,
+  type DolibarrImportTask,
   type DolibarrCategory,
 } from '@/types/dolibarr'
 
@@ -79,13 +79,11 @@ export default function DolibarrProducts() {
   const [showCustomPageSizeInput, setShowCustomPageSizeInput] = useState(false)
   const [goToPageInput, setGoToPageInput] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('')
-
-  const loadProducts = async (limit = 10, offset = 0) => {
-  const loadProducts = async (limit = 10, offset = 0, query = '') => {
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  
+  const loadProducts = useCallback(async (limit = 10, offset = 0, query = '') => {
     try {
       setLoading(true)
-      const data = await listDolibarrProducts(limit, offset)
       const data = await listDolibarrProducts(limit, offset, query)
       setProducts(data.items)
       setPagination({
@@ -99,33 +97,18 @@ export default function DolibarrProducts() {
     } finally {
       setLoading(false)
     }
-  }
-
+  }, [])
+  
   useEffect(() => {
     loadProducts()
-  }, [])
-    const timerId = setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery)
-    }, 300) // 300ms debounce delay
+  }, [loadProducts])
 
-    return () => {
-      clearTimeout(timerId)
-    }
-  }, [searchQuery])
-
-  useEffect(() => {
-    // This will trigger on mount (for initial load) and when search query changes
-    // When it triggers due to search, it resets to page 0.
-    loadProducts(pagination.limit, 0, debouncedSearchQuery)
-  }, [debouncedSearchQuery])
-
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: number): Promise<void> => {
     if (!confirm('¿Eliminar este producto?')) return
     try {
       await deleteDolibarrProduct(id)
-      loadProducts(pagination.limit, pagination.offset)
       // Recargar con la paginación y búsqueda actual
-      loadProducts(pagination.limit, pagination.offset, debouncedSearchQuery)
+      loadProducts(pagination.limit, pagination.offset, searchQuery)
     } catch (err) {
       setError((err as Error).message ?? 'Error eliminando producto')
     }
@@ -133,7 +116,7 @@ export default function DolibarrProducts() {
 
   // ── Lógica de paginación ───────────────────────────────────────────────────
 
-  const handlePageSizeChange = (newSize: number | string) => {
+  const handlePageSizeChange = (newSize: number | string): void => {
     if (newSize === 'custom') {
       setShowCustomPageSizeInput(true)
       setCustomPageSize(String(pagination.limit))
@@ -141,32 +124,29 @@ export default function DolibarrProducts() {
       setShowCustomPageSizeInput(false)
       const size = Number(newSize)
       if (size > 0) {
-        loadProducts(size, 0)
-        loadProducts(size, 0, debouncedSearchQuery)
+        loadProducts(size, 0, searchQuery)
       }
     }
   }
 
-  const handleApplyCustomPageSize = () => {
+  const handleApplyCustomPageSize = (): void => {
     const size = parseInt(customPageSize, 10)
     if (size > 0) {
       setShowCustomPageSizeInput(false)
-      loadProducts(size, 0)
-      loadProducts(size, 0, debouncedSearchQuery)
+      loadProducts(size, 0, searchQuery)
     }
   }
 
-  const handlePageChange = (pageNumber: number) => {
+  const handlePageChange = (pageNumber: number): void => {
     // pageNumber es 0-indexed
     const newOffset = pageNumber * pagination.limit
     if (newOffset >= 0 && newOffset < pagination.total || pageNumber === 0 && pagination.total === 0) {
-      loadProducts(pagination.limit, newOffset)
-      loadProducts(pagination.limit, newOffset, debouncedSearchQuery)
+      loadProducts(pagination.limit, newOffset, searchQuery)
       setGoToPageInput('') // Limpiar el input después de navegar
     }
   }
 
-  const handleGoToPage = () => {
+  const handleGoToPage = (): void => {
     const pageNum = parseInt(goToPageInput, 10)
     const totalPages = Math.ceil(pagination.total / pagination.limit)
     if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= totalPages) {
@@ -176,27 +156,19 @@ export default function DolibarrProducts() {
     }
   }
 
+  const handleSearchChange = (query: string): void => {
+    setSearchQuery(query)
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current)
+    }
+    searchTimeoutRef.current = setTimeout(() => {
+      // Al buscar, siempre volvemos a la primera página
+      loadProducts(pagination.limit, 0, query)
+    }, 300)
+  }
+
   return (
     <div className="space-y-4">
-      <div className="flex gap-2">
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium"
-        >
-          + Nuevo producto
-        </button>
-        <button
-          onClick={() => setShowSyncModal(true)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
-        >
-          ↓ Sincronizar desde job
-        </button>
-        <button
-          onClick={() => setShowCsvImportModal(true)}
-          className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-medium"
-        >
-          Importar CSV
-        </button>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex gap-2">
           <button
@@ -228,7 +200,7 @@ export default function DolibarrProducts() {
             type="text"
             placeholder="Buscar por nombre o referencia..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             className="w-full sm:w-64 pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
           />
         </div>
@@ -409,6 +381,7 @@ export default function DolibarrProducts() {
                 type="number"
                 value={goToPageInput}
                 onChange={(e) => setGoToPageInput(e.target.value)}
+                aria-label="Ir a la página"
                 placeholder="Ir a pág."
                 className="w-24 px-2 py-1 border border-gray-300 rounded text-sm"
                 min="1"
@@ -427,7 +400,7 @@ export default function DolibarrProducts() {
           onClose={() => setShowCreateModal(false)}
           onSuccess={() => {
             setShowCreateModal(false)
-            loadProducts(pagination.limit, pagination.offset)
+            loadProducts(pagination.limit, pagination.offset, searchQuery)
           }}
         />
       )}
@@ -438,7 +411,7 @@ export default function DolibarrProducts() {
           onClose={() => setEditingProduct(null)}
           onSuccess={() => {
             setEditingProduct(null)
-            loadProducts(pagination.limit, pagination.offset)
+            loadProducts(pagination.limit, pagination.offset, searchQuery)
           }}
         />
       )}
@@ -448,7 +421,7 @@ export default function DolibarrProducts() {
           onClose={() => setShowSyncModal(false)}
           onSuccess={() => {
             setShowSyncModal(false)
-            loadProducts()
+            loadProducts(pagination.limit, pagination.offset, searchQuery)
           }}
         />
       )}
@@ -458,7 +431,7 @@ export default function DolibarrProducts() {
           onClose={() => setShowCsvImportModal(false)}
           onSuccess={() => {
             setShowCsvImportModal(false)
-            loadProducts()
+            loadProducts(pagination.limit, pagination.offset, searchQuery)
           }}
         />
       )}
@@ -492,7 +465,7 @@ function renderFieldInput(
     case 'select': {
       const opts: DolibarrFieldOption[] = field.options ?? []
       return (
-        <select value={value} onChange={(e) => onChange(e.target.value)} className={INPUT_CLS}>
+        <select id={id} value={value} onChange={(e) => onChange(e.target.value)} className={INPUT_CLS}>
           {!field.required && <option value="">— Sin valor —</option>}
           {opts.map((o) => (
             <option key={o.value} value={o.value}>
@@ -504,7 +477,7 @@ function renderFieldInput(
     }
     case 'boolean':
       return (
-        <select value={value} onChange={(e) => onChange(e.target.value)} className={INPUT_CLS}>
+        <select id={id} value={value} onChange={(e) => onChange(e.target.value)} className={INPUT_CLS}>
           <option value="0">No</option>
           <option value="1">Sí</option>
         </select>
@@ -513,6 +486,7 @@ function renderFieldInput(
       return (
         <input
           type="number"
+          id={id}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           className={INPUT_CLS}
@@ -523,6 +497,7 @@ function renderFieldInput(
       return (
         <input
           type="date"
+          id={id}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           className={INPUT_CLS}
@@ -532,6 +507,7 @@ function renderFieldInput(
       return (
         <input
           type="text"
+          id={id}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           className={INPUT_CLS}
@@ -635,7 +611,7 @@ interface DynamicProductFormProps {
   onChange: (key: string, value: string) => void
 }
 
-function DynamicProductForm({ fields, values, onChange }: DynamicProductFormProps) {
+function DynamicProductForm({ fields, values, onChange }: DynamicProductFormProps): React.ReactElement {
   const sections = useMemo(() => {
     const map = new Map<string, DolibarrFieldSchema[]>()
     for (const f of fields) {
@@ -686,7 +662,7 @@ interface CreateProductModalProps {
   onSuccess: () => void
 }
 
-function CreateProductModal({ onClose, onSuccess }: CreateProductModalProps) {
+function CreateProductModal({ onClose, onSuccess }: CreateProductModalProps): React.ReactElement {
   const [fields, setFields] = useState<DolibarrFieldSchema[]>([])
   const [fieldsLoading, setFieldsLoading] = useState(true)
   const [values, setValues] = useState<Record<string, string>>({})
@@ -709,7 +685,7 @@ function CreateProductModal({ onClose, onSuccess }: CreateProductModalProps) {
       .finally(() => setFieldsLoading(false))
   }, [])
 
-  const handleChange = (key: string, value: string) =>
+  const handleChange = (key: string, value: string): void =>
     setValues((prev) => ({ ...prev, [key]: value }))
 
   const handleSubmit = async () => {
@@ -801,7 +777,7 @@ interface EditProductModalProps {
   onSuccess: () => void
 }
 
-function EditProductModal({ product, onClose, onSuccess }: EditProductModalProps) {
+function EditProductModal({ product, onClose, onSuccess }: EditProductModalProps): React.ReactElement {
   const [fields, setFields] = useState<DolibarrFieldSchema[]>([])
   const [fieldsLoading, setFieldsLoading] = useState(true)
   const [values, setValues] = useState<Record<string, string>>({})
@@ -824,7 +800,7 @@ function EditProductModal({ product, onClose, onSuccess }: EditProductModalProps
       .finally(() => setFieldsLoading(false))
   }, [product])
 
-  const handleChange = (key: string, value: string) =>
+  const handleChange = (key: string, value: string): void =>
     setValues((prev) => ({ ...prev, [key]: value }))
 
   const handleSubmit = async () => {
@@ -929,7 +905,7 @@ interface CsvImportModalProps {
  *
  * @author BenjaminDTS | Carlos Vico
  */
-function CsvImportModal({ onClose, onSuccess }: CsvImportModalProps) {
+function CsvImportModal({ onClose, onSuccess }: CsvImportModalProps): React.ReactElement {
   const [step, setStep] = useState<CsvImportStep>('upload')
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<CsvImportPreview | null>(null)
@@ -937,7 +913,7 @@ function CsvImportModal({ onClose, onSuccess }: CsvImportModalProps) {
   const [mapping, setMapping] = useState<Record<string, string>>({})
   const [overwrite, setOverwrite] = useState(false)
   const [categoryColumn, setCategoryColumn] = useState('')
-  const [result, setResult] = useState<CsvImportResponse | null>(null)
+  const [result, setResult] = useState<DolibarrImportTask['results'] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [importProgress, setImportProgress] = useState<{ processed: number; total: number }>({ processed: 0, total: 0 })
@@ -957,7 +933,7 @@ function CsvImportModal({ onClose, onSuccess }: CsvImportModalProps) {
       .catch(() => {})
   }, [])
 
-  const processFile = async (f: File) => {
+  const processFile = async (f: File): Promise<void> => {
     setFile(f)
     setError(null)
     setLoading(true)
@@ -975,7 +951,7 @@ function CsvImportModal({ onClose, onSuccess }: CsvImportModalProps) {
     }
   }
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const f = e.target.files?.[0]
     if (!f) return
     processFile(f)
@@ -1334,7 +1310,7 @@ interface SyncModalProps {
   onSuccess: () => void
 }
 
-function SyncFromJobModal({ onClose, onSuccess }: SyncModalProps) {
+function SyncFromJobModal({ onClose, onSuccess }: SyncModalProps): React.ReactElement {
   const [jobId, setJobId] = useState('')
   const [overwrite, setOverwrite] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -1344,7 +1320,7 @@ function SyncFromJobModal({ onClose, onSuccess }: SyncModalProps) {
     omitted: number
   } | null>(null)
 
-  const handleSync = async () => {
+  const handleSync = async (): Promise<void> => {
     if (!jobId) {
       alert('Selecciona un job')
       return
