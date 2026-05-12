@@ -287,6 +287,16 @@ class Settings(BaseSettings):
     wordpress_db_pass: str = Field(default="", description="Contraseña MySQL de WordPress.")
     wordpress_db_prefix: str = Field(default="wp_", description="Prefijo de tablas WordPress.")
 
+    # ── Persistencia de configuración WordPress (independiente de Redis) ───────
+    wp_config_path: str = Field(
+        default="data/wp_config.json",
+        description="Ruta al archivo JSON de credenciales WooCommerce API.",
+    )
+    wp_db_config_path: str = Field(
+        default="data/wp_db_config.json",
+        description="Ruta al archivo JSON de credenciales MySQL de WordPress.",
+    )
+
     @property
     def wordpress_configured(self) -> bool:
         """True si WordPress tiene URL, consumer_key y consumer_secret definidas y no vacías."""

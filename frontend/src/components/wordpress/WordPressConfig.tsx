@@ -3,8 +3,8 @@
  *
  * @author Carlos Vico
  */
-import { useState } from 'react'
-import { saveWordPressConfig, saveWordPressDBConfig } from '@/api/client'
+import { useState, useEffect } from 'react'
+import { saveWordPressConfig, saveWordPressDBConfig, getWordPressConfig, getWordPressDBConfig } from '@/api/client'
 import type { WordPressConfigRequest, WordPressDBConfigRequest } from '@/types/wordpress'
 
 interface Props {
@@ -19,6 +19,7 @@ export default function WordPressConfig({ onSaved }: Props) {
   const [url, setUrl] = useState('')
   const [consumerKey, setConsumerKey] = useState('')
   const [consumerSecret, setConsumerSecret] = useState('')
+  const [apiConfigured, setApiConfigured] = useState(false)
   const [saving, setSaving] = useState(false)
   const [apiMessage, setApiMessage] = useState({ type: '', text: '' })
 
@@ -28,22 +29,53 @@ export default function WordPressConfig({ onSaved }: Props) {
   const [dbUser, setDbUser] = useState('')
   const [dbPass, setDbPass] = useState('')
   const [dbPrefix, setDbPrefix] = useState('wp_')
+  const [dbConfigured, setDbConfigured] = useState(false)
   const [savingDb, setSavingDb] = useState(false)
   const [dbMessage, setDbMessage] = useState({ type: '', text: '' })
   const [showDbSection, setShowDbSection] = useState(false)
 
+  useEffect(() => {
+    getWordPressConfig().then((cfg) => {
+      if (cfg.url) setUrl(cfg.url)
+      if (cfg.configured) {
+        setApiConfigured(true)
+      }
+    }).catch(() => {})
+
+    getWordPressDBConfig().then((cfg) => {
+      if (cfg.host) setDbHost(cfg.host)
+      if (cfg.port) setDbPort(String(cfg.port))
+      if (cfg.db_name) setDbName(cfg.db_name)
+      if (cfg.user) setDbUser(cfg.user)
+      if (cfg.prefix) setDbPrefix(cfg.prefix)
+      if (cfg.configured) {
+        setDbConfigured(true)
+        setShowDbSection(true)
+      }
+    }).catch(() => {})
+  }, [])
+
   const handleSaveAPI = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!url || !consumerKey || !consumerSecret) {
-      setApiMessage({ type: 'error', text: 'URL, Consumer Key y Consumer Secret son obligatorios.' })
+    if (!url) {
+      setApiMessage({ type: 'error', text: 'La URL de la tienda es obligatoria.' })
+      return
+    }
+    if (!apiConfigured && (!consumerKey || !consumerSecret)) {
+      setApiMessage({ type: 'error', text: 'Consumer Key y Consumer Secret son obligatorios.' })
       return
     }
     setSaving(true)
     setApiMessage({ type: '', text: '' })
     try {
-      const payload: WordPressConfigRequest = { url, consumer_key: consumerKey, consumer_secret: consumerSecret }
+      const payload: WordPressConfigRequest = {
+        url,
+        consumer_key: consumerKey,
+        consumer_secret: consumerSecret,
+      }
       await saveWordPressConfig(payload)
       setApiMessage({ type: 'success', text: 'Configuración guardada correctamente ✓' })
+      setApiConfigured(true)
       onSaved()
     } catch (err: unknown) {
       setApiMessage({
@@ -74,6 +106,7 @@ export default function WordPressConfig({ onSaved }: Props) {
       }
       await saveWordPressDBConfig(payload)
       setDbMessage({ type: 'success', text: 'Credenciales de BD guardadas ✓' })
+      setDbConfigured(true)
     } catch (err: unknown) {
       setDbMessage({
         type: 'error',
@@ -90,7 +123,12 @@ export default function WordPressConfig({ onSaved }: Props) {
 
         {/* ── Sección API ──────────────────────────────────────────────── */}
         <section>
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Conexión WooCommerce API</h3>
+          <div className="flex items-center gap-3 mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">Conexión WooCommerce API</h3>
+            {apiConfigured && (
+              <span className="px-2 py-0.5 text-xs font-medium bg-green-100 text-green-700 rounded-full">Configurado</span>
+            )}
+          </div>
 
           <div className="bg-purple-50 border-l-4 border-purple-400 p-4 mb-5 rounded text-sm text-purple-800">
             URL base de tu tienda WordPress y API Key de WooCommerce REST API.
@@ -122,6 +160,9 @@ export default function WordPressConfig({ onSaved }: Props) {
                 placeholder="ck_••••••••••••••••••••••••••••••••••••••••"
                 className={`${INPUT_CLS} font-mono`}
               />
+              {apiConfigured && !consumerKey && (
+                <p className="text-xs text-green-600 mt-1">✓ Guardada — escribe nueva clave para reemplazarla</p>
+              )}
             </div>
 
             <div>
@@ -135,9 +176,13 @@ export default function WordPressConfig({ onSaved }: Props) {
                 placeholder="cs_••••••••••••••••••••••••••••••••••••••••"
                 className={`${INPUT_CLS} font-mono`}
               />
-              <p className="text-xs text-gray-500 mt-1">
-                WooCommerce → Ajustes → Avanzado → REST API → Añadir clave
-              </p>
+              {apiConfigured && !consumerSecret ? (
+                <p className="text-xs text-green-600 mt-1">✓ Guardada — escribe nuevo secret para reemplazarlo</p>
+              ) : (
+                <p className="text-xs text-gray-500 mt-1">
+                  WooCommerce → Ajustes → Avanzado → REST API → Añadir clave
+                </p>
+              )}
             </div>
 
             {apiMessage.text && (
@@ -172,6 +217,9 @@ export default function WordPressConfig({ onSaved }: Props) {
             <h3 className="text-lg font-semibold text-gray-900">
               Acceso directo a BD (phpMyAdmin / MySQL)
             </h3>
+            {dbConfigured && (
+              <span className="px-2 py-0.5 text-xs font-medium bg-green-100 text-green-700 rounded-full">Configurado</span>
+            )}
             <svg
               className={`ml-auto h-5 w-5 text-gray-400 transition-transform ${showDbSection ? 'rotate-180' : ''}`}
               fill="none"

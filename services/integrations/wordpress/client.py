@@ -15,7 +15,12 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
+import hmac
+import time
+import uuid
 from typing import Any
+from urllib.parse import quote, urlencode, urlparse
 
 import httpx
 from loguru import logger
@@ -57,7 +62,7 @@ class WordPressClient(IntegrationClient):
           1. override_url / override_consumer_key / override_consumer_secret (parámetros)
           2. WORDPRESS_URL / WORDPRESS_CONSUMER_KEY / WORDPRESS_CONSUMER_SECRET (Settings)
 
-        Auth: Basic base64(consumer_key:consumer_secret) sobre HTTPS.
+        Auth: Basic base64(consumer_key:consumer_secret) sobre HTTPS; query params sobre HTTP.
 
         Args:
             settings: instancia de Settings con las variables de entorno.
@@ -80,13 +85,17 @@ class WordPressClient(IntegrationClient):
 
         self._base_url = url
         self._consumer_key = consumer_key
+        self._consumer_secret = consumer_secret
+        # WooCommerce: HTTPS → Basic Auth header; HTTP → OAuth 1.0a per-request signing.
+        self._use_oauth = not url.startswith("https://")
 
-        _basic = base64.b64encode(f"{consumer_key}:{consumer_secret}".encode()).decode()
         _shared_headers = {
-            "Authorization": f"Basic {_basic}",
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
+        if not self._use_oauth:
+            _basic = base64.b64encode(f"{consumer_key}:{consumer_secret}".encode()).decode()
+            _shared_headers["Authorization"] = f"Basic {_basic}"
 
         self._wc_client: httpx.AsyncClient = httpx.AsyncClient(
             base_url=f"{url}/{_WC_PREFIX}/",
@@ -105,6 +114,41 @@ class WordPressClient(IntegrationClient):
     # ------------------------------------------------------------------
     # Métodos privados
     # ------------------------------------------------------------------
+
+    def _oauth1_params(self, method: str, url: str, extra_params: dict[str, str] | None = None) -> dict[str, str]:
+        """
+        Genera parámetros OAuth 1.0a firmados con HMAC-SHA1 para WooCommerce sobre HTTP.
+
+        Args:
+            method: verbo HTTP en mayúsculas.
+            url: URL completa del recurso (sin query string de OAuth).
+            extra_params: parámetros de query ya existentes en la petición.
+
+        Returns:
+            Dict con todos los parámetros OAuth listos para añadir al query string.
+        """
+        oauth_params: dict[str, str] = {
+            "oauth_consumer_key": self._consumer_key,
+            "oauth_nonce": uuid.uuid4().hex,
+            "oauth_signature_method": "HMAC-SHA1",
+            "oauth_timestamp": str(int(time.time())),
+            "oauth_version": "1.0",
+        }
+        all_params = {**(extra_params or {}), **oauth_params}
+        sorted_params = urlencode(sorted(all_params.items()))
+
+        parsed = urlparse(url)
+        base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+        signature_base = "&".join([
+            quote(method.upper(), safe=""),
+            quote(base_url, safe=""),
+            quote(sorted_params, safe=""),
+        ])
+        signing_key = f"{quote(self._consumer_secret, safe='')}&"
+        signature = base64.b64encode(
+            hmac.new(signing_key.encode(), signature_base.encode(), hashlib.sha1).digest()
+        ).decode()
+        return {**oauth_params, "oauth_signature": signature}
 
     async def _request(
         self,
@@ -131,6 +175,13 @@ class WordPressClient(IntegrationClient):
         client = self._wp_client if use_wp_api else self._wc_client
         last_exc: Exception | None = None
         last_status: int | None = None
+
+        # Inject OAuth 1.0a params for WC requests over HTTP
+        if self._use_oauth and not use_wp_api:
+            existing_params: dict[str, str] = dict(kwargs.pop("params", {}) or {})
+            full_url = str(client.base_url) + path
+            oauth_params = self._oauth1_params(method, full_url, existing_params)
+            kwargs["params"] = {**existing_params, **oauth_params}
 
         for attempt in range(_MAX_RETRIES):
             try:
@@ -208,12 +259,19 @@ class WordPressClient(IntegrationClient):
 
         response = await self._wc_request("GET", resource, params=params)
         if response.status_code >= 400:
+            hint = ""
+            if response.status_code == 404:
+                hint = " — Verifica que la URL sea correcta y que WooCommerce REST API esté habilitada (Ajustes → Permalinks → Guardar)."
+            elif response.status_code == 401:
+                hint = " — Consumer Key o Consumer Secret incorrectos."
+            elif response.status_code == 403:
+                hint = " — La API Key no tiene permisos de lectura/escritura."
             raise IntegrationError(
-                f"WordPress {resource} devolvió error",
+                f"WooCommerce devolvió HTTP {response.status_code} al listar '{resource}'.{hint}",
                 platform="wordpress",
                 status_code=response.status_code,
             )
-        result: list[dict[str, Any]] = response.json()
+        result: list[dict[str, Any]] = response.json() if response.content else []
         return result
 
     async def get(self, resource: str, resource_id: int | str) -> dict[str, Any]:
@@ -244,7 +302,7 @@ class WordPressClient(IntegrationClient):
                 platform="wordpress",
                 status_code=response.status_code,
             )
-        result: dict[str, Any] = response.json()
+        result: dict[str, Any] = response.json() if response.content else {}
         return result
 
     async def create(self, resource: str, data: dict[str, Any]) -> dict[str, Any]:
@@ -265,7 +323,7 @@ class WordPressClient(IntegrationClient):
                 platform="wordpress",
                 status_code=response.status_code,
             )
-        result: dict[str, Any] = response.json()
+        result: dict[str, Any] = response.json() if response.content else {}
         return result
 
     async def update(
@@ -292,7 +350,7 @@ class WordPressClient(IntegrationClient):
                 platform="wordpress",
                 status_code=response.status_code,
             )
-        result: dict[str, Any] = response.json()
+        result: dict[str, Any] = response.json() if response.content else {}
         return result
 
     async def delete(self, resource: str, resource_id: int | str) -> bool:
@@ -382,7 +440,7 @@ class WordPressClient(IntegrationClient):
                 platform="wordpress",
                 status_code=response.status_code,
             )
-        result: dict[str, Any] = response.json()
+        result: dict[str, Any] = response.json() if response.content else {}
         return result
 
     async def list_media(self, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
@@ -406,7 +464,7 @@ class WordPressClient(IntegrationClient):
                 platform="wordpress",
                 status_code=response.status_code,
             )
-        result: list[dict[str, Any]] = response.json()
+        result: list[dict[str, Any]] = response.json() if response.content else []
         return result
 
     # ------------------------------------------------------------------

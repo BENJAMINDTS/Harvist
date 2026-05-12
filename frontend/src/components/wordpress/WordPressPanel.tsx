@@ -12,7 +12,6 @@ import WordPressCategories from './WordPressCategories'
 import WordPressOrders from './WordPressOrders'
 import WordPressCustomers from './WordPressCustomers'
 import WordPressMedia from './WordPressMedia'
-import WordPressDatabase from './WordPressDatabase'
 import WordPressConfig from './WordPressConfig'
 
 type WordPressTab =
@@ -21,7 +20,6 @@ type WordPressTab =
   | 'pedidos'
   | 'clientes'
   | 'media'
-  | 'base-datos'
   | 'config'
 
 interface Props {
@@ -137,11 +135,10 @@ export default function WordPressPanel({ className = '' }: Props) {
               { id: 'pedidos', label: 'Pedidos' },
               { id: 'clientes', label: 'Clientes' },
               { id: 'media', label: 'Media' },
-              { id: 'base-datos', label: 'Base de Datos' },
               { id: 'config', label: 'Configuración' },
             ] as Array<{ id: WordPressTab; label: string }>
           ).map((t) => {
-            const disabled = !configured && t.id !== 'config' && t.id !== 'base-datos'
+            const disabled = !configured && t.id !== 'config'
             return (
               <button
                 key={t.id}
@@ -165,8 +162,10 @@ export default function WordPressPanel({ className = '' }: Props) {
           {tab === 'pedidos' && <WordPressOrders />}
           {tab === 'clientes' && <WordPressCustomers />}
           {tab === 'media' && <WordPressMedia />}
-          {tab === 'base-datos' && <WordPressDatabase />}
-          {tab === 'config' && <WordPressConfig onSaved={handleConfigSaved} />}
+          {/* Config stays mounted to preserve form state across tab switches */}
+          <div className={tab === 'config' ? '' : 'hidden'}>
+            <WordPressConfig onSaved={handleConfigSaved} />
+          </div>
         </div>
       </div>
     </div>
