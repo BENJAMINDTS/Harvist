@@ -209,6 +209,44 @@ class OdooProductService:
             logger.error("Error eliminando producto Odoo", exc_info=exc, extra={"id": product_id})
             raise IntegrationError(f"Fallo eliminando producto Odoo {product_id}") from exc
 
+    async def bulk_delete_products(
+        self,
+        product_ids: list[int],
+        concurrency: int = 10,
+    ) -> dict:
+        """
+        Elimina múltiples productos de forma concurrente.
+
+        Args:
+            product_ids: lista de IDs de product.template a eliminar.
+            concurrency: máximo de eliminaciones simultáneas contra Odoo.
+
+        Returns:
+            Dict con claves: deleted (int), failed (int), errors (list[{id, error}]).
+        """
+        if not product_ids:
+            return {"deleted": 0, "failed": 0, "errors": []}
+
+        errors: list[dict] = []
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def _delete_one(product_id: int) -> tuple[bool, dict | None]:
+            async with semaphore:
+                try:
+                    await self.delete_product(product_id)
+                    return True, None
+                except Exception as exc:
+                    logger.warning("Fallo eliminando producto Odoo", extra={"id": product_id, "exc": str(exc)})
+                    return False, {"id": product_id, "error": str(exc)}
+
+        delete_results = await asyncio.gather(*[_delete_one(pid) for pid in product_ids])
+        deleted = sum(1 for ok, _ in delete_results if ok)
+        errors.extend([err for ok, err in delete_results if not ok and err is not None])
+
+        failed = len(errors)
+        logger.info("Eliminación masiva Odoo completada", extra={"deleted": deleted, "failed": failed})
+        return {"deleted": deleted, "failed": failed, "errors": errors}
+
     async def count_products(self, active_only: bool = True) -> int:
         """
         Cuenta el total de productos.
