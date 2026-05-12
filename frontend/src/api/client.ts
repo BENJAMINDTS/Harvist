@@ -604,6 +604,16 @@ export async function deleteDolibarrProduct(id: number): Promise<void> {
 }
 
 /**
+ * Elimina múltiples productos de Dolibarr por sus IDs.
+ *
+ * @author Gemini Code Assist
+ * @param ids - Array de IDs de productos a eliminar.
+ */
+export async function deleteDolibarrProducts(ids: number[]): Promise<void> {
+  await apiClient.delete('/dolibarr/products', { data: ids })
+}
+
+/**
  * Sincroniza productos desde un job Harvist completado a Dolibarr.
  *
  * @author BenjaminDTS
@@ -1200,6 +1210,16 @@ export async function importOdooCsv(
  */
 export async function deleteOdooProduct(id: number): Promise<void> {
   await apiClient.delete(`/odoo/products/${id}`)
+}
+
+/**
+ * Elimina múltiples productos Odoo por sus IDs.
+ *
+ * @author Gemini Code Assist
+ * @param ids - Array de IDs de productos a eliminar.
+ */
+export async function deleteOdooProducts(ids: number[]): Promise<void> {
+  await apiClient.delete('/odoo/products', { data: ids, timeout: 7_200_000 })
 }
 
 /**

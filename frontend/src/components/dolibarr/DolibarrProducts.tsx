@@ -17,6 +17,7 @@ import {
   previewDolibarrCsv,
   importDolibarrCsv,
   getDolibarrImportStatus,
+  deleteDolibarrProducts,
   listDolibarrCategories,
 } from '@/api/client'
 import {
@@ -181,8 +182,7 @@ export default function DolibarrProducts() {
     setLoading(true);
     setError(null);
     try {
-      const deletePromises = Array.from(selectedProductIds).map(id => deleteDolibarrProduct(id));
-      await Promise.all(deletePromises);
+      await deleteDolibarrProducts(Array.from(selectedProductIds));
       setSelectedProductIds(new Set()); // Limpiar todas las selecciones
       loadProducts(pagination.limit, pagination.offset, searchQuery); // Recargar la página actual
     } catch (err) {

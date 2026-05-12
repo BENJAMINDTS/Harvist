@@ -62,7 +62,7 @@ from pathlib import Path
 from typing import Any
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Body, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import JSONResponse
 from loguru import logger
 
@@ -551,7 +551,7 @@ async def save_db_config(request: DolibarrDBConfigRequest) -> DolibarrDBConfigRe
 
 @router_products.get("")
 async def list_products(
-    limit: int = Query(default=50, ge=1, le=200),
+    limit: int = Query(default=50, ge=1, le=20000),
     offset: int = Query(default=0, ge=0),
     search: str | None = Query(default=None),
 ) -> JSONResponse:
@@ -812,6 +812,48 @@ async def delete_product(product_id: int) -> JSONResponse:
             detail=str(exc),
         )
     return JSONResponse(content={"success": True, "message": "Producto eliminado."})
+
+
+@router_products.delete("", response_model=dict, status_code=status.HTTP_200_OK)
+async def delete_products_bulk(ids: list[int] = Body(...)) -> JSONResponse:
+    """Elimina múltiples productos Dolibarr por sus IDs."""
+    if not ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="La lista de IDs no puede estar vacía.",
+        )
+    svc = await _get_service_async()
+    errors: list[dict] = []
+    semaphore = asyncio.Semaphore(10)  # Limitar concurrencia a 10
+
+    async def _delete_one(product_id: int) -> tuple[bool, dict | None]:
+        async with semaphore:
+            try:
+                await svc.delete_product(product_id)
+                return True, None
+            except Exception as exc:
+                logger.warning(
+                    "Fallo eliminando producto Dolibarr en bulk",
+                    extra={"id": product_id, "exc": str(exc)},
+                )
+                return False, {"id": product_id, "error": str(exc)}
+
+    try:
+        delete_results = await asyncio.gather(*[_delete_one(pid) for pid in ids])
+        deleted = sum(1 for ok, _ in delete_results if ok)
+        errors.extend([err for ok, err in delete_results if not ok and err is not None])
+
+        failed = len(errors)
+        result = {"deleted": deleted, "failed": failed, "errors": errors}
+        msg = (
+            f"{deleted} eliminados, {failed} fallidos."
+        )
+        return JSONResponse(content=_ok(result, msg))
+    except Exception as exc:
+        logger.error("Error en eliminación masiva de productos Dolibarr", exc_info=exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc),
+        )
 
 
 @router_products.post("/{product_id}/image")

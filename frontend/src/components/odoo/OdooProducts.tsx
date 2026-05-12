@@ -3,11 +3,41 @@
  *
  * @author Carlitos6712
  */
-import { useEffect, useState } from 'react'
-import { listOdooProducts, deleteOdooProduct, updateOdooProduct, createOdooProduct, listOdooCategories, setOdooProductProperties } from '@/api/client'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { listOdooProducts, deleteOdooProduct, updateOdooProduct, createOdooProduct, listOdooCategories, setOdooProductProperties, deleteOdooProducts } from '@/api/client'
 import type { OdooProduct, OdooCategory, OdooPropertyValue } from '@/types/odoo'
 import OdooCsvImport from './OdooCsvImport'
 import OdooProductProperties from './OdooProductProperties'
+
+const getPaginationItems = (currentPage: number, totalPages: number): (number | string)[] => {
+  // currentPage es 1-based. delta define cuántas páginas adyacentes mostrar.
+  const delta = 2
+  const left = currentPage - delta // Páginas a la izquierda de la actual
+  const right = currentPage + delta + 1 // Páginas a la derecha de la actual
+  const range: number[] = []
+  const rangeWithDots: (number | string)[] = []
+  let l: number | undefined
+
+  for (let i = 1; i <= totalPages; i++) {
+    if (i === 1 || i === totalPages || (i >= left && i < right)) {
+      range.push(i)
+    }
+  }
+
+  for (const i of range) {
+    if (l) {
+      if (i - l === 2) {
+        rangeWithDots.push(l + 1)
+      } else if (i - l !== 1) {
+        rangeWithDots.push('...')
+      }
+    }
+    rangeWithDots.push(i)
+    l = i
+  }
+
+  return rangeWithDots
+}
 
 const formatField = (v: [number, string] | false | string | undefined) => {
   if (!v) return '—'
@@ -19,7 +49,12 @@ export default function OdooProducts() {
   const [products, setProducts] = useState<OdooProduct[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [search, setSearch] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [selectedProductIds, setSelectedProductIds] = useState<Set<number>>(new Set())
+  const [customPageSize, setCustomPageSize] = useState('')
+  const [showCustomPageSizeInput, setShowCustomPageSizeInput] = useState(false)
+  const [goToPageInput, setGoToPageInput] = useState('')
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [editingProduct, setEditingProduct] = useState<OdooProduct | null>(null)
   const [creatingProduct, setCreatingProduct] = useState(false)
   const [importingCsv, setImportingCsv] = useState(false)
@@ -30,7 +65,7 @@ export default function OdooProducts() {
     has_more: false,
   })
 
-  const load = async (limit = 10, offset = 0, q = search) => {
+  const loadProducts = useCallback(async (limit = 10, offset = 0, q = '') => {
     setLoading(true)
     setError(null)
     try {
@@ -42,49 +77,155 @@ export default function OdooProducts() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { loadProducts() }, [loadProducts])
 
-  const handleDelete = async (id: number) => {
+  const handleDeleteSingle = async (id: number) => {
     if (!confirm('¿Eliminar este producto de Odoo?')) return
     try {
       await deleteOdooProduct(id)
-      load(pagination.limit, pagination.offset)
+      loadProducts(pagination.limit, pagination.offset, searchQuery)
+      setSelectedProductIds(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(id)
+        return newSet
+      })
     } catch (err) {
       setError((err as Error).message ?? 'Error eliminando producto')
     }
   }
 
+  const handleDeleteSelected = useCallback(async (): Promise<void> => {
+    if (selectedProductIds.size === 0) return
+    if (!confirm(`¿Eliminar ${selectedProductIds.size} productos seleccionados?`)) return
+
+    setLoading(true)
+    setError(null)
+    try {
+      await deleteOdooProducts(Array.from(selectedProductIds))
+      setSelectedProductIds(new Set())
+      loadProducts(pagination.limit, pagination.offset, searchQuery)
+    } catch (err) {
+      setError((err as Error).message ?? 'Error eliminando productos seleccionados')
+    } finally {
+      setLoading(false)
+    }
+  }, [loadProducts, pagination.limit, pagination.offset, searchQuery, selectedProductIds])
+
+  const handleSearchChange = (query: string) => {
+    setSearchQuery(query)
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current)
+    }
+    searchTimeoutRef.current = setTimeout(() => {
+      loadProducts(pagination.limit, 0, query)
+    }, 300)
+  }
+
+  const handlePageChange = (pageNumber: number): void => {
+    const newOffset = pageNumber * pagination.limit
+    if (newOffset >= 0 && newOffset < pagination.total || pageNumber === 0 && pagination.total === 0) {
+      loadProducts(pagination.limit, newOffset, searchQuery)
+      setGoToPageInput('')
+    }
+  }
+
+  const handleGoToPage = useCallback(() => {
+    const pageNum = parseInt(goToPageInput, 10)
+    const totalPages = Math.ceil(pagination.total / pagination.limit)
+    if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= totalPages) {
+      handlePageChange(pageNum - 1)
+    } else {
+      alert(`Por favor, introduce un número de página válido entre 1 y ${totalPages}.`)
+    }
+  }, [goToPageInput, pagination.limit, pagination.total, handlePageChange])
+
+  const handlePageSizeChange = (newSize: number | string): void => {
+    if (newSize === 'custom') {
+      setShowCustomPageSizeInput(true)
+      setCustomPageSize(String(pagination.limit))
+    } else {
+      setShowCustomPageSizeInput(false)
+      const size = Number(newSize)
+      if (size > 0) {
+        loadProducts(size, 0, searchQuery)
+      }
+    }
+  }
+
+  const handleApplyCustomPageSize = (): void => {
+    const size = parseInt(customPageSize, 10)
+    if (size > 0) {
+      setShowCustomPageSizeInput(false)
+      loadProducts(size, 0, searchQuery)
+    }
+  }
+
+  const handleSelectProduct = useCallback((productId: number, isSelected: boolean) => {
+    setSelectedProductIds(prev => {
+      const newSet = new Set(prev)
+      if (isSelected) {
+        newSet.add(productId)
+      } else {
+        newSet.delete(productId)
+      }
+      return newSet
+    })
+  }, [])
+
+  const handleSelectAllProducts = useCallback((isChecked: boolean) => {
+    setSelectedProductIds(prev => {
+      const newSet = new Set(prev)
+      if (isChecked) {
+        products.forEach(p => newSet.add(p.id))
+      } else {
+        products.forEach(p => newSet.delete(p.id))
+      }
+      return newSet
+    })
+  }, [products])
+
   return (
     <div className="space-y-4">
-      <div className="flex gap-2">
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && load(10, 0, search)}
-          placeholder="Buscar por nombre..."
-          className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm"
-        />
-        <button
-          onClick={() => load(10, 0, search)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
-        >
-          Buscar
-        </button>
-        <button
-          onClick={() => setCreatingProduct(true)}
-          className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700"
-        >
-          + Nuevo producto
-        </button>
-        <button
-          onClick={() => setImportingCsv(true)}
-          className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700"
-        >
-          Importar CSV
-        </button>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex gap-2">
+          <button
+            onClick={() => setCreatingProduct(true)}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium"
+          >
+            + Nuevo producto
+          </button>
+          <button
+            onClick={() => setImportingCsv(true)}
+            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-medium"
+          >
+            Importar CSV
+          </button>
+        </div>
+        {selectedProductIds.size > 0 && (
+          <button
+            onClick={handleDeleteSelected}
+            disabled={loading}
+            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 text-sm font-medium"
+          >
+            Eliminar seleccionados ({selectedProductIds.size})
+          </button>
+        )}
+        <div className="relative sm:w-auto w-full">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <svg className="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clipRule="evenodd" />
+            </svg>
+          </div>
+          <input
+            type="text"
+            placeholder="Buscar por nombre o referencia..."
+            value={searchQuery}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            className="w-full sm:w-64 pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+          />
+        </div>
       </div>
 
       {error && (
@@ -97,6 +238,14 @@ export default function OdooProducts() {
         <table className="w-full">
           <thead className="bg-gray-50">
             <tr>
+              <th className="px-3 py-3 text-left text-sm font-semibold text-gray-900 w-10">
+                <input
+                  type="checkbox"
+                  checked={products.length > 0 && products.every(p => selectedProductIds.has(p.id))}
+                  onChange={(e) => handleSelectAllProducts(e.target.checked)}
+                  className="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500"
+                />
+              </th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Referencia</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Nombre</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Categoría</th>
@@ -108,11 +257,19 @@ export default function OdooProducts() {
           </thead>
           <tbody className="divide-y divide-gray-200">
             {loading ? (
-              <tr><td colSpan={7} className="px-6 py-8 text-center text-gray-500">Cargando productos...</td></tr>
+              <tr><td colSpan={8} className="px-6 py-8 text-center text-gray-500">Cargando productos...</td></tr>
             ) : products.length === 0 ? (
-              <tr><td colSpan={7} className="px-6 py-8 text-center text-gray-500">Sin productos</td></tr>
+              <tr><td colSpan={8} className="px-6 py-8 text-center text-gray-500">Sin productos</td></tr>
             ) : products.map((p) => (
               <tr key={p.id} className="hover:bg-gray-50">
+                <td className="px-3 py-4 align-top">
+                  <input
+                    type="checkbox"
+                    checked={selectedProductIds.has(p.id)}
+                    onChange={(e) => handleSelectProduct(p.id, e.target.checked)}
+                    className="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500"
+                  />
+                </td>
                 <td className="px-6 py-4 text-sm text-gray-900">{formatField(p.default_code)}</td>
                 <td className="px-6 py-4 text-sm font-medium text-gray-900">{p.name}</td>
                 <td className="px-6 py-4 text-sm text-gray-600">{formatField(p.categ_id)}</td>
@@ -132,7 +289,7 @@ export default function OdooProducts() {
                       Editar
                     </button>
                     <button
-                      onClick={() => handleDelete(p.id)}
+                      onClick={() => handleDeleteSingle(p.id)}
                       className="text-red-600 hover:text-red-800 text-xs font-medium"
                     >
                       Eliminar
@@ -145,31 +302,91 @@ export default function OdooProducts() {
         </table>
       </div>
 
-      {pagination.total > 0 && (
-        <div className="flex items-center justify-between text-sm text-gray-600">
-          <div>
-            {pagination.offset + 1} –{' '}
-            {Math.min(pagination.offset + pagination.limit, pagination.total)} de{' '}
-            {pagination.total}
+      {(() => {
+        if (pagination.total === 0) return null
+
+        const currentPage = Math.floor(pagination.offset / pagination.limit)
+        const totalPages = Math.ceil(pagination.total / pagination.limit)
+        const paginationItems = getPaginationItems(currentPage + 1, totalPages)
+
+        const PREDEFINED_PAGE_SIZES = [10, 25, 50, 100]
+        const isCustomPageSizeActive = !PREDEFINED_PAGE_SIZES.includes(pagination.limit)
+
+        return (
+          <div className="flex flex-wrap items-center justify-between gap-4 text-sm text-gray-600">
+            <div className="flex items-center gap-2">
+              <span>Items por página:</span>
+              {!showCustomPageSizeInput ? (
+                <select
+                  value={pagination.limit}
+                  onChange={(e) => handlePageSizeChange(e.target.value)}
+                  className="px-2 py-1 border border-gray-300 rounded hover:bg-gray-50"
+                >
+                  {PREDEFINED_PAGE_SIZES.map((size) => (
+                    <option key={size} value={size}>{size}</option>
+                  ))}
+                  {isCustomPageSizeActive && (
+                    <option value={pagination.limit}>{pagination.limit}</option>
+                  )}
+                  <option value="custom">Personalizado...</option>
+                </select>
+              ) : (
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    value={customPageSize}
+                    onChange={(e) => setCustomPageSize(e.target.value)}
+                    className="w-20 px-2 py-1 border border-gray-300 rounded"
+                    min="1"
+                  />
+                  <button onClick={handleApplyCustomPageSize} className="px-2 py-1 font-medium text-blue-600 hover:text-blue-800">Aplicar</button>
+                  <button onClick={() => setShowCustomPageSizeInput(false)} className="p-1 text-gray-500 hover:text-gray-700" title="Cancelar">&times;</button>
+                </div>
+              )}
+            </div>
+
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button disabled={currentPage === 0} onClick={() => handlePageChange(0)} className="px-2 py-1 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50" aria-label="Primera página">«</button>
+                <button disabled={currentPage === 0} onClick={() => handlePageChange(currentPage - 1)} className="px-2 py-1 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50" aria-label="Página anterior">‹</button>
+
+                {paginationItems.map((item, index) =>
+                  typeof item === 'number' ? (
+                    <button
+                      key={index}
+                      onClick={() => handlePageChange(item - 1)}
+                      aria-current={currentPage + 1 === item ? 'page' : undefined}
+                      className={`px-3 py-1 border rounded ${currentPage + 1 === item ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-gray-300 hover:bg-gray-50'}`}
+                    >
+                      {item}
+                    </button>
+                  ) : (
+                    <span key={index} className="px-2 py-1">...</span>
+                  )
+                )}
+
+                <button disabled={!pagination.has_more} onClick={() => handlePageChange(currentPage + 1)} className="px-2 py-1 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50" aria-label="Página siguiente">›</button>
+                <button disabled={currentPage >= totalPages - 1} onClick={() => handlePageChange(totalPages - 1)} className="px-2 py-1 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50" aria-label="Última página">»</button>
+              </div>
+            )}
+
+            <div>{pagination.offset + 1} – {Math.min(pagination.offset + pagination.limit, pagination.total)} de {pagination.total}</div>
+
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                value={goToPageInput}
+                onChange={(e) => setGoToPageInput(e.target.value)}
+                placeholder="Ir a pág."
+                className="w-24 px-2 py-1 border border-gray-300 rounded text-sm"
+                min="1"
+                max={totalPages}
+              />
+              <button onClick={handleGoToPage} className="px-2 py-1 font-medium text-blue-600 hover:text-blue-800">Ir</button>
+            </div>
           </div>
-          <div className="flex gap-2">
-            <button
-              disabled={pagination.offset === 0}
-              onClick={() => load(pagination.limit, Math.max(0, pagination.offset - pagination.limit))}
-              className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
-            >
-              Anterior
-            </button>
-            <button
-              disabled={!pagination.has_more}
-              onClick={() => load(pagination.limit, pagination.offset + pagination.limit)}
-              className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
-            >
-              Siguiente
-            </button>
-          </div>
-        </div>
-      )}
+        )
+      })()} {/* Cierre de la IIFE de paginación */}
 
       {editingProduct && (
         <ProductModal
@@ -177,7 +394,7 @@ export default function OdooProducts() {
           onClose={() => setEditingProduct(null)}
           onSuccess={() => {
             setEditingProduct(null)
-            load(pagination.limit, pagination.offset)
+            loadProducts(pagination.limit, pagination.offset, searchQuery)
           }}
         />
       )}
@@ -188,7 +405,7 @@ export default function OdooProducts() {
           onClose={() => setCreatingProduct(false)}
           onSuccess={() => {
             setCreatingProduct(false)
-            load(pagination.limit, pagination.offset)
+            loadProducts(pagination.limit, pagination.offset, searchQuery)
           }}
         />
       )}
@@ -196,7 +413,7 @@ export default function OdooProducts() {
       {importingCsv && (
         <OdooCsvImport
           onClose={() => setImportingCsv(false)}
-          onSuccess={() => load(pagination.limit, pagination.offset)}
+          onSuccess={() => loadProducts(pagination.limit, pagination.offset, searchQuery)}
         />
       )}
     </div>

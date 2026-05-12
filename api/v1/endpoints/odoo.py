@@ -331,7 +331,7 @@ async def get_config() -> OdooConfigResponse:
 
 @router_products.get("", response_model=dict)
 async def list_products(
-    limit: int = Query(default=10, ge=1, le=100),
+    limit: int = Query(default=10, ge=1, le=20000),
     offset: int = Query(default=0, ge=0),
     search: str = Query(default=""),
 ) -> dict[str, Any]:
@@ -504,6 +504,27 @@ async def delete_product(product_id: int) -> dict[str, Any]:
         await svc.delete_product(product_id)
         return _ok(None, "Producto eliminado.")
     except IntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+
+@router_products.delete("", response_model=dict, status_code=status.HTTP_200_OK)
+async def delete_products_bulk(ids: list[int] = Body(...)) -> dict[str, Any]:
+    """Elimina múltiples productos Odoo por sus IDs."""
+    if not ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="La lista de IDs no puede estar vacía.",
+        )
+    client = await _build_client()
+    svc = OdooProductService(client)
+    try:
+        result = await svc.bulk_delete_products(ids)
+        msg = (
+            f"{result['deleted']} eliminados, {result['failed']} fallidos."
+        )
+        return _ok(result, msg)
+    except Exception as exc:
+        logger.error("Error en eliminación masiva de productos Odoo", exc_info=exc)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
 
