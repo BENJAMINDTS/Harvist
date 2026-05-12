@@ -530,10 +530,12 @@ export async function getDolibarrProductFields(): Promise<DolibarrFieldSchema[]>
 export async function listDolibarrProducts(
   limit?: number,
   offset?: number,
+  search?: string,
 ): Promise<PaginatedResponse<DolibarrProduct>> {
   const params: Record<string, unknown> = {}
   if (limit !== undefined) params.limit = limit
   if (offset !== undefined) params.offset = offset
+  if (search) params.search = search
 
   const response = await apiClient.get<
     ApiResponse<PaginatedResponse<DolibarrProduct>>

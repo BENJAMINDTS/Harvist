@@ -553,13 +553,15 @@ async def save_db_config(request: DolibarrDBConfigRequest) -> DolibarrDBConfigRe
 async def list_products(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    search: str | None = Query(default=None),
 ) -> JSONResponse:
     """
     Lista productos de Dolibarr con paginación.
 
     Args:
-        limit:  máximo de productos por página.
+        limit: máximo de productos por página.
         offset: desplazamiento desde el inicio.
+        search: término para filtrar por referencia o nombre.
 
     Returns:
         PaginatedResponse con los productos encontrados.
@@ -576,7 +578,11 @@ async def list_products(
         )
 
     try:
-        items = await svc.list_products(limit=limit, offset=offset)
+        # Obtener productos y el conteo total en paralelo
+        items_task = svc.list_products(limit=limit, offset=offset, search=search)
+        # Asumimos que el servicio tiene un método para contar que acepta el filtro
+        total_task = svc.count_products(search=search)
+        items, total = await asyncio.gather(items_task, total_task)
     except IntegrationError as exc:
         logger.error("Error listando productos Dolibarr", exc_info=exc)
         raise HTTPException(
@@ -585,10 +591,10 @@ async def list_products(
         )
     return JSONResponse(content=_ok(PaginatedResponse(
         items=items,
-        total=len(items),
+        total=total,
         limit=limit,
         offset=offset,
-        has_more=len(items) == limit,
+        has_more=(offset + len(items)) < total,
     ).model_dump()))
 
 
