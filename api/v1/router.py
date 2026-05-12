@@ -43,6 +43,7 @@ from api.v1.endpoints.wordpress import (
     router_orders as wordpress_router_orders,
     router_customers as wordpress_router_customers,
     router_media as wordpress_router_media,
+    router_webhooks as wordpress_router_webhooks,
 )
 
 router = APIRouter()
@@ -73,3 +74,4 @@ router.include_router(wordpress_router_categories)
 router.include_router(wordpress_router_orders)
 router.include_router(wordpress_router_customers)
 router.include_router(wordpress_router_media)
+router.include_router(wordpress_router_webhooks)

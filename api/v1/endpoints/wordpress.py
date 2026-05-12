@@ -58,7 +58,7 @@ from pathlib import Path
 from typing import Any
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Body, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Body, File, HTTPException, Query, Request, UploadFile, status
 from loguru import logger
 
 from api.core.config import get_settings
@@ -72,6 +72,9 @@ from api.v1.schemas.integrations import (
     WordPressDBConfigResponse,
 )
 from services.integrations.base import IntegrationError, IntegrationNotConfiguredError
+from services.integrations.dolibarr.client import DolibarrClient
+from services.integrations.dolibarr.products import DolibarrProductService
+from services.integrations.dolibarr.stocks import DolibarrStockService
 from services.integrations.wordpress.categories import WordPressCategoryService
 from services.integrations.wordpress.client import WordPressClient
 from services.integrations.wordpress.customers import WordPressCustomerService
@@ -88,6 +91,7 @@ router_orders = APIRouter(prefix="/wordpress/orders", tags=["wordpress-orders"])
 router_customers = APIRouter(prefix="/wordpress/customers", tags=["wordpress-customers"])
 router_media = APIRouter(prefix="/wordpress/media", tags=["wordpress-media"])
 router_db = APIRouter(prefix="/wordpress/db", tags=["wordpress-db"])
+router_webhooks = APIRouter(prefix="/wordpress/webhooks", tags=["wordpress-webhooks"])
 
 _ALLOWED_MEDIA_TYPES = {"image/jpeg", "image/png", "image/webp"}
 _MAX_MEDIA_BYTES = 5 * 1024 * 1024  # 5 MB
@@ -194,6 +198,126 @@ async def _get_db_credentials() -> dict[str, Any]:
     raise IntegrationNotConfiguredError(
         "BD WordPress no configurada: define WORDPRESS_DB_* en .env o en la interfaz gráfica."
     )
+
+
+async def _get_dolibarr_product_service() -> DolibarrProductService | None:
+    """
+    Construye DolibarrProductService desde Redis o .env.
+
+    Returns:
+        DolibarrProductService si Dolibarr está configurado, None si no.
+    """
+    settings = get_settings()
+    redis_client: aioredis.Redis | None = None
+    url: str = ""
+    api_key: str = ""
+    try:
+        redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
+        stored = await redis_client.get("integration:dolibarr:config")
+        if stored:
+            config = json.loads(stored)
+            url = config.get("url", "").strip()
+            api_key = config.get("api_key", "").strip()
+    except Exception as exc:
+        logger.debug("Redis no disponible para config Dolibarr en sync WP", exc_info=exc)
+    finally:
+        if redis_client:
+            await redis_client.aclose()
+
+    if not url or not api_key:
+        if settings.dolibarr_configured:
+            url = settings.dolibarr_url
+            api_key = settings.dolibarr_api_key
+        else:
+            return None
+
+    client = DolibarrClient(settings, override_url=url, override_api_key=api_key)
+    return DolibarrProductService(client)
+
+
+def _map_wc_to_dolibarr(wc_product: dict[str, Any]) -> dict[str, Any]:
+    """
+    Mapea campos WooCommerce → Dolibarr para actualización.
+
+    Mapeo:
+      name             → label
+      description      → description
+      regular_price    → price
+      weight           → weight
+
+    Args:
+        wc_product: dict del producto WooCommerce actualizado.
+
+    Returns:
+        Dict con campos Dolibarr a actualizar (solo los presentes en wc_product).
+    """
+    mapping: dict[str, Any] = {}
+    if "name" in wc_product:
+        mapping["label"] = wc_product["name"]
+    if "description" in wc_product:
+        mapping["description"] = wc_product["description"]
+    if "regular_price" in wc_product and wc_product["regular_price"] not in (None, ""):
+        try:
+            mapping["price"] = float(wc_product["regular_price"])
+        except (ValueError, TypeError):
+            pass
+    if "weight" in wc_product and wc_product["weight"] not in (None, ""):
+        try:
+            mapping["weight"] = float(wc_product["weight"])
+        except (ValueError, TypeError):
+            pass
+    return mapping
+
+
+async def _sync_wc_stock_to_dolibarr(
+    sku: str,
+    wc_stock: int | float,
+    doli_svc: DolibarrProductService,
+) -> dict[str, Any]:
+    """
+    Sincroniza el stock de un producto de WooCommerce a Dolibarr.
+
+    Busca el producto en Dolibarr por ref=SKU, calcula el delta respecto al
+    stock actual y crea un movimiento de corrección de inventario (tipo 2).
+
+    Args:
+        sku:       referencia del producto (SKU WC = ref Dolibarr).
+        wc_stock:  cantidad actual en WooCommerce.
+        doli_svc:  DolibarrProductService ya inicializado.
+
+    Returns:
+        Dict con synced (bool), delta, new_qty o reason.
+    """
+    existing = await doli_svc._find_product_by_ref(sku)
+    if not existing:
+        return {"synced": False, "reason": f"SKU '{sku}' no encontrado en Dolibarr"}
+
+    doli_id = int(existing["id"])
+    stock_svc = DolibarrStockService(doli_svc._client)
+    doli_stock_info = await stock_svc.get_product_stock(doli_id)
+    current_qty = float(doli_stock_info.get("stock_total", 0))
+    delta = float(wc_stock) - current_qty
+
+    if delta == 0:
+        return {"synced": True, "reason": "Stock ya sincronizado", "delta": 0, "new_qty": int(wc_stock)}
+
+    warehouses = await stock_svc.list_warehouses(limit=1)
+    if not warehouses:
+        return {"synced": False, "reason": "Sin almacenes configurados en Dolibarr"}
+
+    warehouse_id = int(warehouses[0]["id"])
+    await stock_svc.add_stock_movement(
+        product_id=doli_id,
+        warehouse_id=warehouse_id,
+        qty=delta,
+        movement_type=2,
+        label=f"Sync WooCommerce (SKU {sku})",
+    )
+    logger.info(
+        "Stock sincronizado WP→Dolibarr",
+        extra={"sku": sku, "delta": delta, "new_qty": wc_stock, "dolibarr_id": doli_id},
+    )
+    return {"synced": True, "delta": delta, "new_qty": int(wc_stock), "dolibarr_id": doli_id}
 
 
 async def _get_client() -> WordPressClient:
@@ -594,24 +718,70 @@ async def create_product(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
 @router_products.put("/{product_id}")
 async def update_product(product_id: int, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
     """
-    Actualiza un producto en WooCommerce.
+    Actualiza un producto en WooCommerce y propaga el cambio a Dolibarr si está configurado.
+
+    El producto se busca en Dolibarr por ref = SKU del producto WooCommerce.
+    Si Dolibarr no está configurado o el producto no existe allí, la operación
+    WooCommerce se completa igualmente y se registra un aviso.
 
     Args:
-        product_id: ID del producto.
+        product_id: ID del producto en WooCommerce.
         body: campos a actualizar.
 
     Returns:
-        Dict con el producto actualizado.
+        Dict con el producto actualizado e información del sync a Dolibarr.
     """
     client = await _get_client()
     try:
         svc = WordPressProductService(client)
         item = await svc.update(product_id, body)
-        return _ok(item, "Producto actualizado en WooCommerce.")
     except IntegrationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
         await client.close()
+
+    dolibarr_sync: dict[str, Any] = {"synced": False, "reason": "Dolibarr no configurado"}
+    sku: str = item.get("sku", "").strip()
+
+    if sku:
+        doli_svc = await _get_dolibarr_product_service()
+        if doli_svc is not None:
+            try:
+                existing = await doli_svc._find_product_by_ref(sku)
+                if existing:
+                    dolibarr_payload = _map_wc_to_dolibarr(item)
+                    # ref + label son obligatorios en Dolibarr PUT
+                    dolibarr_payload.setdefault("ref", sku)
+                    dolibarr_payload.setdefault("label", item.get("name", sku))
+                    await doli_svc.update_product(int(existing["id"]), dolibarr_payload)
+                    dolibarr_sync = {"synced": True, "dolibarr_id": existing["id"]}
+                    logger.info(
+                        "Producto sincronizado WP→Dolibarr",
+                        extra={"wc_id": product_id, "sku": sku, "dolibarr_id": existing["id"]},
+                    )
+
+                    # ── Stock WC → Dolibarr ───────────────────────────────────
+                    wc_stock = item.get("stock_quantity")
+                    if wc_stock is not None and item.get("manage_stock"):
+                        try:
+                            await _sync_wc_stock_to_dolibarr(sku, wc_stock, doli_svc)
+                        except Exception as exc:
+                            logger.warning(
+                                "Sync stock WP→Dolibarr falló",
+                                exc_info=exc,
+                                extra={"sku": sku},
+                            )
+                else:
+                    dolibarr_sync = {"synced": False, "reason": f"SKU '{sku}' no encontrado en Dolibarr"}
+                    logger.warning("Sync WP→Dolibarr: SKU no encontrado", extra={"sku": sku})
+            except Exception as exc:
+                dolibarr_sync = {"synced": False, "reason": str(exc)}
+                logger.warning("Sync WP→Dolibarr falló", exc_info=exc, extra={"sku": sku})
+    else:
+        dolibarr_sync = {"synced": False, "reason": "Producto sin SKU, no se puede buscar en Dolibarr"}
+
+    result = {**item, "dolibarr_sync": dolibarr_sync}
+    return _ok(result, "Producto actualizado en WooCommerce.")
 
 
 @router_products.delete("/{product_id}")
@@ -1142,3 +1312,56 @@ async def get_wp_option(option_name: str) -> dict[str, Any]:
         return _ok({"option_name": option_name, "option_value": value})
     except IntegrationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+# ── Webhooks ─────────────────────────────────────────────────────────────────
+
+
+@router_webhooks.post("/product")
+async def webhook_product_updated(request: Request) -> dict[str, Any]:
+    """
+    Recibe webhooks de WooCommerce para actualizaciones de producto.
+
+    WooCommerce dispara ``product.updated`` cuando cambia el stock de un producto,
+    incluyendo al procesar un pedido. Este endpoint sincroniza el nuevo stock a Dolibarr.
+
+    Configurar en WooCommerce → Ajustes → Avanzado → Webhooks:
+      Tópico: Producto actualizado
+      URL de entrega: POST /api/v1/wordpress/webhooks/product
+
+    Args:
+        request: petición HTTP con el payload JSON del producto WooCommerce.
+
+    Returns:
+        200 siempre — WooCommerce requiere 200 para marcar la entrega como exitosa.
+    """
+    raw_body = await request.body()
+    topic = request.headers.get("X-WC-Webhook-Topic", "unknown")
+
+    try:
+        payload: dict[str, Any] = json.loads(raw_body)
+    except (json.JSONDecodeError, ValueError):
+        logger.warning("Webhook WC payload inválido", extra={"topic": topic})
+        return _ok({}, "Payload inválido, ignorado.")
+
+    wc_product_id = payload.get("id")
+    logger.info("Webhook WC recibido", extra={"topic": topic, "wc_product_id": wc_product_id})
+
+    sku: str = (payload.get("sku") or "").strip()
+    wc_stock = payload.get("stock_quantity")
+    manage_stock = bool(payload.get("manage_stock"))
+
+    if not sku or wc_stock is None or not manage_stock:
+        return _ok({}, "Webhook recibido sin cambio de stock aplicable.")
+
+    doli_svc = await _get_dolibarr_product_service()
+    if doli_svc is None:
+        logger.warning("Dolibarr no configurado, webhook ignorado", extra={"sku": sku})
+        return _ok({}, "Webhook recibido (Dolibarr no configurado).")
+
+    try:
+        result = await _sync_wc_stock_to_dolibarr(sku, wc_stock, doli_svc)
+        return _ok(result, "Webhook procesado.")
+    except Exception as exc:
+        logger.warning("Webhook stock WP→Dolibarr falló", exc_info=exc, extra={"sku": sku})
+        return _ok({"error": str(exc)}, "Webhook recibido (sync falló).")
