@@ -54,6 +54,7 @@ Rutas bajo /api/v1/wordpress/db:
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 import redis.asyncio as aioredis
@@ -106,7 +107,9 @@ _DB_NOT_CONFIGURED_MSG = (
 
 async def _get_wp_credentials() -> dict[str, str]:
     """
-    Obtiene credenciales de WordPress desde Redis o .env.
+    Obtiene credenciales de WordPress desde Redis, archivo JSON o .env.
+
+    Prioridad: Redis → data/wp_config.json → variables de entorno.
 
     Returns:
         Dict con url, consumer_key y consumer_secret.
@@ -130,6 +133,10 @@ async def _get_wp_credentials() -> dict[str, str]:
         if redis_client:
             await redis_client.aclose()
 
+    file_config = _load_config_file(settings.wp_config_path)
+    if file_config.get("url") and file_config.get("consumer_key") and file_config.get("consumer_secret"):
+        return file_config
+
     if settings.wordpress_configured:
         return {
             "url": settings.wordpress_url,
@@ -144,7 +151,9 @@ async def _get_wp_credentials() -> dict[str, str]:
 
 async def _get_db_credentials() -> dict[str, Any]:
     """
-    Obtiene credenciales de BD de WordPress desde Redis o .env.
+    Obtiene credenciales de BD de WordPress desde Redis, archivo JSON o .env.
+
+    Prioridad: Redis → data/wp_db_config.json → variables de entorno.
 
     Returns:
         Dict con host, port, db_name, user, password, prefix.
@@ -167,6 +176,10 @@ async def _get_db_credentials() -> dict[str, Any]:
     finally:
         if redis_client:
             await redis_client.aclose()
+
+    file_config = _load_config_file(settings.wp_db_config_path)
+    if file_config.get("host") and file_config.get("db_name") and file_config.get("user"):
+        return file_config
 
     if settings.wordpress_db_configured:
         return {
@@ -233,6 +246,42 @@ async def _get_db_service() -> WordPressDBService:
 def _ok(data: Any, message: str = "OK") -> dict[str, Any]:
     """Envuelve data en la respuesta estándar Harvist."""
     return {"success": True, "data": data, "message": message}
+
+
+def _load_config_file(path: str) -> dict[str, Any]:
+    """
+    Lee un archivo JSON de configuración desde disco.
+
+    Args:
+        path: ruta relativa o absoluta al archivo JSON.
+
+    Returns:
+        Dict con el contenido del archivo, o dict vacío si no existe o hay error.
+    """
+    try:
+        p = Path(path)
+        if p.exists():
+            return json.loads(p.read_text(encoding="utf-8"))
+    except Exception as exc:
+        logger.debug("No se pudo leer config file", exc_info=exc, extra={"path": path})
+    return {}
+
+
+def _save_config_file(path: str, data: dict[str, Any]) -> None:
+    """
+    Escribe un dict de configuración en disco como JSON.
+
+    Args:
+        path: ruta relativa o absoluta al archivo destino.
+        data: datos a serializar.
+    """
+    try:
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        logger.debug("Config file guardado", extra={"path": path})
+    except Exception as exc:
+        logger.warning("No se pudo escribir config file", exc_info=exc, extra={"path": path})
 
 
 # ── Status & Config ─────────────────────────────────────────────────────────
@@ -358,7 +407,8 @@ async def save_config(body: WordPressConfigRequest) -> dict[str, Any]:
             "consumer_secret": body.consumer_secret.strip() or existing.get("consumer_secret", ""),
         }
         await redis_client.set("integration:wordpress:config", json.dumps(payload))
-        logger.info("Config WordPress guardada en Redis", extra={"url": body.url})
+        _save_config_file(settings.wp_config_path, payload)
+        logger.info("Config WordPress guardada", extra={"url": body.url})
     except Exception as exc:
         logger.error("Error guardando config WordPress en Redis", exc_info=exc)
         raise HTTPException(
@@ -432,7 +482,8 @@ async def save_db_config(body: WordPressDBConfigRequest) -> dict[str, Any]:
             "prefix": body.prefix.strip(),
         }
         await redis_client.set("integration:wordpress:db_config", json.dumps(payload))
-        logger.info("Config BD WordPress guardada en Redis", extra={"host": body.host})
+        _save_config_file(settings.wp_db_config_path, payload)
+        logger.info("Config BD WordPress guardada", extra={"host": body.host})
     except Exception as exc:
         logger.error("Error guardando config BD WordPress en Redis", exc_info=exc)
         raise HTTPException(
@@ -491,7 +542,7 @@ async def list_products(
             "Productos obtenidos.",
         )
     except IntegrationError as exc:
-        raise HTTPException(status_code=exc.status_code or 502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
         await client.close()
 
@@ -513,7 +564,7 @@ async def get_product(product_id: int) -> dict[str, Any]:
         item = await svc.get(product_id)
         return _ok(item)
     except IntegrationError as exc:
-        raise HTTPException(status_code=exc.status_code or 502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
         await client.close()
 
@@ -535,7 +586,7 @@ async def create_product(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
         item = await svc.create(body)
         return _ok(item, "Producto creado en WooCommerce.")
     except IntegrationError as exc:
-        raise HTTPException(status_code=exc.status_code or 502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
         await client.close()
 
@@ -558,7 +609,7 @@ async def update_product(product_id: int, body: dict[str, Any] = Body(...)) -> d
         item = await svc.update(product_id, body)
         return _ok(item, "Producto actualizado en WooCommerce.")
     except IntegrationError as exc:
-        raise HTTPException(status_code=exc.status_code or 502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
         await client.close()
 
@@ -580,7 +631,7 @@ async def delete_product(product_id: int) -> dict[str, Any]:
         await svc.delete(product_id)
         return _ok({}, "Producto eliminado de WooCommerce.")
     except IntegrationError as exc:
-        raise HTTPException(status_code=exc.status_code or 502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
         await client.close()
 
@@ -693,7 +744,7 @@ async def list_categories(
         items = await svc.list(limit=limit, offset=offset)
         return _ok(items)
     except IntegrationError as exc:
-        raise HTTPException(status_code=exc.status_code or 502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
         await client.close()
 
@@ -712,7 +763,7 @@ async def get_categories_tree() -> dict[str, Any]:
         tree = await svc.tree()
         return _ok(tree)
     except IntegrationError as exc:
-        raise HTTPException(status_code=exc.status_code or 502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
         await client.close()
 
@@ -725,7 +776,7 @@ async def get_category(category_id: int) -> dict[str, Any]:
         svc = WordPressCategoryService(client)
         return _ok(await svc.get(category_id))
     except IntegrationError as exc:
-        raise HTTPException(status_code=exc.status_code or 502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
         await client.close()
 
@@ -738,7 +789,7 @@ async def create_category(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
         svc = WordPressCategoryService(client)
         return _ok(await svc.create(body), "Categoría creada.")
     except IntegrationError as exc:
-        raise HTTPException(status_code=exc.status_code or 502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
         await client.close()
 
@@ -751,7 +802,7 @@ async def update_category(category_id: int, body: dict[str, Any] = Body(...)) ->
         svc = WordPressCategoryService(client)
         return _ok(await svc.update(category_id, body), "Categoría actualizada.")
     except IntegrationError as exc:
-        raise HTTPException(status_code=exc.status_code or 502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
         await client.close()
 
@@ -765,7 +816,7 @@ async def delete_category(category_id: int) -> dict[str, Any]:
         await svc.delete(category_id)
         return _ok({}, "Categoría eliminada.")
     except IntegrationError as exc:
-        raise HTTPException(status_code=exc.status_code or 502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
         await client.close()
 
@@ -791,7 +842,7 @@ async def list_orders(
             ).model_dump()
         )
     except IntegrationError as exc:
-        raise HTTPException(status_code=exc.status_code or 502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
         await client.close()
 
@@ -804,7 +855,7 @@ async def get_order(order_id: int) -> dict[str, Any]:
         svc = WordPressOrderService(client)
         return _ok(await svc.get(order_id))
     except IntegrationError as exc:
-        raise HTTPException(status_code=exc.status_code or 502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
         await client.close()
 
@@ -839,7 +890,7 @@ async def update_order_status(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     except IntegrationError as exc:
-        raise HTTPException(status_code=exc.status_code or 502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
         await client.close()
 
@@ -855,7 +906,7 @@ async def add_order_note(order_id: int, body: dict[str, Any] = Body(...)) -> dic
         result = await svc.add_note(order_id, note, customer_note)
         return _ok(result, "Nota añadida al pedido.")
     except IntegrationError as exc:
-        raise HTTPException(status_code=exc.status_code or 502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
         await client.close()
 
@@ -881,7 +932,7 @@ async def list_customers(
             ).model_dump()
         )
     except IntegrationError as exc:
-        raise HTTPException(status_code=exc.status_code or 502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
         await client.close()
 
@@ -894,7 +945,7 @@ async def get_customer(customer_id: int) -> dict[str, Any]:
         svc = WordPressCustomerService(client)
         return _ok(await svc.get(customer_id))
     except IntegrationError as exc:
-        raise HTTPException(status_code=exc.status_code or 502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
         await client.close()
 
@@ -907,7 +958,7 @@ async def create_customer(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
         svc = WordPressCustomerService(client)
         return _ok(await svc.create(body), "Cliente creado.")
     except IntegrationError as exc:
-        raise HTTPException(status_code=exc.status_code or 502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
         await client.close()
 
@@ -920,7 +971,7 @@ async def update_customer(customer_id: int, body: dict[str, Any] = Body(...)) ->
         svc = WordPressCustomerService(client)
         return _ok(await svc.update(customer_id, body), "Cliente actualizado.")
     except IntegrationError as exc:
-        raise HTTPException(status_code=exc.status_code or 502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
         await client.close()
 
@@ -934,7 +985,7 @@ async def delete_customer(customer_id: int) -> dict[str, Any]:
         await svc.delete(customer_id)
         return _ok({}, "Cliente eliminado.")
     except IntegrationError as exc:
-        raise HTTPException(status_code=exc.status_code or 502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
         await client.close()
 
@@ -958,7 +1009,7 @@ async def list_media(
             ).model_dump()
         )
     except IntegrationError as exc:
-        raise HTTPException(status_code=exc.status_code or 502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
         await client.close()
 
