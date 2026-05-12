@@ -29,6 +29,38 @@ import {
   type DolibarrCategory,
 } from '@/types/dolibarr'
 
+// ─── Helper de paginación ─────────────────────────────────────────────────────
+
+const getPaginationItems = (currentPage: number, totalPages: number): (number | string)[] => {
+  // currentPage es 1-based. delta define cuántas páginas adyacentes mostrar.
+  const delta = 2
+  const left = currentPage - delta // Páginas a la izquierda de la actual
+  const right = currentPage + delta + 1 // Páginas a la derecha de la actual
+  const range: number[] = []
+  const rangeWithDots: (number | string)[] = []
+  let l: number | undefined
+
+  for (let i = 1; i <= totalPages; i++) {
+    if (i === 1 || i === totalPages || (i >= left && i < right)) {
+      range.push(i)
+    }
+  }
+
+  for (const i of range) {
+    if (l) {
+      if (i - l === 2) {
+        rangeWithDots.push(l + 1)
+      } else if (i - l !== 1) {
+        rangeWithDots.push('...')
+      }
+    }
+    rangeWithDots.push(i)
+    l = i
+  }
+
+  return rangeWithDots
+}
+
 export default function DolibarrProducts() {
   const [products, setProducts] = useState<DolibarrProduct[]>([])
   const [loading, setLoading] = useState(true)
@@ -43,11 +75,18 @@ export default function DolibarrProducts() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showCsvImportModal, setShowCsvImportModal] = useState(false)
   const [editingProduct, setEditingProduct] = useState<DolibarrProduct | null>(null)
+  const [customPageSize, setCustomPageSize] = useState('')
+  const [showCustomPageSizeInput, setShowCustomPageSizeInput] = useState(false)
+  const [goToPageInput, setGoToPageInput] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('')
 
   const loadProducts = async (limit = 10, offset = 0) => {
+  const loadProducts = async (limit = 10, offset = 0, query = '') => {
     try {
       setLoading(true)
       const data = await listDolibarrProducts(limit, offset)
+      const data = await listDolibarrProducts(limit, offset, query)
       setProducts(data.items)
       setPagination({
         limit: data.limit,
@@ -65,14 +104,75 @@ export default function DolibarrProducts() {
   useEffect(() => {
     loadProducts()
   }, [])
+    const timerId = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery)
+    }, 300) // 300ms debounce delay
+
+    return () => {
+      clearTimeout(timerId)
+    }
+  }, [searchQuery])
+
+  useEffect(() => {
+    // This will trigger on mount (for initial load) and when search query changes
+    // When it triggers due to search, it resets to page 0.
+    loadProducts(pagination.limit, 0, debouncedSearchQuery)
+  }, [debouncedSearchQuery])
 
   const handleDelete = async (id: number) => {
     if (!confirm('¿Eliminar este producto?')) return
     try {
       await deleteDolibarrProduct(id)
       loadProducts(pagination.limit, pagination.offset)
+      // Recargar con la paginación y búsqueda actual
+      loadProducts(pagination.limit, pagination.offset, debouncedSearchQuery)
     } catch (err) {
       setError((err as Error).message ?? 'Error eliminando producto')
+    }
+  }
+
+  // ── Lógica de paginación ───────────────────────────────────────────────────
+
+  const handlePageSizeChange = (newSize: number | string) => {
+    if (newSize === 'custom') {
+      setShowCustomPageSizeInput(true)
+      setCustomPageSize(String(pagination.limit))
+    } else {
+      setShowCustomPageSizeInput(false)
+      const size = Number(newSize)
+      if (size > 0) {
+        loadProducts(size, 0)
+        loadProducts(size, 0, debouncedSearchQuery)
+      }
+    }
+  }
+
+  const handleApplyCustomPageSize = () => {
+    const size = parseInt(customPageSize, 10)
+    if (size > 0) {
+      setShowCustomPageSizeInput(false)
+      loadProducts(size, 0)
+      loadProducts(size, 0, debouncedSearchQuery)
+    }
+  }
+
+  const handlePageChange = (pageNumber: number) => {
+    // pageNumber es 0-indexed
+    const newOffset = pageNumber * pagination.limit
+    if (newOffset >= 0 && newOffset < pagination.total || pageNumber === 0 && pagination.total === 0) {
+      loadProducts(pagination.limit, newOffset)
+      loadProducts(pagination.limit, newOffset, debouncedSearchQuery)
+      setGoToPageInput('') // Limpiar el input después de navegar
+    }
+  }
+
+  const handleGoToPage = () => {
+    const pageNum = parseInt(goToPageInput, 10)
+    const totalPages = Math.ceil(pagination.total / pagination.limit)
+    if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= totalPages) {
+      handlePageChange(pageNum - 1) // Convertir a 0-indexed
+    } else {
+      alert(`Por favor, introduce un número de página válido entre 1 y ${totalPages}.`)
     }
   }
 
@@ -97,6 +197,41 @@ export default function DolibarrProducts() {
         >
           Importar CSV
         </button>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium"
+          >
+            + Nuevo producto
+          </button>
+          <button
+            onClick={() => setShowSyncModal(true)}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+          >
+            ↓ Sincronizar desde job
+          </button>
+          <button
+            onClick={() => setShowCsvImportModal(true)}
+            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-medium"
+          >
+            Importar CSV
+          </button>
+        </div>
+        <div className="relative sm:w-auto w-full">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <svg className="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clipRule="evenodd" />
+            </svg>
+          </div>
+          <input
+            type="text"
+            placeholder="Buscar por nombre o referencia..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full sm:w-64 pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+          />
+        </div>
       </div>
 
       {error && (
@@ -175,35 +310,117 @@ export default function DolibarrProducts() {
         </table>
       </div>
 
-      {pagination.total > 0 && (
-        <div className="flex items-center justify-between text-sm text-gray-600">
-          <div>
-            {pagination.offset + 1} –{' '}
-            {Math.min(pagination.offset + pagination.limit, pagination.total)} de{' '}
-            {pagination.total}
+      {/* ── Paginación avanzada ─────────────────────────────────────────────────── */}
+      {(() => {
+        if (pagination.total === 0) return null
+
+        const currentPage = Math.floor(pagination.offset / pagination.limit)
+        const totalPages = Math.ceil(pagination.total / pagination.limit)
+        const paginationItems = getPaginationItems(currentPage + 1, totalPages)
+
+        const PREDEFINED_PAGE_SIZES = [10, 25, 50, 100]
+        const isCustomPageSizeActive = !PREDEFINED_PAGE_SIZES.includes(pagination.limit)
+
+        return (
+          <div className="flex flex-wrap items-center justify-between gap-4 text-sm text-gray-600">
+            {/* Selector de tamaño de página */}
+            <div className="flex items-center gap-2">
+              <span>Items por página:</span>
+              {!showCustomPageSizeInput ? (
+                <select
+                  value={pagination.limit} // El valor ahora siempre coincidirá con una opción
+                  onChange={(e) => handlePageSizeChange(e.target.value)}
+                  className="px-2 py-1 border border-gray-300 rounded hover:bg-gray-50"
+                >
+                  {PREDEFINED_PAGE_SIZES.map((size) => (
+                    <option key={size} value={size}>{size}</option>
+                  ))}
+                  {isCustomPageSizeActive && (
+                    <option value={pagination.limit}>{pagination.limit}</option>
+                  )}
+                  <option value="custom">Personalizado...</option>
+                </select>
+              ) : (
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    value={customPageSize}
+                    onChange={(e) => setCustomPageSize(e.target.value)}
+                    className="w-20 px-2 py-1 border border-gray-300 rounded"
+                    min="1"
+                  />
+                  <button
+                    onClick={handleApplyCustomPageSize}
+                    className="px-2 py-1 font-medium text-blue-600 hover:text-blue-800"
+                  >
+                    Aplicar
+                  </button>
+                  <button
+                    onClick={() => setShowCustomPageSizeInput(false)}
+                    className="p-1 text-gray-500 hover:text-gray-700"
+                    title="Cancelar"
+                  >
+                    &times;
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Navegación de páginas */}
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button disabled={currentPage === 0} onClick={() => handlePageChange(0)} className="px-2 py-1 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50" aria-label="Primera página">«</button>
+                <button disabled={currentPage === 0} onClick={() => handlePageChange(currentPage - 1)} className="px-2 py-1 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50" aria-label="Página anterior">‹</button>
+
+                {paginationItems.map((item, index) =>
+                  typeof item === 'number' ? (
+                    <button
+                      key={index}
+                      onClick={() => handlePageChange(item - 1)}
+                      aria-current={currentPage + 1 === item ? 'page' : undefined}
+                      className={`px-3 py-1 border rounded ${
+                        currentPage + 1 === item
+                          ? 'border-blue-500 bg-blue-50 text-blue-600'
+                          : 'border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      {item}
+                    </button>
+                  ) : (
+                    <span key={index} className="px-2 py-1">...</span>
+                  )
+                )}
+
+                <button disabled={!pagination.has_more} onClick={() => handlePageChange(currentPage + 1)} className="px-2 py-1 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50" aria-label="Página siguiente">›</button>
+                <button disabled={currentPage >= totalPages - 1} onClick={() => handlePageChange(totalPages - 1)} className="px-2 py-1 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50" aria-label="Última página">»</button>
+              </div>
+            )}
+
+            {/* Contador total */}
+            <div>
+              {pagination.offset + 1} –{' '}
+              {Math.min(pagination.offset + pagination.limit, pagination.total)} de{' '}
+              {pagination.total}
+            </div>
+
+            {/* Input para ir a página específica */}
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                value={goToPageInput}
+                onChange={(e) => setGoToPageInput(e.target.value)}
+                placeholder="Ir a pág."
+                className="w-24 px-2 py-1 border border-gray-300 rounded text-sm"
+                min="1"
+                max={totalPages}
+              />
+              <button onClick={handleGoToPage} className="px-2 py-1 font-medium text-blue-600 hover:text-blue-800">
+                Ir
+              </button>
+            </div>
           </div>
-          <div className="flex gap-2">
-            <button
-              disabled={pagination.offset === 0}
-              onClick={() =>
-                loadProducts(pagination.limit, Math.max(0, pagination.offset - pagination.limit))
-              }
-              className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
-            >
-              Anterior
-            </button>
-            <button
-              disabled={!pagination.has_more}
-              onClick={() =>
-                loadProducts(pagination.limit, pagination.offset + pagination.limit)
-              }
-              className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
-            >
-              Siguiente
-            </button>
-          </div>
-        </div>
-      )}
+        )
+      })()}
 
       {showCreateModal && (
         <CreateProductModal
