@@ -52,6 +52,8 @@ logs/
 # Batería local de prefijos GS1 (aprendidos en runtime — no subir al repo)
 data/brand_cache.json
 data/gs1_prefixes.db
+data/wp_config.json
+data/wp_db_config.json
 
 # Archivos de control del scraper
 registro_miniaturas.txt
