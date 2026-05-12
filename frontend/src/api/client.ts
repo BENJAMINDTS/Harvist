@@ -1593,8 +1593,8 @@ import type {
  * @returns IntegrationStatus con platform, configured, healthy y message.
  */
 export async function getWordPressStatus(): Promise<IntegrationStatus> {
-  const r = await apiClient.get<ApiResponse<IntegrationStatus>>('/wordpress/status')
-  return r.data.data
+  const r = await apiClient.get<IntegrationStatus>('/wordpress/status')
+  return r.data
 }
 
 /**
@@ -1604,8 +1604,8 @@ export async function getWordPressStatus(): Promise<IntegrationStatus> {
  * @returns WordPressConfigResponse con las credenciales actuales.
  */
 export async function getWordPressConfig(): Promise<WordPressConfigResponse> {
-  const r = await apiClient.get<ApiResponse<WordPressConfigResponse>>('/wordpress/config')
-  return r.data.data
+  const r = await apiClient.get<WordPressConfigResponse>('/wordpress/config')
+  return r.data
 }
 
 /**
@@ -1625,8 +1625,8 @@ export async function saveWordPressConfig(config: WordPressConfigRequest): Promi
  * @returns WordPressDBConfigResponse con las credenciales de BD.
  */
 export async function getWordPressDBConfig(): Promise<WordPressDBConfigResponse> {
-  const r = await apiClient.get<ApiResponse<WordPressDBConfigResponse>>('/wordpress/db/config')
-  return r.data.data
+  const r = await apiClient.get<WordPressDBConfigResponse>('/wordpress/db/config')
+  return r.data
 }
 
 /**
