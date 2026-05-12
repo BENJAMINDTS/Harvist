@@ -79,6 +79,7 @@ export default function DolibarrProducts() {
   const [showCustomPageSizeInput, setShowCustomPageSizeInput] = useState(false)
   const [goToPageInput, setGoToPageInput] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
+  const [selectedProductIds, setSelectedProductIds] = useState<Set<number>>(new Set())
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   
   const loadProducts = useCallback(async (limit = 10, offset = 0, query = '') => {
@@ -103,16 +104,21 @@ export default function DolibarrProducts() {
     loadProducts()
   }, [loadProducts])
 
-  const handleDelete = async (id: number): Promise<void> => {
+  const handleDeleteSingle = useCallback(async (id: number): Promise<void> => {
     if (!confirm('¿Eliminar este producto?')) return
     try {
       await deleteDolibarrProduct(id)
       // Recargar con la paginación y búsqueda actual
       loadProducts(pagination.limit, pagination.offset, searchQuery)
+      setSelectedProductIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(id);
+        return newSet;
+      });
     } catch (err) {
       setError((err as Error).message ?? 'Error eliminando producto')
     }
-  }
+  }, [loadProducts, pagination.limit, pagination.offset, searchQuery])
 
   // ── Lógica de paginación ───────────────────────────────────────────────────
 
@@ -146,7 +152,7 @@ export default function DolibarrProducts() {
     }
   }
 
-  const handleGoToPage = (): void => {
+  const handleGoToPage = useCallback(() => {
     const pageNum = parseInt(goToPageInput, 10)
     const totalPages = Math.ceil(pagination.total / pagination.limit)
     if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= totalPages) {
@@ -154,9 +160,51 @@ export default function DolibarrProducts() {
     } else {
       alert(`Por favor, introduce un número de página válido entre 1 y ${totalPages}.`)
     }
-  }
+  }, [goToPageInput, pagination.limit, pagination.total, handlePageChange]);
 
-  const handleSearchChange = (query: string): void => {
+  const handleSelectProduct = useCallback((productId: number, isSelected: boolean) => {
+    setSelectedProductIds((prev: Set<number>) => {
+      const newSet = new Set(prev);
+      if (isSelected) {
+        newSet.add(productId);
+      } else {
+        newSet.delete(productId);
+      }
+      return newSet;
+    });
+  }, []);
+
+  const handleDeleteSelected = useCallback(async (): Promise<void> => {
+    if (selectedProductIds.size === 0) return;
+    if (!confirm(`¿Eliminar ${selectedProductIds.size} productos seleccionados?`)) return;
+
+    setLoading(true);
+    setError(null);
+    try {
+      const deletePromises = Array.from(selectedProductIds).map(id => deleteDolibarrProduct(id));
+      await Promise.all(deletePromises);
+      setSelectedProductIds(new Set()); // Limpiar todas las selecciones
+      loadProducts(pagination.limit, pagination.offset, searchQuery); // Recargar la página actual
+    } catch (err) {
+      setError((err as Error).message ?? 'Error eliminando productos seleccionados');
+    } finally {
+      setLoading(false);
+    }
+  }, [loadProducts, pagination.limit, pagination.offset, searchQuery, selectedProductIds]);
+
+  const handleSelectAllProducts = useCallback((isChecked: boolean) => {
+    setSelectedProductIds(prev => {
+      const newSet = new Set(prev);
+      if (isChecked) {
+        products.forEach(p => newSet.add(p.id));
+      } else {
+        products.forEach(p => newSet.delete(p.id));
+      }
+      return newSet;
+    });
+  }, [products]);
+
+  const handleSearchChange = (query: string) => {
     setSearchQuery(query)
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current)
@@ -190,6 +238,16 @@ export default function DolibarrProducts() {
             Importar CSV
           </button>
         </div>
+        {/* Botón de eliminar seleccionados */}
+        {selectedProductIds.size > 0 && (
+          <button
+            onClick={handleDeleteSelected}
+            disabled={loading}
+            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 text-sm font-medium"
+          >
+            Eliminar seleccionados ({selectedProductIds.size})
+          </button>
+        )}
         <div className="relative sm:w-auto w-full">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             <svg className="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -216,6 +274,15 @@ export default function DolibarrProducts() {
         <table className="w-full">
           <thead className="bg-gray-50">
             <tr>
+              {/* Checkbox para seleccionar todos */}
+              <th className="px-3 py-3 text-left text-sm font-semibold text-gray-900 w-10">
+                <input
+                  type="checkbox"
+                  checked={products.length > 0 && products.every(p => selectedProductIds.has(p.id))}
+                  onChange={(e) => handleSelectAllProducts(e.target.checked)}
+                  className="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500"
+                />
+              </th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Ref</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Nombre</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Precio</th>
@@ -227,19 +294,28 @@ export default function DolibarrProducts() {
           <tbody className="divide-y divide-gray-200">
             {loading ? (
               <tr>
-                <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
                   Cargando productos...
                 </td>
               </tr>
             ) : products.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
                   Sin productos
                 </td>
               </tr>
             ) : (
               products.map((p) => (
                 <tr key={p.id} className="hover:bg-gray-50">
+                  {/* Checkbox individual */}
+                  <td className="px-3 py-4 align-top">
+                    <input
+                      type="checkbox"
+                      checked={selectedProductIds.has(p.id)}
+                      onChange={(e) => handleSelectProduct(p.id, e.target.checked)}
+                      className="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500"
+                    />
+                  </td>
                   <td className="px-6 py-4 text-sm text-gray-900">{p.ref}</td>
                   <td className="px-6 py-4 text-sm text-gray-900">{p.label}</td>
                   <td className="px-6 py-4 text-sm text-gray-900">
@@ -268,7 +344,7 @@ export default function DolibarrProducts() {
                         Editar
                       </button>
                       <button
-                        onClick={() => handleDelete(p.id)}
+                        onClick={() => handleDeleteSingle(p.id)}
                         className="text-red-600 hover:text-red-800 text-xs font-medium"
                       >
                         Eliminar
@@ -381,7 +457,6 @@ export default function DolibarrProducts() {
                 type="number"
                 value={goToPageInput}
                 onChange={(e) => setGoToPageInput(e.target.value)}
-                aria-label="Ir a la página"
                 placeholder="Ir a pág."
                 className="w-24 px-2 py-1 border border-gray-300 rounded text-sm"
                 min="1"
@@ -451,11 +526,13 @@ function renderFieldInput(
   field: DolibarrFieldSchema,
   value: string,
   onChange: (v: string) => void,
+  id: string, // Add id parameter here
 ): React.ReactElement {
   switch (field.type as DolibarrFieldType) {
     case 'textarea':
       return (
         <textarea
+          id={id} // Usar el id pasado como prop
           value={value}
           onChange={(e) => onChange(e.target.value)}
           rows={3}
@@ -643,8 +720,11 @@ function DynamicProductForm({ fields, values, onChange }: DynamicProductFormProp
                   {field.label}
                   {field.required && <span className="text-red-500 ml-1">*</span>}
                 </label>
-                {renderFieldInput(field, values[field.key] ?? '', (v) =>
-                  onChange(field.key, v),
+                {renderFieldInput(
+                  field,
+                  values[field.key] ?? '',
+                  (v) => onChange(field.key, v),
+                  `form-field-${field.key}`, // Pass the id here
                 )}
               </div>
             ))}
@@ -685,7 +765,7 @@ function CreateProductModal({ onClose, onSuccess }: CreateProductModalProps): Re
       .finally(() => setFieldsLoading(false))
   }, [])
 
-  const handleChange = (key: string, value: string): void =>
+  const handleChange = (key: string, value: string) =>
     setValues((prev) => ({ ...prev, [key]: value }))
 
   const handleSubmit = async () => {
@@ -800,7 +880,7 @@ function EditProductModal({ product, onClose, onSuccess }: EditProductModalProps
       .finally(() => setFieldsLoading(false))
   }, [product])
 
-  const handleChange = (key: string, value: string): void =>
+  const handleChange = (key: string, value: string) =>
     setValues((prev) => ({ ...prev, [key]: value }))
 
   const handleSubmit = async () => {
@@ -933,7 +1013,7 @@ function CsvImportModal({ onClose, onSuccess }: CsvImportModalProps): React.Reac
       .catch(() => {})
   }, [])
 
-  const processFile = async (f: File): Promise<void> => {
+  const processFile = async (f: File) => {
     setFile(f)
     setError(null)
     setLoading(true)
@@ -951,7 +1031,7 @@ function CsvImportModal({ onClose, onSuccess }: CsvImportModalProps): React.Reac
     }
   }
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
     if (!f) return
     processFile(f)
