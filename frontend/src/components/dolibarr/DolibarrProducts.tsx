@@ -542,7 +542,7 @@ function renderFieldInput(
     case 'select': {
       const opts: DolibarrFieldOption[] = field.options ?? []
       return (
-        <select id={id} value={value} onChange={(e) => onChange(e.target.value)} className={INPUT_CLS}>
+        <select id={field.key} value={value} onChange={(e) => onChange(e.target.value)} className={INPUT_CLS}>
           {!field.required && <option value="">— Sin valor —</option>}
           {opts.map((o) => (
             <option key={o.value} value={o.value}>
@@ -554,7 +554,7 @@ function renderFieldInput(
     }
     case 'boolean':
       return (
-        <select id={id} value={value} onChange={(e) => onChange(e.target.value)} className={INPUT_CLS}>
+        <select id={field.key} value={value} onChange={(e) => onChange(e.target.value)} className={INPUT_CLS}>
           <option value="0">No</option>
           <option value="1">Sí</option>
         </select>
@@ -563,7 +563,7 @@ function renderFieldInput(
       return (
         <input
           type="number"
-          id={id}
+          id={field.key}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           className={INPUT_CLS}
@@ -574,7 +574,7 @@ function renderFieldInput(
       return (
         <input
           type="date"
-          id={id}
+          id={field.key}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           className={INPUT_CLS}
@@ -584,7 +584,7 @@ function renderFieldInput(
       return (
         <input
           type="text"
-          id={id}
+          id={field.key}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           className={INPUT_CLS}
@@ -863,6 +863,7 @@ function EditProductModal({ product, onClose, onSuccess }: EditProductModalProps
   const [values, setValues] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [wpSync, setWpSync] = useState<{ synced: boolean; reason?: string; wc_id?: number } | null>(null)
   const [categories, setCategories] = useState<DolibarrCategory[]>([])
   const [selectedCategory, setSelectedCategory] = useState('')
 
@@ -891,9 +892,11 @@ function EditProductModal({ product, onClose, onSuccess }: EditProductModalProps
     try {
       setSubmitting(true)
       setError(null)
+      setWpSync(null)
       const payload = buildPayload(values, fields) as Record<string, unknown>
       if (selectedCategory) payload.category_name = selectedCategory
-      await updateDolibarrProduct(product.id, payload as Partial<DolibarrProduct>)
+      const result = await updateDolibarrProduct(product.id, payload as Partial<DolibarrProduct>)
+      if (result.wordpress_sync) setWpSync(result.wordpress_sync)
       onSuccess()
     } catch (err) {
       setError((err as { message?: string }).message ?? 'Error actualizando producto')
@@ -944,6 +947,11 @@ function EditProductModal({ product, onClose, onSuccess }: EditProductModalProps
           )}
         </div>
         <div className="px-6 py-4 border-t border-gray-200 space-y-3 flex-shrink-0">
+          {wpSync && (
+            <p className={`text-xs px-3 py-2 rounded ${wpSync.synced ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700'}`}>
+              WooCommerce: {wpSync.synced ? `sincronizado (ID ${wpSync.wc_id})` : wpSync.reason}
+            </p>
+          )}
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-3">
             <button
