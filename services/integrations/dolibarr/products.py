@@ -243,7 +243,8 @@ class DolibarrProductService:
         self,
         limit: int = 50,
         offset: int = 0,
-        filters: dict[str, Any] | None = None,
+        search: str | None = None,
+        filters: dict[str, Any] | None = None, # Mantener para compatibilidad si otros lo usan
     ) -> list[dict[str, Any]]:
         """
         Lista productos de Dolibarr con paginación.
@@ -251,18 +252,45 @@ class DolibarrProductService:
         Args:
             limit:   número máximo de productos por página.
             offset:  desplazamiento desde el inicio.
+            search:  término para filtrar por referencia o nombre.
             filters: filtros adicionales como query params.
 
         Returns:
             Lista de dicts con los productos devueltos por Dolibarr.
         """
+        current_filters = filters if filters is not None else {}
+        if search:
+            # Dolibarr's API uses 'sqlfilters' for complex WHERE clauses.
+            escaped_search = search.replace("'", "''")
+            current_filters["sqlfilters"] = f"(t.ref:like:'%{escaped_search}%') OR (t.label:like:'%{escaped_search}%')"
+
         raw = await self._client.list(
             _DOLIBARR_PRODUCTS_RESOURCE,
             limit=limit,
             offset=offset,
-            filters=filters,
+            filters=current_filters,
         )
         return [_normalize_product(p) for p in raw]
+
+    async def count_products(self, search: str | None = None) -> int:
+        """
+        Cuenta el número total de productos, aplicando el filtro de búsqueda.
+        """
+        current_filters: dict[str, Any] = {}
+        if search:
+            escaped_search = search.replace("'", "''")
+            current_filters["sqlfilters"] = f"(t.ref:like:'%{escaped_search}%') OR (t.label:like:'%{escaped_search}%')"
+
+        # To get the total count, we need to fetch all items (or use a very large limit)
+        # as Dolibarr's list API doesn't return a 'total' field directly.
+        # This is inefficient for very large datasets but necessary with current client.
+        all_items = await self._client.list(
+            _DOLIBARR_PRODUCTS_RESOURCE,
+            limit=999999, # A very large number to fetch all
+            offset=0,
+            filters=current_filters,
+        )
+        return len(all_items)
 
     async def get_product(self, product_id: int) -> dict[str, Any]:
         """
