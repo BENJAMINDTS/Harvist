@@ -108,13 +108,12 @@ export default function WordPressProducts() {
         stock_quantity: formStock !== '' ? parseInt(formStock, 10) : null,
       }
       if (editProduct) {
-        const updated = await updateWordPressProduct(editProduct.id, data)
-        setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)))
+        await updateWordPressProduct(editProduct.id, data)
       } else {
-        const created = await createWordPressProduct(data)
-        setProducts((prev) => [created, ...prev])
+        await createWordPressProduct(data)
       }
       setShowForm(false)
+      await load(offset)
     } catch (err: unknown) {
       setFormError((err as { message?: string })?.message ?? 'Error guardando producto.')
     } finally {
