@@ -41,4 +41,4 @@ Fixes #<!-- issue number -->
 <!-- Notas adicionales, decisiones, trade-offs, etc -->
 
 ---
-🤖 Generated with Claude Code (Caveman Mode)
+
