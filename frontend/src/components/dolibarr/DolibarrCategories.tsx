@@ -212,6 +212,9 @@ function CategoryNode({ node, depth, onAddChild, onEdit, onDelete }: CategoryNod
           {node.description && (
             <span className="ml-2 text-xs text-gray-400 truncate">{node.description}</span>
           )}
+          {node.children.length > 0 && (
+            <span className="ml-2 text-xs text-gray-300">({node.children.length})</span>
+          )}
         </div>
 
         {/* Badge ID */}
