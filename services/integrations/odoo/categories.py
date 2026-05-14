@@ -186,6 +186,27 @@ class OooCategoryService:
         logger.debug("Árbol Odoo construido", extra={"roots": len(roots), "total": len(all_categories)})
         return roots
 
+    async def find_category_by_name(self, name: str) -> dict | None:
+        """
+        Busca una categoría por nombre exacto (campo name, sin ruta completa).
+
+        Args:
+            name: nombre de la categoría a buscar.
+
+        Returns:
+            Dict con id, name y complete_name si existe, None si no se encuentra.
+        """
+        try:
+            results = await self._client.list(
+                "product.category",
+                limit=1,
+                filters={"domain": [("name", "=", name)], "fields": ["id", "name", "complete_name"]},
+            )
+            return results[0] if results else None
+        except Exception as exc:
+            logger.warning("Error buscando categoría Odoo por nombre", exc_info=exc, extra={"name": name})
+            return None
+
     async def count_categories(self) -> int:
         """
         Cuenta el total de categorías.
