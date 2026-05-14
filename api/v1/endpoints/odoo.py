@@ -420,9 +420,42 @@ async def csv_import_products(
         )
 
     client = await _build_client()
+
+    # ── Validación previa de categorías ──────────────────────────────────────
+    # Identificar qué columna CSV mapea a categ_id
+    categ_csv_col = next((col for col, field in col_mapping.items() if field == "categ_id"), None)
+    categ_name_to_id: dict[str, int] = {}
+
+    if categ_csv_col:
+        unique_cat_names: set[str] = {
+            row[categ_csv_col].strip()
+            for row in rows
+            if row.get(categ_csv_col, "").strip()
+        }
+        if unique_cat_names:
+            cat_svc = OooCategoryService(client)
+            missing_cats: list[str] = []
+            for cat_name in unique_cat_names:
+                found = await cat_svc.find_category_by_name(cat_name)
+                if found:
+                    categ_name_to_id[cat_name] = int(found["id"])
+                else:
+                    missing_cats.append(cat_name)
+            if missing_cats:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=(
+                        f"Las siguientes categorías no existen en Odoo: "
+                        f"{missing_cats}. "
+                        "Créalas primero en la pestaña Categorías."
+                    ),
+                )
+
     svc = OdooProductService(client)
     try:
-        result = await svc.bulk_upsert_products(rows, col_mapping, overwrite=overwrite)
+        result = await svc.bulk_upsert_products(
+            rows, col_mapping, overwrite=overwrite, categ_name_to_id=categ_name_to_id or None
+        )
         msg = (
             f"{result['created']} creados, {result['updated']} actualizados, "
             f"{result['skipped']} omitidos, {result['failed']} fallidos."
