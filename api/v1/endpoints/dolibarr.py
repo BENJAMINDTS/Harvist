@@ -1073,6 +1073,7 @@ async def import_from_csv(
     mapping: str = Form(...),
     overwrite: bool = Form(default=False),
     category_column: str = Form(default=""),
+    subcategory_column: str = Form(default=""),
 ) -> JSONResponse:
     """
     Inicia la importación masiva de productos desde CSV como tarea Celery asíncrona.
@@ -1083,10 +1084,13 @@ async def import_from_csv(
     el progreso y obtener los resultados cuando la tarea termine.
 
     Args:
-        file:            CSV de productos (multipart).
-        mapping:         JSON string con el mapeo columna → campo Dolibarr.
-        overwrite:       si True, actualiza productos que ya existen en Dolibarr.
-        category_column: nombre de la columna CSV que contiene el nombre de categoría.
+        file:               CSV de productos (multipart).
+        mapping:            JSON string con el mapeo columna → campo Dolibarr.
+        overwrite:          si True, actualiza productos que ya existen en Dolibarr.
+        category_column:    nombre de la columna CSV con la categoría padre.
+        subcategory_column: nombre de la columna CSV con la subcategoría (opcional).
+                            Si se indica, la subcategoría se crea automáticamente bajo
+                            la categoría padre y el producto se asigna a ella.
 
     Returns:
         HTTP 202 con ``{task_id, status: "pending"}``.
@@ -1115,11 +1119,13 @@ async def import_from_csv(
         )
 
     cat_col = category_column.strip()
+    subcat_col = subcategory_column.strip()
     _, cat_svc = await _get_services_async()
 
-    # Pre-validar categorías de forma síncrona antes de encolar
     category_name_to_id: dict[str, int] = {}
-    if cat_col:
+    subcateg_pair_to_id: dict[str, int] = {}  # clave: "padre||hijo"
+
+    if cat_col or subcat_col:
         try:
             text = content.decode("utf-8-sig")
         except UnicodeDecodeError:
@@ -1134,29 +1140,57 @@ async def import_from_csv(
             delimiter = best if counts[best] > 0 else ","
 
         reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
-        unique_names: set[str] = set()
-        for row in reader:
-            name = (row.get(cat_col) or "").strip()
-            if name:
-                unique_names.add(name)
+        rows_csv = list(reader)
 
-        missing: list[str] = []
-        for name in unique_names:
-            cat = await cat_svc.find_category_by_name(name)
-            if cat is None:
-                missing.append(name)
-            else:
-                category_name_to_id[name] = int(cat["id"])
+        if subcat_col and cat_col:
+            # Modo subcategoría: validar padres y resolver/crear subcategorías automáticamente
+            unique_pairs: set[tuple[str, str]] = {
+                ((row.get(cat_col) or "").strip(), (row.get(subcat_col) or "").strip())
+                for row in rows_csv
+                if (row.get(cat_col) or "").strip() and (row.get(subcat_col) or "").strip()
+            }
+            missing_parents: list[str] = []
+            for parent_name, subcat_name in unique_pairs:
+                try:
+                    subcat = await cat_svc.find_or_create_subcategory(parent_name, subcat_name)
+                    subcateg_pair_to_id[f"{parent_name}||{subcat_name}"] = int(subcat["id"])
+                except Exception as exc:
+                    if parent_name not in missing_parents and "no existe" in str(exc):
+                        missing_parents.append(parent_name)
+            if missing_parents:
+                missing_list = ", ".join(f"'{p}'" for p in sorted(missing_parents))
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=(
+                        f"Categorías padre no encontradas en Dolibarr: {missing_list}. "
+                        "Créalas primero desde el módulo de Categorías."
+                    ),
+                )
+        elif cat_col:
+            # Modo categoría simple: validar que todas las categorías existen
+            unique_names: set[str] = set()
+            for row in rows_csv:
+                name = (row.get(cat_col) or "").strip()
+                if name:
+                    unique_names.add(name)
 
-        if missing:
-            missing_list = ", ".join(f"'{c}'" for c in sorted(missing))
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=(
-                    f"Categorías no encontradas en Dolibarr: {missing_list}. "
-                    "Créalas primero desde el módulo de Categorías con el nombre exacto."
-                ),
-            )
+            missing: list[str] = []
+            for name in unique_names:
+                cat = await cat_svc.find_category_by_name(name)
+                if cat is None:
+                    missing.append(name)
+                else:
+                    category_name_to_id[name] = int(cat["id"])
+
+            if missing:
+                missing_list = ", ".join(f"'{c}'" for c in sorted(missing))
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=(
+                        f"Categorías no encontradas en Dolibarr: {missing_list}. "
+                        "Créalas primero desde el módulo de Categorías con el nombre exacto."
+                    ),
+                )
 
     dolibarr_url, dolibarr_api_key = await _get_dolibarr_credentials()
 
@@ -1185,6 +1219,8 @@ async def import_from_csv(
         category_name_to_id,
         dolibarr_url,
         dolibarr_api_key,
+        subcat_col,
+        subcateg_pair_to_id,
     )
 
     logger.info(
