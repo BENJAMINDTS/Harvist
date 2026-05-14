@@ -535,6 +535,7 @@ function buildPayload(values: FormValues): Partial<OdooProduct> {
 function ProductModal({ product, onClose, onSuccess }: ProductModalProps) {
   const isCreate = product === null
   const [values, setValues] = useState<FormValues>(() => initValues(product))
+  const [subcategId, setSubcategId] = useState('')
   const [categories, setCategories] = useState<OdooCategory[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -545,6 +546,14 @@ function ProductModal({ product, onClose, onSuccess }: ProductModalProps) {
       .then((r) => setCategories(Array.isArray(r?.items) ? r.items : []))
       .catch(() => {})
   }, [])
+
+  // Subcategorías: hijos de la categoría seleccionada
+  const subcategories = values.categ_id
+    ? categories.filter((c) => {
+        if (!c.parent_id) return false
+        return c.parent_id[0] === parseInt(values.categ_id, 10)
+      })
+    : []
 
   const set = (key: string, value: string) =>
     setValues((prev) => ({ ...prev, [key]: value }))
@@ -561,8 +570,11 @@ function ProductModal({ product, onClose, onSuccess }: ProductModalProps) {
     setError(null)
     setSubmitting(true)
     try {
+      const payload = buildPayload(values)
+      // Si hay subcategoría seleccionada, sobreescribe categ_id con la subcategoría
+      if (subcategId) payload.categ_id = parseInt(subcategId, 10) as unknown as typeof payload.categ_id
       if (isCreate) {
-        const created = await createOdooProduct(buildPayload(values))
+        const created = await createOdooProduct(payload)
         if (pendingProperties.length > 0) {
           try {
             await setOdooProductProperties(created.id, pendingProperties)
@@ -571,7 +583,7 @@ function ProductModal({ product, onClose, onSuccess }: ProductModalProps) {
           }
         }
       } else {
-        await updateOdooProduct(product.id, buildPayload(values))
+        await updateOdooProduct(product.id, payload)
         if (pendingProperties.length > 0) {
           try {
             await setOdooProductProperties(product.id, pendingProperties)
@@ -656,13 +668,32 @@ function ProductModal({ product, onClose, onSuccess }: ProductModalProps) {
               </div>
               <div>
                 <label className={LABEL_CLS}>Categoría</label>
-                <select value={values.categ_id} onChange={(e) => set('categ_id', e.target.value)} className={INPUT_CLS}>
+                <select
+                  value={values.categ_id}
+                  onChange={(e) => { set('categ_id', e.target.value); setSubcategId('') }}
+                  className={INPUT_CLS}
+                >
                   <option value="">— Sin cambio —</option>
                   {categories.map((c) => (
                     <option key={c.id} value={String(c.id)}>{c.complete_name || c.name}</option>
                   ))}
                 </select>
               </div>
+              {subcategories.length > 0 && (
+                <div>
+                  <label className={LABEL_CLS}>Subcategoría</label>
+                  <select
+                    value={subcategId}
+                    onChange={(e) => setSubcategId(e.target.value)}
+                    className={INPUT_CLS}
+                  >
+                    <option value="">— Usar categoría padre —</option>
+                    {subcategories.map((c) => (
+                      <option key={c.id} value={String(c.id)}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div>
                 <label className={LABEL_CLS}>HS Code</label>
                 <input type="text" value={values.hs_code} onChange={(e) => set('hs_code', e.target.value)} placeholder="p.ej. 8471300000" className={INPUT_CLS} />

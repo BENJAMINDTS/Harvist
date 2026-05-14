@@ -218,3 +218,66 @@ class OooCategoryService:
         if not isinstance(self._client, OdooClient):
             return 0
         return await self._client.search_count("product.category")
+
+    async def find_category_by_name_and_parent(self, name: str, parent_id: int) -> dict | None:
+        """
+        Busca categoría por nombre exacto bajo un padre específico.
+
+        Args:
+            name:      nombre exacto de la categoría.
+            parent_id: ID de la categoría padre.
+
+        Returns:
+            Dict de la categoría si existe, None si no.
+        """
+        try:
+            results = await self._client.list(
+                "product.category",
+                limit=1,
+                filters={
+                    "domain": [("name", "=", name), ("parent_id", "=", parent_id)],
+                    "fields": ["id", "name", "complete_name"],
+                },
+            )
+            return results[0] if results else None
+        except Exception as exc:
+            logger.warning(
+                "Error buscando subcategoría Odoo por nombre y padre",
+                exc_info=exc,
+                extra={"name": name, "parent_id": parent_id},
+            )
+            return None
+
+    async def find_or_create_subcategory(self, parent_name: str, subcat_name: str) -> dict:
+        """
+        Busca subcategoría bajo un padre por nombre, o la crea automáticamente si no existe.
+
+        Args:
+            parent_name: nombre exacto de la categoría padre.
+            subcat_name: nombre exacto de la subcategoría.
+
+        Returns:
+            Dict con id, name, complete_name de la subcategoría.
+
+        Raises:
+            IntegrationError: si el padre no existe en Odoo o falla la creación.
+        """
+        parent = await self.find_category_by_name(parent_name)
+        if not parent:
+            raise IntegrationError(
+                f"Categoría padre '{parent_name}' no existe en Odoo. Créala primero."
+            )
+        parent_id = int(parent["id"])
+        existing = await self.find_category_by_name_and_parent(subcat_name, parent_id)
+        if existing:
+            logger.debug(
+                "Subcategoría Odoo encontrada",
+                extra={"name": subcat_name, "parent_id": parent_id},
+            )
+            return existing
+        created = await self.create_category(subcat_name, parent_id=parent_id)
+        logger.info(
+            "Subcategoría Odoo creada automáticamente",
+            extra={"name": subcat_name, "parent_name": parent_name, "id": created.get("id")},
+        )
+        return created

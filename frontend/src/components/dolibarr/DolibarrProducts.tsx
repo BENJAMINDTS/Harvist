@@ -750,6 +750,7 @@ function CreateProductModal({ onClose, onSuccess }: CreateProductModalProps): Re
   const [error, setError] = useState<string | null>(null)
   const [categories, setCategories] = useState<DolibarrCategory[]>([])
   const [selectedCategory, setSelectedCategory] = useState('')
+  const [selectedSubcategory, setSelectedSubcategory] = useState('')
 
   useEffect(() => {
     Promise.all([
@@ -765,6 +766,14 @@ function CreateProductModal({ onClose, onSuccess }: CreateProductModalProps): Re
       .finally(() => setFieldsLoading(false))
   }, [])
 
+  const selectedCatObj = categories.find((c) => c.label === selectedCategory)
+  const subcategoriesCreate = selectedCatObj
+    ? categories.filter((c) => {
+        try { return parseInt(String(c.fk_parent)) === parseInt(String(selectedCatObj.id)) }
+        catch { return false }
+      })
+    : []
+
   const handleChange = (key: string, value: string) =>
     setValues((prev) => ({ ...prev, [key]: value }))
 
@@ -777,7 +786,11 @@ function CreateProductModal({ onClose, onSuccess }: CreateProductModalProps): Re
       setSubmitting(true)
       setError(null)
       const payload = buildPayload(values, fields) as Record<string, unknown>
-      if (selectedCategory) payload.category_name = selectedCategory
+      if (selectedSubcategory) {
+        payload.category_name = selectedSubcategory
+      } else if (selectedCategory) {
+        payload.category_name = selectedCategory
+      }
       await createDolibarrProduct(payload as Partial<DolibarrProduct>)
       onSuccess()
     } catch (err) {
@@ -810,11 +823,11 @@ function CreateProductModal({ onClose, onSuccess }: CreateProductModalProps): Re
               <div className="border border-amber-200 bg-amber-50 rounded-lg p-4 space-y-3">
                 <p className="text-xs font-semibold text-amber-800 uppercase tracking-wide">Categoría (opcional)</p>
                 <p className="text-xs text-amber-700">
-                  La categoría debe existir previamente en Dolibarr. El nombre debe coincidir exactamente.
+                  La categoría debe existir previamente en Dolibarr. Si se elige subcategoría, el producto quedará asignado a ella.
                 </p>
                 <select
                   value={selectedCategory}
-                  onChange={(e) => setSelectedCategory(e.target.value)}
+                  onChange={(e) => { setSelectedCategory(e.target.value); setSelectedSubcategory('') }}
                   className="w-full px-3 py-2 border border-amber-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 focus:border-transparent bg-white"
                 >
                   <option value="">— Sin categoría —</option>
@@ -822,6 +835,18 @@ function CreateProductModal({ onClose, onSuccess }: CreateProductModalProps): Re
                     <option key={c.id} value={c.label}>{c.label}</option>
                   ))}
                 </select>
+                {subcategoriesCreate.length > 0 && (
+                  <select
+                    value={selectedSubcategory}
+                    onChange={(e) => setSelectedSubcategory(e.target.value)}
+                    className="w-full px-3 py-2 border border-amber-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 focus:border-transparent bg-white"
+                  >
+                    <option value="">— Usar categoría padre —</option>
+                    {subcategoriesCreate.map((c) => (
+                      <option key={c.id} value={c.label}>{c.label}</option>
+                    ))}
+                  </select>
+                )}
               </div>
             </>
           )}
@@ -866,6 +891,7 @@ function EditProductModal({ product, onClose, onSuccess }: EditProductModalProps
   const [wpSync, setWpSync] = useState<{ synced: boolean; reason?: string; wc_id?: number } | null>(null)
   const [categories, setCategories] = useState<DolibarrCategory[]>([])
   const [selectedCategory, setSelectedCategory] = useState('')
+  const [selectedSubcategory, setSelectedSubcategory] = useState('')
 
   useEffect(() => {
     Promise.all([
@@ -881,6 +907,14 @@ function EditProductModal({ product, onClose, onSuccess }: EditProductModalProps
       .finally(() => setFieldsLoading(false))
   }, [product])
 
+  const selectedCatObjEdit = categories.find((c) => c.label === selectedCategory)
+  const subcategoriesEdit = selectedCatObjEdit
+    ? categories.filter((c) => {
+        try { return parseInt(String(c.fk_parent)) === parseInt(String(selectedCatObjEdit.id)) }
+        catch { return false }
+      })
+    : []
+
   const handleChange = (key: string, value: string) =>
     setValues((prev) => ({ ...prev, [key]: value }))
 
@@ -894,7 +928,11 @@ function EditProductModal({ product, onClose, onSuccess }: EditProductModalProps
       setError(null)
       setWpSync(null)
       const payload = buildPayload(values, fields) as Record<string, unknown>
-      if (selectedCategory) payload.category_name = selectedCategory
+      if (selectedSubcategory) {
+        payload.category_name = selectedSubcategory
+      } else if (selectedCategory) {
+        payload.category_name = selectedCategory
+      }
       const result = await updateDolibarrProduct(product.id, payload as Partial<DolibarrProduct>)
       if (result.wordpress_sync) setWpSync(result.wordpress_sync)
       onSuccess()
@@ -930,11 +968,11 @@ function EditProductModal({ product, onClose, onSuccess }: EditProductModalProps
               <div className="border border-amber-200 bg-amber-50 rounded-lg p-4 space-y-3">
                 <p className="text-xs font-semibold text-amber-800 uppercase tracking-wide">Asignar a categoría (opcional)</p>
                 <p className="text-xs text-amber-700">
-                  La categoría debe existir previamente en Dolibarr. El nombre debe coincidir exactamente. Si el producto ya pertenece a una categoría, se añadirá a esta además.
+                  La categoría debe existir en Dolibarr. Si se elige subcategoría, el producto quedará asignado a ella. Si ya pertenece a una categoría, se añadirá además.
                 </p>
                 <select
                   value={selectedCategory}
-                  onChange={(e) => setSelectedCategory(e.target.value)}
+                  onChange={(e) => { setSelectedCategory(e.target.value); setSelectedSubcategory('') }}
                   className="w-full px-3 py-2 border border-amber-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 focus:border-transparent bg-white"
                 >
                   <option value="">— Sin cambiar —</option>
@@ -942,6 +980,18 @@ function EditProductModal({ product, onClose, onSuccess }: EditProductModalProps
                     <option key={c.id} value={c.label}>{c.label}</option>
                   ))}
                 </select>
+                {subcategoriesEdit.length > 0 && (
+                  <select
+                    value={selectedSubcategory}
+                    onChange={(e) => setSelectedSubcategory(e.target.value)}
+                    className="w-full px-3 py-2 border border-amber-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 focus:border-transparent bg-white"
+                  >
+                    <option value="">— Usar categoría padre —</option>
+                    {subcategoriesEdit.map((c) => (
+                      <option key={c.id} value={c.label}>{c.label}</option>
+                    ))}
+                  </select>
+                )}
               </div>
             </>
           )}
@@ -1001,6 +1051,7 @@ function CsvImportModal({ onClose, onSuccess }: CsvImportModalProps): React.Reac
   const [mapping, setMapping] = useState<Record<string, string>>({})
   const [overwrite, setOverwrite] = useState(false)
   const [categoryColumn, setCategoryColumn] = useState('')
+  const [subcategoryColumn, setSubcategoryColumn] = useState('')
   const [result, setResult] = useState<DolibarrImportTask['results'] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -1060,7 +1111,7 @@ function CsvImportModal({ onClose, onSuccess }: CsvImportModalProps): React.Reac
     setStep('importing')
 
     try {
-      const task = await importDolibarrCsv(file, activeMapping, overwrite, categoryColumn || undefined)
+      const task = await importDolibarrCsv(file, activeMapping, overwrite, categoryColumn || undefined, subcategoryColumn || undefined)
 
       pollRef.current = setInterval(async () => {
         try {
@@ -1242,17 +1293,17 @@ function CsvImportModal({ onClose, onSuccess }: CsvImportModalProps): React.Reac
                 </div>
               </div>
 
-              {/* Category column selector */}
+              {/* Category + Subcategory column selectors */}
               <div className="border border-amber-200 bg-amber-50 rounded-lg p-4 space-y-3">
-                <p className="text-xs font-semibold text-amber-800 uppercase tracking-wide">Categoría (opcional)</p>
+                <p className="text-xs font-semibold text-amber-800 uppercase tracking-wide">Categorías (opcional)</p>
                 <p className="text-xs text-amber-700">
-                  ⚠ La categoría debe existir previamente en Dolibarr y el nombre del CSV debe coincidir <strong>exactamente</strong>. Si alguna no existe, la importación se bloqueará con la lista de categorías faltantes.
+                  ⚠ La categoría debe existir previamente en Dolibarr. Si se indica subcategoría, se creará automáticamente bajo la categoría padre si no existe. El producto quedará asignado a la subcategoría.
                 </p>
                 <div className="flex items-center gap-3">
-                  <span className="text-sm text-amber-800 shrink-0">Columna de categoría:</span>
+                  <span className="text-sm text-amber-800 shrink-0 w-36">Columna categoría:</span>
                   <select
                     value={categoryColumn}
-                    onChange={(e) => setCategoryColumn(e.target.value)}
+                    onChange={(e) => { setCategoryColumn(e.target.value); if (!e.target.value) setSubcategoryColumn('') }}
                     className="flex-1 px-2 py-1.5 border border-amber-300 rounded text-sm focus:ring-2 focus:ring-amber-400 focus:border-transparent bg-white"
                   >
                     <option value="">— No asignar categoría —</option>
@@ -1261,6 +1312,21 @@ function CsvImportModal({ onClose, onSuccess }: CsvImportModalProps): React.Reac
                     ))}
                   </select>
                 </div>
+                {categoryColumn && (
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-amber-800 shrink-0 w-36">Columna subcategoría:</span>
+                    <select
+                      value={subcategoryColumn}
+                      onChange={(e) => setSubcategoryColumn(e.target.value)}
+                      className="flex-1 px-2 py-1.5 border border-amber-300 rounded text-sm focus:ring-2 focus:ring-amber-400 focus:border-transparent bg-white"
+                    >
+                      <option value="">— Sin subcategoría —</option>
+                      {preview?.headers.map((h) => (
+                        <option key={h} value={h}>{h}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
 
               {!refMapped && (

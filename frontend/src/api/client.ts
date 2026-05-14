@@ -935,12 +935,14 @@ export async function importDolibarrCsv(
   mapping: Record<string, string>,
   overwrite: boolean,
   categoryColumn?: string,
+  subcategoryColumn?: string,
 ): Promise<DolibarrImportTask> {
   const form = new FormData()
   form.append('file', file)
   form.append('mapping', JSON.stringify(mapping))
   form.append('overwrite', String(overwrite))
   if (categoryColumn) form.append('category_column', categoryColumn)
+  if (subcategoryColumn) form.append('subcategory_column', subcategoryColumn)
   const response = await apiClient.post<ApiResponse<DolibarrImportTask>>(
     '/dolibarr/products/import',
     form,

@@ -153,7 +153,12 @@ class DolibarrCategoryService:
         if parent_id is not None:
             data["fk_parent"] = parent_id
 
-        return await self._client.create(_DOLIBARR_CATEGORIES_RESOURCE, data)
+        raw = await self._client.create(_DOLIBARR_CATEGORIES_RESOURCE, data)
+        # Dolibarr returns the new category ID as a plain integer — normalize to dict
+        # so callers can always do result["id"] safely.
+        if isinstance(raw, (int, str)):
+            return {"id": int(raw), "label": label, "fk_parent": parent_id, "type": type}
+        return raw
 
     async def update_category(
         self,
@@ -380,6 +385,81 @@ class DolibarrCategoryService:
             if len(batch) < limit:
                 return None
             offset += limit
+
+    async def find_category_by_name_and_parent(
+        self,
+        name: str,
+        parent_id: int,
+        type: str = "product",
+    ) -> dict | None:
+        """
+        Busca categoría por nombre exacto bajo un padre específico.
+
+        Args:
+            name:      nombre exacto de la categoría (sensible a mayúsculas).
+            parent_id: ID de la categoría padre.
+            type:      tipo de categoría Dolibarr.
+
+        Returns:
+            Dict de la categoría si existe, None si no.
+        """
+        offset = 0
+        limit = 100
+        while True:
+            batch = await self.list_categories(type=type, limit=limit, offset=offset)
+            if not batch:
+                return None
+            for cat in batch:
+                try:
+                    cat_parent_id = int(cat.get("fk_parent") or 0)
+                except (ValueError, TypeError):
+                    cat_parent_id = 0
+                if str(cat.get("label", "")) == name and cat_parent_id == parent_id:
+                    return cat
+            if len(batch) < limit:
+                return None
+            offset += limit
+
+    async def find_or_create_subcategory(
+        self,
+        parent_name: str,
+        subcat_name: str,
+        type: str = "product",
+    ) -> dict:
+        """
+        Busca subcategoría bajo un padre por nombre, o la crea automáticamente si no existe.
+
+        Args:
+            parent_name: nombre exacto de la categoría padre.
+            subcat_name: nombre exacto de la subcategoría.
+            type:        tipo de categoría Dolibarr.
+
+        Returns:
+            Dict con id, label de la subcategoría.
+
+        Raises:
+            IntegrationError: si el padre no existe o falla la creación.
+        """
+        parent = await self.find_category_by_name(parent_name, type=type)
+        if not parent:
+            raise IntegrationError(
+                f"Categoría padre '{parent_name}' no existe en Dolibarr. Créala primero.",
+                platform="dolibarr",
+            )
+        parent_id = int(parent["id"])
+        existing = await self.find_category_by_name_and_parent(subcat_name, parent_id, type=type)
+        if existing:
+            logger.debug(
+                "Subcategoría Dolibarr encontrada",
+                extra={"name": subcat_name, "parent_id": parent_id},
+            )
+            return existing
+        created = await self.create_category(subcat_name, type=type, parent_id=parent_id)
+        logger.info(
+            "Subcategoría Dolibarr creada automáticamente",
+            extra={"name": subcat_name, "parent_name": parent_name},
+        )
+        return created
 
     async def list_products_in_category(
         self,
