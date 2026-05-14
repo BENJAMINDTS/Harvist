@@ -84,23 +84,21 @@ class DolibarrStockService:
             Exception: Si el producto no existe.
         """
         logger.debug(f"Getting stock for product {product_id}")
-        response = await self.client.get("products", product_id)
+        response = await self.client.get("products", product_id, params={"includestockdata": 1})
 
-        stock_info = response.get("stock", 0)
-        warehouses_raw = response.get("warehouses", [])
+        # Dolibarr: stock_reel = total real stock; stock_warehouse = {wh_id: {real, id}}
+        stock_reel = float(response.get("stock_reel") or 0)
+        stock_warehouse_raw = response.get("stock_warehouse") or {}
 
         warehouses = [
             {
-                "warehouse_id": w.get("id"),
-                "warehouse_label": w.get("label"),
-                "qty": w.get("qty", 0),
+                "warehouse_id": wh_id,
+                "qty": float(wh_data.get("real", 0)) if isinstance(wh_data, dict) else float(wh_data or 0),
             }
-            for w in warehouses_raw
+            for wh_id, wh_data in (stock_warehouse_raw.items() if isinstance(stock_warehouse_raw, dict) else [])
         ]
 
-        stock_total = sum(w["qty"] for w in warehouses)
-
-        return {"stock_total": stock_total, "warehouses": warehouses}
+        return {"stock_total": stock_reel, "warehouses": warehouses}
 
     async def get_stock_for_products(
         self, product_ids: list[int]

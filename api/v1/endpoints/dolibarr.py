@@ -90,6 +90,8 @@ from services.integrations.dolibarr.orders import DolibarrOrderService
 from services.integrations.dolibarr.products import DolibarrProductService
 from services.integrations.dolibarr.stocks import DolibarrStockService
 from services.integrations.dolibarr.thirdparties import DolibarrThirdpartyService
+from services.integrations.wordpress.client import WordPressClient
+from services.integrations.wordpress.products import WordPressProductService
 from services.storage_service import get_storage_service
 
 router_main = APIRouter(prefix="/dolibarr", tags=["dolibarr"])
@@ -101,6 +103,83 @@ _NOT_CONFIGURED_MSG = (
     "Dolibarr no está configurado. "
     "Define DOLIBARR_URL y DOLIBARR_API_KEY en tu archivo .env."
 )
+
+
+async def _get_wordpress_product_service() -> WordPressProductService | None:
+    """
+    Construye WordPressProductService desde Redis o .env.
+
+    Returns:
+        WordPressProductService si WordPress está configurado, None si no.
+    """
+    settings = get_settings()
+    redis_client: aioredis.Redis | None = None
+    url: str = ""
+    consumer_key: str = ""
+    consumer_secret: str = ""
+    try:
+        redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
+        stored = await redis_client.get("integration:wordpress:config")
+        if stored:
+            config = json.loads(stored)
+            url = config.get("url", "").strip()
+            consumer_key = config.get("consumer_key", "").strip()
+            consumer_secret = config.get("consumer_secret", "").strip()
+    except Exception as exc:
+        logger.debug("Redis no disponible para config WordPress en sync Dolibarr", exc_info=exc)
+    finally:
+        if redis_client:
+            await redis_client.aclose()
+
+    if not url or not consumer_key or not consumer_secret:
+        if settings.wordpress_configured:
+            url = settings.wordpress_url
+            consumer_key = settings.wordpress_consumer_key
+            consumer_secret = settings.wordpress_consumer_secret
+        else:
+            return None
+
+    client = WordPressClient(
+        settings,
+        override_url=url,
+        override_consumer_key=consumer_key,
+        override_consumer_secret=consumer_secret,
+    )
+    return WordPressProductService(client)
+
+
+def _map_dolibarr_to_wc(dolibarr_product: dict[str, Any]) -> dict[str, Any]:
+    """
+    Mapea campos Dolibarr → WooCommerce para actualización.
+
+    Mapeo:
+      label            → name
+      description      → description
+      price            → regular_price
+      weight           → weight
+
+    Args:
+        dolibarr_product: dict del producto Dolibarr actualizado.
+
+    Returns:
+        Dict con campos WooCommerce a actualizar (solo los presentes).
+    """
+    mapping: dict[str, Any] = {}
+    if "label" in dolibarr_product:
+        mapping["name"] = dolibarr_product["label"]
+    if "description" in dolibarr_product:
+        mapping["description"] = dolibarr_product["description"]
+    if "price" in dolibarr_product and dolibarr_product["price"] not in (None, ""):
+        try:
+            mapping["regular_price"] = str(float(dolibarr_product["price"]))
+        except (ValueError, TypeError):
+            pass
+    if "weight" in dolibarr_product and dolibarr_product["weight"] not in (None, ""):
+        try:
+            mapping["weight"] = str(float(dolibarr_product["weight"]))
+        except (ValueError, TypeError):
+            pass
+    return mapping
 
 
 async def _get_dolibarr_credentials() -> tuple[str, str]:
@@ -789,7 +868,52 @@ async def update_product(product_id: int, data: dict) -> JSONResponse:
                 extra={"product_id": product_id, "category": category_name},
             )
 
-    return JSONResponse(content=_ok(updated, "Producto actualizado."))
+    # ── Sync Dolibarr → WordPress ─────────────────────────────────────────────
+    ref: str = (updated.get("ref") or "").strip()
+    wordpress_sync: dict[str, Any] = {"synced": False, "reason": "WordPress no configurado"}
+
+    # Fetch stock total from Dolibarr to include in WC payload
+    doli_stock_total: float | None = None
+    try:
+        _stock_svc = await _get_stock_service()
+        _stock_info = await _stock_svc.get_product_stock(product_id)
+        doli_stock_total = float(_stock_info.get("stock_total", 0))
+    except Exception as exc:
+        logger.debug(
+            "Stock fetch Dolibarr→WP omitido",
+            exc_info=exc,
+            extra={"product_id": product_id},
+        )
+
+    if ref:
+        wp_svc = await _get_wordpress_product_service()
+        if wp_svc is not None:
+            try:
+                wc_product = await wp_svc.find_by_sku(ref)
+                if wc_product:
+                    wc_payload = _map_dolibarr_to_wc(updated)
+                    if doli_stock_total is not None:
+                        wc_payload["stock_quantity"] = int(doli_stock_total)
+                        wc_payload["manage_stock"] = True
+                    wc_payload.setdefault("sku", ref)
+                    await wp_svc.update(int(wc_product["id"]), wc_payload)
+                    wordpress_sync = {"synced": True, "wc_id": wc_product["id"]}
+                    logger.info(
+                        "Producto sincronizado Dolibarr→WordPress",
+                        extra={"product_id": product_id, "ref": ref, "wc_id": wc_product["id"]},
+                    )
+                else:
+                    wordpress_sync = {"synced": False, "reason": f"ref '{ref}' no encontrado en WooCommerce"}
+                    logger.warning("Sync Dolibarr→WP: ref no encontrado en WC", extra={"ref": ref})
+            except Exception as exc:
+                wordpress_sync = {"synced": False, "reason": str(exc)}
+                logger.warning("Sync Dolibarr→WordPress falló", exc_info=exc, extra={"ref": ref})
+            finally:
+                await wp_svc._client.close()
+    else:
+        wordpress_sync = {"synced": False, "reason": "Producto sin ref, no se puede buscar en WooCommerce"}
+
+    return JSONResponse(content=_ok({**updated, "wordpress_sync": wordpress_sync}, "Producto actualizado."))
 
 
 @router_products.delete("/{product_id}")

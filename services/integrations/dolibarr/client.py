@@ -195,6 +195,7 @@ class DolibarrClient(IntegrationClient):
         self,
         resource: str,
         resource_id: int | str,
+        params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Obtiene un recurso por su ID.
@@ -202,6 +203,7 @@ class DolibarrClient(IntegrationClient):
         Args:
             resource:    nombre del recurso (ej: "products").
             resource_id: identificador único del recurso.
+            params:      query params adicionales (ej: {"includestockdata": 1}).
 
         Returns:
             Dict con los datos del recurso.
@@ -209,7 +211,7 @@ class DolibarrClient(IntegrationClient):
         Raises:
             IntegrationError: si el recurso no existe (404) o hay error de red.
         """
-        response = await self._request("GET", f"{resource}/{resource_id}")
+        response = await self._request("GET", f"{resource}/{resource_id}", params=params or {})
 
         if response.status_code == 404:
             raise IntegrationError(

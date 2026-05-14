@@ -585,8 +585,8 @@ export async function createDolibarrProduct(
 export async function updateDolibarrProduct(
   id: number,
   data: Partial<DolibarrProduct>,
-): Promise<DolibarrProduct> {
-  const response = await apiClient.put<ApiResponse<DolibarrProduct>>(
+): Promise<DolibarrProduct & { wordpress_sync?: { synced: boolean; reason?: string; wc_id?: number } }> {
+  const response = await apiClient.put<ApiResponse<DolibarrProduct & { wordpress_sync?: { synced: boolean; reason?: string; wc_id?: number } }>>(
     `/dolibarr/products/${id}`,
     data,
   )
