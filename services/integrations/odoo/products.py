@@ -271,7 +271,7 @@ class OdooProductService:
         "priority": "str",
         "detailed_type": "str",
         "tracking": "str",
-        "categ_id": "int",
+        "categ_id": "str",
         "list_price": "float",
         "compare_list_price": "float",
         "standard_price": "float",
@@ -330,6 +330,7 @@ class OdooProductService:
         overwrite: bool = False,
         concurrency: int = 10,
         batch_size: int = 100,
+        categ_name_to_id: dict[str, int] | None = None,
     ) -> dict:
         """
         Importa múltiples productos desde CSV con upsert por default_code.
@@ -341,11 +342,12 @@ class OdooProductService:
           4. Actualización concurrente de existentes (N llamadas, sin búsqueda previa).
 
         Args:
-            rows:        lista de dicts {columna_csv: valor_string}.
-            mapping:     dict {columna_csv: campo_odoo}. Columnas mapeadas a "" se ignoran.
-            overwrite:   si True, actualiza productos existentes; si False, los omite.
-            concurrency: máximo de actualizaciones simultáneas contra Odoo.
-            batch_size:  tamaño del lote para búsquedas masivas y creaciones.
+            rows:              lista de dicts {columna_csv: valor_string}.
+            mapping:           dict {columna_csv: campo_odoo}. Columnas mapeadas a "" se ignoran.
+            overwrite:         si True, actualiza productos existentes; si False, los omite.
+            concurrency:       máximo de actualizaciones simultáneas contra Odoo.
+            batch_size:        tamaño del lote para búsquedas masivas y creaciones.
+            categ_name_to_id:  mapa {nombre_categoría: id_odoo} pre-validado en el endpoint.
 
         Returns:
             Dict con claves: created (int), updated (int), skipped (int),
@@ -364,6 +366,14 @@ class OdooProductService:
                 coerced = self._coerce(odoo_field, raw)
                 if coerced is not False:
                     product_data[odoo_field] = coerced
+
+            # Resolver nombre de categoría a ID Odoo
+            if "categ_id" in product_data and categ_name_to_id:
+                cat_name = str(product_data["categ_id"]).strip()
+                if cat_name in categ_name_to_id:
+                    product_data["categ_id"] = categ_name_to_id[cat_name]
+                else:
+                    del product_data["categ_id"]
 
             if not product_data.get("name"):
                 errors.append({"row": idx, "error": "Campo 'name' obligatorio y vacío."})

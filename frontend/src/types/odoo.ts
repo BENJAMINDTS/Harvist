@@ -46,6 +46,10 @@ export interface OdooCategory {
   child_id: number[]
 }
 
+export interface OooCategoryTree extends OdooCategory {
+  children: OooCategoryTree[]
+}
+
 export interface OdooPartner {
   id: number
   name: string

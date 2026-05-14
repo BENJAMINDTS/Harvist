@@ -37,6 +37,7 @@ import {
 import {
   type OdooProduct,
   type OdooCategory,
+  type OooCategoryTree,
   type OdooPartner,
   type OooPurchase,
   type OdooSale,
@@ -1239,6 +1240,55 @@ export async function listOdooCategories(
     { params },
   )
   return response.data.data
+}
+
+/**
+ * Devuelve árbol jerárquico completo de categorías Odoo.
+ *
+ * @author BenjaminDTS
+ */
+export async function getOooCategoryTree(): Promise<OooCategoryTree[]> {
+  const response = await apiClient.get<ApiResponse<OooCategoryTree[]>>('/odoo/categories/tree')
+  return response.data.data
+}
+
+/**
+ * Crea una categoría en Odoo.
+ *
+ * @author BenjaminDTS
+ * @param name     - Nombre de la categoría.
+ * @param parentId - ID del padre (opcional).
+ */
+export async function createOdooCategory(name: string, parentId?: number): Promise<OdooCategory> {
+  const body: Record<string, unknown> = { name }
+  if (parentId !== undefined) body.parent_id = parentId
+  const response = await apiClient.post<ApiResponse<OdooCategory>>('/odoo/categories', body)
+  return response.data.data
+}
+
+/**
+ * Actualiza una categoría Odoo.
+ *
+ * @author BenjaminDTS
+ * @param id   - ID de la categoría.
+ * @param data - Campos a actualizar.
+ */
+export async function updateOdooCategory(
+  id: number,
+  data: Record<string, unknown>,
+): Promise<OdooCategory> {
+  const response = await apiClient.put<ApiResponse<OdooCategory>>(`/odoo/categories/${id}`, data)
+  return response.data.data
+}
+
+/**
+ * Elimina una categoría Odoo.
+ *
+ * @author BenjaminDTS
+ * @param id - ID de la categoría.
+ */
+export async function deleteOdooCategory(id: number): Promise<void> {
+  await apiClient.delete(`/odoo/categories/${id}`)
 }
 
 /**

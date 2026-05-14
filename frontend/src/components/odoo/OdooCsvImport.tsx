@@ -19,7 +19,7 @@ const FIELD_LABELS: Record<string, string> = {
   priority: 'Favorito (0/1)',
   detailed_type: 'Tipo (consu/service/product)',
   tracking: 'Seguimiento (none/lot/serial)',
-  categ_id: 'Categoría (ID numérico)',
+  categ_id: 'Categoría (nombre)',
   list_price: 'Precio de venta',
   compare_list_price: 'Precio comparativo',
   standard_price: 'Coste',

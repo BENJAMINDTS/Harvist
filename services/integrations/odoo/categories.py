@@ -138,6 +138,75 @@ class OooCategoryService:
             logger.error("Error eliminando categoría Odoo", exc_info=exc, extra={"id": category_id})
             raise IntegrationError(f"Fallo eliminando categoría Odoo {category_id}") from exc
 
+    async def get_tree(self) -> list[dict]:
+        """
+        Construye árbol jerárquico de product.category.
+        Pagina hasta obtener todas las categorías y organiza la
+        relación padre-hijo en memoria usando parent_id y child_id de Odoo.
+
+        Returns:
+            Lista de nodos raíz con estructura children anidada.
+
+        Raises:
+            IntegrationError: si Odoo falla durante la paginación.
+        """
+        all_categories: list[dict] = []
+        offset = 0
+        limit = 100
+
+        try:
+            while True:
+                batch = await self.list_categories(limit=limit, offset=offset)
+                if not batch:
+                    break
+                all_categories.extend(batch)
+                if len(batch) < limit:
+                    break
+                offset += limit
+        except IntegrationError:
+            raise
+
+        categories_by_id: dict[int, dict] = {
+            cat["id"]: {**cat, "children": []} for cat in all_categories
+        }
+        roots: list[dict] = []
+
+        for cat in all_categories:
+            raw_parent = cat.get("parent_id")
+            # Odoo devuelve parent_id como [id, display_name] o False
+            if raw_parent and isinstance(raw_parent, list) and len(raw_parent) >= 1:
+                parent_id = raw_parent[0]
+                if parent_id in categories_by_id:
+                    categories_by_id[parent_id]["children"].append(categories_by_id[cat["id"]])
+                else:
+                    roots.append(categories_by_id[cat["id"]])
+            else:
+                roots.append(categories_by_id[cat["id"]])
+
+        logger.debug("Árbol Odoo construido", extra={"roots": len(roots), "total": len(all_categories)})
+        return roots
+
+    async def find_category_by_name(self, name: str) -> dict | None:
+        """
+        Busca una categoría por nombre exacto (campo name, sin ruta completa).
+
+        Args:
+            name: nombre de la categoría a buscar.
+
+        Returns:
+            Dict con id, name y complete_name si existe, None si no se encuentra.
+        """
+        try:
+            results = await self._client.list(
+                "product.category",
+                limit=1,
+                filters={"domain": [("name", "=", name)], "fields": ["id", "name", "complete_name"]},
+            )
+            return results[0] if results else None
+        except Exception as exc:
+            logger.warning("Error buscando categoría Odoo por nombre", exc_info=exc, extra={"name": name})
+            return None
+
     async def count_categories(self) -> int:
         """
         Cuenta el total de categorías.
