@@ -547,6 +547,18 @@ async def list_categories(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
 
+@router_categories.get("/tree", response_model=dict)
+async def get_category_tree() -> dict[str, Any]:
+    """Devuelve el árbol jerárquico completo de categorías Odoo."""
+    client = await _build_client()
+    svc = OooCategoryService(client)
+    try:
+        tree = await svc.get_tree()
+        return _ok(tree)
+    except IntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+
 @router_categories.get("/{category_id}", response_model=dict)
 async def get_category(category_id: int) -> dict[str, Any]:
     """Obtiene una categoría Odoo por ID."""
