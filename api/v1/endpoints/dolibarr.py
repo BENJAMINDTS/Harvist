@@ -1155,6 +1155,11 @@ async def import_from_csv(
                     subcat = await cat_svc.find_or_create_subcategory(parent_name, subcat_name)
                     subcateg_pair_to_id[f"{parent_name}||{subcat_name}"] = int(subcat["id"])
                 except Exception as exc:
+                    logger.warning(
+                        "Error resolviendo subcategoría en pre-importación",
+                        exc_info=exc,
+                        extra={"parent": parent_name, "subcat": subcat_name},
+                    )
                     if parent_name not in missing_parents and "no existe" in str(exc):
                         missing_parents.append(parent_name)
             if missing_parents:
