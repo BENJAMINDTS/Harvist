@@ -20,6 +20,7 @@ const FIELD_LABELS: Record<string, string> = {
   detailed_type: 'Tipo (consu/service/product)',
   tracking: 'Seguimiento (none/lot/serial)',
   categ_id: 'Categoría (nombre)',
+  subcateg_id: 'Subcategoría (nombre)',
   list_price: 'Precio de venta',
   compare_list_price: 'Precio comparativo',
   standard_price: 'Coste',
@@ -258,6 +259,17 @@ export default function OdooCsvImport({ onClose, onSuccess }: Props) {
                   ))}
                 </div>
               </div>
+
+              {/* Aviso subcategoría cuando ambos campos están mapeados */}
+              {Object.values(mapping).includes('categ_id') && Object.values(mapping).includes('subcateg_id') && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
+                  <p className="font-semibold mb-1">Modo Categoría + Subcategoría activo</p>
+                  <p className="text-xs text-amber-700">
+                    Cada subcategoría se creará automáticamente bajo su categoría padre si no existe en Odoo.
+                    La categoría padre <strong>debe existir</strong> previamente. El producto quedará asignado a la subcategoría.
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
