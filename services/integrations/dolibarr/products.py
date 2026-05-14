@@ -608,6 +608,8 @@ class DolibarrProductService:
         category_col: str | None = None,
         category_svc: "DolibarrCategoryService | None" = None,
         category_name_to_id: dict[str, int] | None = None,
+        subcategory_col: str | None = None,
+        subcateg_pair_to_id: dict[str, int] | None = None,
         progress_callback: Callable[[int, int], None] | None = None,
     ) -> list[dict[str, Any]]:
         """
@@ -625,6 +627,9 @@ class DolibarrProductService:
         la categoría correspondiente. Las categorías deben haber sido validadas
         previamente (el endpoint comprueba su existencia antes de llamar aquí).
 
+        Si además se proporcionan ``subcategory_col`` y ``subcateg_pair_to_id``,
+        el producto se asigna a la subcategoría (ya resuelta/creada por el endpoint).
+
         Si se proporciona ``progress_callback``, se llama cada 10 filas y al
         terminar con ``(procesados, total)`` para que la tarea Celery pueda
         actualizar Redis con el progreso en tiempo real.
@@ -633,9 +638,11 @@ class DolibarrProductService:
             content:              contenido raw del archivo CSV.
             mapping:              dict que mapea nombre_columna_csv → campo_dolibarr.
             overwrite:            si True, actualiza productos existentes (busca por ref).
-            category_col:         nombre de la columna CSV que contiene el nombre de categoría.
+            category_col:         nombre de la columna CSV con la categoría padre.
             category_svc:         servicio de categorías para asignar el producto.
             category_name_to_id:  mapa nombre_categoría → ID ya validado.
+            subcategory_col:      nombre de la columna CSV con la subcategoría (opcional).
+            subcateg_pair_to_id:  mapa "padre||hijo" → ID subcategoría ya resuelto.
             progress_callback:    función opcional ``(procesados, total) → None``.
 
         Returns:
@@ -719,7 +726,28 @@ class DolibarrProductService:
 
                 result["dolibarr_id"] = dolibarr_id
 
-                if category_col and category_svc and category_name_to_id:
+                # Asignar subcategoría si se proporcionó columna de subcategoría
+                if subcategory_col and category_col and category_svc and subcateg_pair_to_id:
+                    parent_name = (row.get(category_col) or "").strip()
+                    subcat_name = (row.get(subcategory_col) or "").strip()
+                    pair_key = f"{parent_name}||{subcat_name}"
+                    cat_id = subcateg_pair_to_id.get(pair_key)
+                    if cat_id:
+                        try:
+                            await category_svc.assign_product(cat_id, dolibarr_id)
+                            result["category_assigned"] = f"{parent_name} > {subcat_name}"
+                            logger.info(
+                                "Subcategoría asignada via CSV import",
+                                extra={"ref": ref, "subcategory": subcat_name, "parent": parent_name, "dolibarr_id": dolibarr_id},
+                            )
+                        except Exception as cat_exc:
+                            logger.warning(
+                                "Error asignando subcategoría en CSV import",
+                                exc_info=cat_exc,
+                                extra={"ref": ref, "subcategory": subcat_name},
+                            )
+                elif category_col and category_svc and category_name_to_id:
+                    # Asignar categoría simple (sin subcategoría)
                     cat_name = (row.get(category_col) or "").strip()
                     cat_id = category_name_to_id.get(cat_name)
                     if cat_id:
