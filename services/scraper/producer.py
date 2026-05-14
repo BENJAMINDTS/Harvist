@@ -28,7 +28,9 @@ a un nombre de producto semántico antes de buscar imágenes:
 from __future__ import annotations
 
 import json
+import os
 import re
+import subprocess
 from abc import ABC, abstractmethod
 from collections import Counter
 from typing import Callable
@@ -638,7 +640,145 @@ def _crear_motor(search_engine: str) -> MotorBusqueda:
 
 
 # ---------------------------------------------------------------------------
-# Fábrica de navegadores (conservada intacta)
+# Detección de versión de Chrome
+# ---------------------------------------------------------------------------
+
+
+def _detectar_version_chrome(binary_path: str = "") -> int | None:
+    """
+    Detecta la versión principal de Chrome/Chromium instalado.
+
+    Estrategia por prioridad:
+
+    1. Registro de Windows (``HKLM`` y ``HKCU``) — más fiable que subprocess
+       porque ``chrome.exe --version`` es una app GUI y no escribe a stdout.
+    2. Subprocess ``--version`` sobre rutas estándar de Linux y macOS.
+
+    Si ``BROWSER_VERSION_MAIN`` está configurado en Settings, se usa ese valor
+    directamente y esta función no se invoca.
+
+    Args:
+        binary_path: ruta opcional al ejecutable de Chrome/Chromium.
+
+    Returns:
+        Entero con la versión principal (ej. 131), o None si no se puede detectar.
+    """
+    # ── Estrategia 1: registro de Windows ────────────────────────────────────
+    if os.name == "nt":
+        try:
+            import winreg
+            claves_registro = [
+                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Google\Chrome\BLBeacon"),
+                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Google\Chrome\BLBeacon"),
+                (winreg.HKEY_CURRENT_USER,  r"SOFTWARE\Google\Chrome\BLBeacon"),
+            ]
+            for hive, ruta_reg in claves_registro:
+                try:
+                    key = winreg.OpenKey(hive, ruta_reg)
+                    valor, _ = winreg.QueryValueEx(key, "version")
+                    winreg.CloseKey(key)
+                    match = re.search(r"^(\d+)\.", str(valor))
+                    if match:
+                        version = int(match.group(1))
+                        logger.debug(
+                            "Versión Chrome detectada desde registro de Windows",
+                            extra={"version": version, "clave": ruta_reg},
+                        )
+                        return version
+                except OSError:
+                    continue
+        except ImportError:
+            pass
+
+    # ── Estrategia 2: subprocess --version (Linux / macOS) ───────────────────
+    username = os.environ.get("USER", "")
+    candidatos = [
+        binary_path,
+        "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/chromium-browser",
+        "/usr/bin/chromium",
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        f"/home/{username}/.local/bin/google-chrome",
+    ]
+
+    for ruta in candidatos:
+        if not ruta or not os.path.isfile(ruta):
+            continue
+        try:
+            resultado = subprocess.run(
+                [ruta, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            output = (resultado.stdout or resultado.stderr or "").strip()
+            match = re.search(r"(\d+)\.\d+\.\d+", output)
+            if match:
+                version = int(match.group(1))
+                logger.debug(
+                    "Versión Chrome detectada desde subprocess",
+                    extra={"version": version, "binary": ruta},
+                )
+                return version
+        except Exception as exc:
+            logger.debug(
+                "No se pudo detectar versión de Chrome vía subprocess",
+                exc_info=exc,
+                extra={"ruta": ruta},
+            )
+
+    logger.warning(
+        "No se pudo auto-detectar versión de Chrome. "
+        "Establece BROWSER_VERSION_MAIN en .env para forzar la versión manualmente."
+    )
+    return None
+
+
+def _limpiar_cache_uc_si_desactualizado(version_main: int) -> None:
+    """
+    Elimina el chromedriver cacheado de undetected_chromedriver si su versión
+    principal no coincide con ``version_main``.
+
+    UC 3.x reutiliza el binario cacheado sin verificar que coincida con el Chrome
+    instalado. Un mismatch (ej. driver 148 vs Chrome 147) provoca que Chrome
+    abra y cierre al instante. Esta función fuerza la re-descarga del driver correcto.
+
+    Args:
+        version_main: versión principal de Chrome detectada (ej. 147).
+    """
+    cache_dir = os.path.join(os.environ.get("APPDATA", ""), "undetected_chromedriver")
+    driver_path = os.path.join(cache_dir, "undetected_chromedriver.exe")
+
+    if not os.path.isfile(driver_path):
+        return
+
+    try:
+        result = subprocess.run(
+            [driver_path, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+        output = (result.stdout or result.stderr or "").strip()
+        match = re.search(r"ChromeDriver (\d+)\.", output)
+        if not match:
+            return
+
+        cached_version = int(match.group(1))
+        if cached_version != version_main:
+            os.remove(driver_path)
+            logger.info(
+                "Cache UC eliminado por versión incorrecta — se descargará el driver correcto",
+                extra={"cached": cached_version, "requerido": version_main},
+            )
+    except Exception as exc:
+        logger.debug("Error al verificar cache UC", exc_info=exc)
+
+
+# ---------------------------------------------------------------------------
+# Fábrica de navegadores
 # ---------------------------------------------------------------------------
 
 
@@ -673,7 +813,10 @@ def _crear_driver(settings) -> WebDriver:
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-blink-features=AutomationControlled")
-        return uc.Chrome(options=options)
+        version_main = settings.browser_version_main or _detectar_version_chrome(binary_path)
+        if version_main:
+            _limpiar_cache_uc_si_desactualizado(version_main)
+        return uc.Chrome(options=options, version_main=version_main)
 
     if browser_type == "chromium":
         import undetected_chromedriver as uc
@@ -683,7 +826,10 @@ def _crear_driver(settings) -> WebDriver:
         if headless:
             options.add_argument("--headless=new")
         options.add_argument("--no-sandbox")
-        return uc.Chrome(options=options)
+        version_main = settings.browser_version_main or _detectar_version_chrome(binary_path)
+        if version_main:
+            _limpiar_cache_uc_si_desactualizado(version_main)
+        return uc.Chrome(options=options, version_main=version_main)
 
     if browser_type == "edge":
         from selenium import webdriver
