@@ -15,8 +15,9 @@ import OdooSales from './OdooSales'
 import OdooInvoices from './OdooInvoices'
 import OdooInventory from './OdooInventory'
 import OdooCamposExtra from './OdooCamposExtra'
+import OdooCategories from './OdooCategories'
 
-type OdooTab = 'productos' | 'partners' | 'compras' | 'ventas' | 'facturas' | 'inventario' | 'campos_extra' | 'config'
+type OdooTab = 'productos' | 'categorias' | 'partners' | 'compras' | 'ventas' | 'facturas' | 'inventario' | 'campos_extra' | 'config'
 
 interface Props {
   className?: string
@@ -127,6 +128,7 @@ export default function OdooPanel({ className = '' }: Props) {
           {(
             [
               { id: 'productos', label: 'Productos' },
+              { id: 'categorias', label: 'Categorías' },
               { id: 'partners', label: 'Partners' },
               { id: 'compras', label: 'Compras' },
               { id: 'ventas', label: 'Ventas' },
@@ -156,6 +158,7 @@ export default function OdooPanel({ className = '' }: Props) {
         {/* Contenido del tab */}
         <div className="p-6">
           {tab === 'productos' && configured && <OdooProducts />}
+          {tab === 'categorias' && configured && <OdooCategories />}
           {tab === 'partners' && configured && <OdooPartners />}
           {tab === 'compras' && configured && <OooPurchases />}
           {tab === 'ventas' && configured && <OdooSales />}
