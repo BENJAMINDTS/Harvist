@@ -291,6 +291,8 @@ class OdooProductService:
         "website_meta_description": "str",
         "website_meta_keywords": "str",
         "description": "str",
+        # Campo virtual: nombre de subcategoría — resuelto antes de enviar a Odoo
+        "subcateg_id": "str",
     }
 
     @classmethod
@@ -331,6 +333,7 @@ class OdooProductService:
         concurrency: int = 10,
         batch_size: int = 100,
         categ_name_to_id: dict[str, int] | None = None,
+        subcateg_pair_to_id: dict[str, int] | None = None,
     ) -> dict:
         """
         Importa múltiples productos desde CSV con upsert por default_code.
@@ -342,12 +345,14 @@ class OdooProductService:
           4. Actualización concurrente de existentes (N llamadas, sin búsqueda previa).
 
         Args:
-            rows:              lista de dicts {columna_csv: valor_string}.
-            mapping:           dict {columna_csv: campo_odoo}. Columnas mapeadas a "" se ignoran.
-            overwrite:         si True, actualiza productos existentes; si False, los omite.
-            concurrency:       máximo de actualizaciones simultáneas contra Odoo.
-            batch_size:        tamaño del lote para búsquedas masivas y creaciones.
-            categ_name_to_id:  mapa {nombre_categoría: id_odoo} pre-validado en el endpoint.
+            rows:                 lista de dicts {columna_csv: valor_string}.
+            mapping:              dict {columna_csv: campo_odoo}. Columnas mapeadas a "" se ignoran.
+            overwrite:            si True, actualiza productos existentes; si False, los omite.
+            concurrency:          máximo de actualizaciones simultáneas contra Odoo.
+            batch_size:           tamaño del lote para búsquedas masivas y creaciones.
+            categ_name_to_id:     mapa {nombre_categoría: id_odoo} pre-validado en el endpoint.
+            subcateg_pair_to_id:  mapa {"padre||hijo": id_odoo} de subcategorías resueltas.
+                                  Si presente, sobreescribe categ_id con el ID de la subcategoría.
 
         Returns:
             Dict con claves: created (int), updated (int), skipped (int),
@@ -367,8 +372,16 @@ class OdooProductService:
                 if coerced is not False:
                     product_data[odoo_field] = coerced
 
-            # Resolver nombre de categoría a ID Odoo
-            if "categ_id" in product_data and categ_name_to_id:
+            # Resolver subcategoría — si hay par (padre||hijo) usa el ID de la subcategoría
+            if "subcateg_id" in product_data and subcateg_pair_to_id:
+                parent_name = str(product_data.get("categ_id", "")).strip()
+                subcat_name = str(product_data["subcateg_id"]).strip()
+                pair_key = f"{parent_name}||{subcat_name}"
+                if pair_key in subcateg_pair_to_id:
+                    product_data["categ_id"] = subcateg_pair_to_id[pair_key]
+                del product_data["subcateg_id"]
+            elif "categ_id" in product_data and categ_name_to_id:
+                # Sin subcategoría: resolver categoría principal por nombre
                 cat_name = str(product_data["categ_id"]).strip()
                 if cat_name in categ_name_to_id:
                     product_data["categ_id"] = categ_name_to_id[cat_name]
