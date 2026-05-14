@@ -60,11 +60,11 @@ const PhotoSelectionPanel: React.FC<PhotoSelectionPanelProps> = ({ jobId, onComp
         setError(null)
         const response = await apiClient.get<{
           success: boolean
-          data: ProductPhotos[]
+          data: { productos: ProductPhotos[]; total: number; limit: number; offset: number }
           message: string
         }>(`/jobs/${jobId}/photos`)
 
-        const productsData = response.data.data
+        const productsData = response.data.data.productos
         setProducts(productsData)
 
         // Inicializar selecciones con la primera candidata de cada producto
