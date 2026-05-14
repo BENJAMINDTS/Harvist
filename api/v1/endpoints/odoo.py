@@ -421,19 +421,46 @@ async def csv_import_products(
 
     client = await _build_client()
 
-    # ── Validación previa de categorías ──────────────────────────────────────
-    # Identificar qué columna CSV mapea a categ_id
+    # ── Validación previa de categorías y subcategorías ─────────────────────
     categ_csv_col = next((col for col, field in col_mapping.items() if field == "categ_id"), None)
+    subcateg_csv_col = next((col for col, field in col_mapping.items() if field == "subcateg_id"), None)
     categ_name_to_id: dict[str, int] = {}
+    subcateg_pair_to_id: dict[str, int] = {}  # clave: "padre||hijo"
 
-    if categ_csv_col:
+    cat_svc = OooCategoryService(client)
+
+    if subcateg_csv_col and categ_csv_col:
+        # Modo subcategoría: validar padres y resolver/crear subcategorías
+        unique_pairs: set[tuple[str, str]] = {
+            (row.get(categ_csv_col, "").strip(), row.get(subcateg_csv_col, "").strip())
+            for row in rows
+            if row.get(categ_csv_col, "").strip() and row.get(subcateg_csv_col, "").strip()
+        }
+        missing_parents: list[str] = []
+        for parent_name, subcat_name in unique_pairs:
+            try:
+                subcat = await cat_svc.find_or_create_subcategory(parent_name, subcat_name)
+                subcateg_pair_to_id[f"{parent_name}||{subcat_name}"] = int(subcat["id"])
+            except Exception as exc:
+                msg = str(exc)
+                if parent_name not in missing_parents and "no existe" in msg:
+                    missing_parents.append(parent_name)
+        if missing_parents:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"Categorías padre no encontradas en Odoo: {missing_parents}. "
+                    "Créalas primero en la pestaña Categorías."
+                ),
+            )
+    elif categ_csv_col:
+        # Modo categoría simple: validar que todas existen
         unique_cat_names: set[str] = {
             row[categ_csv_col].strip()
             for row in rows
             if row.get(categ_csv_col, "").strip()
         }
         if unique_cat_names:
-            cat_svc = OooCategoryService(client)
             missing_cats: list[str] = []
             for cat_name in unique_cat_names:
                 found = await cat_svc.find_category_by_name(cat_name)
@@ -454,7 +481,11 @@ async def csv_import_products(
     svc = OdooProductService(client)
     try:
         result = await svc.bulk_upsert_products(
-            rows, col_mapping, overwrite=overwrite, categ_name_to_id=categ_name_to_id or None
+            rows,
+            col_mapping,
+            overwrite=overwrite,
+            categ_name_to_id=categ_name_to_id or None,
+            subcateg_pair_to_id=subcateg_pair_to_id or None,
         )
         msg = (
             f"{result['created']} creados, {result['updated']} actualizados, "
