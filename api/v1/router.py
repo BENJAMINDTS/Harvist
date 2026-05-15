@@ -27,15 +27,17 @@ from api.v1.endpoints.files import router as files_router
 from api.v1.endpoints.history import router as history_router
 from api.v1.endpoints.jobs import router as jobs_router
 from api.v1.endpoints.odoo import (
-    router_main as odoo_router_main,
-    router_products as odoo_router_products,
+    router_brands as odoo_router_brands,
     router_categories as odoo_router_categories,
+    router_ecommerce_categories as odoo_router_ecommerce_categories,
+    router_inventory as odoo_router_inventory,
+    router_invoices as odoo_router_invoices,
+    router_main as odoo_router_main,
     router_partners as odoo_router_partners,
+    router_products as odoo_router_products,
+    router_properties as odoo_router_properties,
     router_purchases as odoo_router_purchases,
     router_sales as odoo_router_sales,
-    router_invoices as odoo_router_invoices,
-    router_inventory as odoo_router_inventory,
-    router_properties as odoo_router_properties,
 )
 from api.v1.endpoints.wordpress import (
     router_main as wordpress_router_main,
@@ -64,6 +66,8 @@ router.include_router(extrafields_router)
 router.include_router(odoo_router_main)
 router.include_router(odoo_router_products)
 router.include_router(odoo_router_categories)
+router.include_router(odoo_router_ecommerce_categories)
+router.include_router(odoo_router_brands)
 router.include_router(odoo_router_partners)
 router.include_router(odoo_router_purchases)
 router.include_router(odoo_router_sales)

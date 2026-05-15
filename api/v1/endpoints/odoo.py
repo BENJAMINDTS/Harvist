@@ -109,6 +109,8 @@ def _detect_csv_delimiter(text: str) -> str:
 router_main = APIRouter(prefix="/odoo", tags=["odoo"])
 router_products = APIRouter(prefix="/odoo/products", tags=["odoo-products"])
 router_categories = APIRouter(prefix="/odoo/categories", tags=["odoo-categories"])
+router_ecommerce_categories = APIRouter(prefix="/odoo/ecommerce/categories", tags=["odoo-ecommerce"])
+router_brands = APIRouter(prefix="/odoo/brands", tags=["odoo-brands"])
 router_partners = APIRouter(prefix="/odoo/partners", tags=["odoo-partners"])
 router_purchases = APIRouter(prefix="/odoo/purchases", tags=["odoo-purchases"])
 router_sales = APIRouter(prefix="/odoo/sales", tags=["odoo-sales"])
@@ -421,11 +423,13 @@ async def csv_import_products(
 
     client = await _build_client()
 
-    # ── Validación previa de categorías y subcategorías ─────────────────────
+    # ── Validación previa de categorías, subcategorías y marcas ─────────────
     categ_csv_col = next((col for col, field in col_mapping.items() if field == "categ_id"), None)
     subcateg_csv_col = next((col for col, field in col_mapping.items() if field == "subcateg_id"), None)
+    brand_csv_col = next((col for col, field in col_mapping.items() if field == "brand_id"), None)
     categ_name_to_id: dict[str, int] = {}
     subcateg_pair_to_id: dict[str, int] = {}  # clave: "padre||hijo"
+    brand_name_to_id: dict[str, int] = {}
 
     cat_svc = OooCategoryService(client)
 
@@ -478,6 +482,84 @@ async def csv_import_products(
                     ),
                 )
 
+    if brand_csv_col:
+        # Resolver marcas bajo "Marcas" en product.public.category → IDs para public_categ_ids
+        unique_brands: set[str] = {
+            row.get(brand_csv_col, "").strip()
+            for row in rows
+            if row.get(brand_csv_col, "").strip()
+        }
+        for brand_name in unique_brands:
+            try:
+                brand_cat = await cat_svc.find_or_create_brand_public(brand_name, brands_parent=_BRANDS_PARENT)
+                brand_name_to_id[brand_name] = int(brand_cat["id"])
+            except IntegrationError as exc:
+                if "no existe" in str(exc):
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail=(
+                            f"La categoría '{_BRANDS_PARENT}' no existe en las categorías públicas de Odoo. "
+                            "Créala desde Odoo en eCommerce → Categorías de producto antes de importar marcas."
+                        ),
+                    )
+                logger.warning(
+                    "Error resolviendo marca en pre-importación Odoo",
+                    exc_info=exc,
+                    extra={"brand": brand_name},
+                )
+
+    # ── Validación previa de categorías eCommerce (public_categ_id / public_subcateg_id) ─
+    pub_categ_csv_col = next((col for col, field in col_mapping.items() if field == "public_categ_id"), None)
+    pub_subcateg_csv_col = next((col for col, field in col_mapping.items() if field == "public_subcateg_id"), None)
+    public_categ_name_to_id: dict[str, int] = {}
+    public_subcateg_pair_to_id: dict[str, int] = {}
+
+    if pub_subcateg_csv_col and pub_categ_csv_col:
+        unique_pub_pairs: set[tuple[str, str]] = {
+            (row.get(pub_categ_csv_col, "").strip(), row.get(pub_subcateg_csv_col, "").strip())
+            for row in rows
+            if row.get(pub_categ_csv_col, "").strip() and row.get(pub_subcateg_csv_col, "").strip()
+        }
+        missing_pub_parents: list[str] = []
+        for pub_parent_name, pub_sub_name in unique_pub_pairs:
+            try:
+                pub_sub = await cat_svc.find_or_create_public_subcategory(pub_parent_name, pub_sub_name)
+                public_subcateg_pair_to_id[f"{pub_parent_name}||{pub_sub_name}"] = int(pub_sub["id"])
+            except Exception as exc:
+                msg = str(exc)
+                if pub_parent_name not in missing_pub_parents and "no existe" in msg:
+                    missing_pub_parents.append(pub_parent_name)
+        if missing_pub_parents:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"Categorías eCommerce padre no encontradas en Odoo: {missing_pub_parents}. "
+                    "Créalas primero en la pestaña Categorías web."
+                ),
+            )
+    elif pub_categ_csv_col:
+        unique_pub_cats: set[str] = {
+            row[pub_categ_csv_col].strip()
+            for row in rows
+            if row.get(pub_categ_csv_col, "").strip()
+        }
+        if unique_pub_cats:
+            missing_pub_cats: list[str] = []
+            for pub_cat_name in unique_pub_cats:
+                found = await cat_svc._find_public_category_by_name(pub_cat_name)  # noqa: SLF001
+                if found:
+                    public_categ_name_to_id[pub_cat_name] = int(found["id"])
+                else:
+                    missing_pub_cats.append(pub_cat_name)
+            if missing_pub_cats:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=(
+                        f"Categorías eCommerce no encontradas en Odoo: {missing_pub_cats}. "
+                        "Créalas primero en la pestaña Categorías web."
+                    ),
+                )
+
     svc = OdooProductService(client)
     try:
         result = await svc.bulk_upsert_products(
@@ -486,6 +568,9 @@ async def csv_import_products(
             overwrite=overwrite,
             categ_name_to_id=categ_name_to_id or None,
             subcateg_pair_to_id=subcateg_pair_to_id or None,
+            brand_name_to_id=brand_name_to_id or None,
+            public_categ_name_to_id=public_categ_name_to_id or None,
+            public_subcateg_pair_to_id=public_subcateg_pair_to_id or None,
         )
         msg = (
             f"{result['created']} creados, {result['updated']} actualizados, "
@@ -667,6 +752,193 @@ async def delete_category(category_id: int) -> dict[str, Any]:
     try:
         await svc.delete_category(category_id)
         return _ok(None, "Categoría eliminada.")
+    except IntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+
+# ── Categorías eCommerce (product.public.category) ──────────────────────────
+
+
+@router_ecommerce_categories.get("", response_model=dict)
+async def list_ecommerce_categories(
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> dict[str, Any]:
+    """Lista categorías eCommerce Odoo (product.public.category) con paginación."""
+    client = await _build_client()
+    svc = OooCategoryService(client)
+    try:
+        items = await svc.list_public_categories(limit=limit, offset=offset)
+        total = await svc.count_public_categories()
+        return _ok(_paginated(items, total, limit, offset).model_dump())
+    except IntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+
+@router_ecommerce_categories.get("/tree", response_model=dict)
+async def get_ecommerce_category_tree() -> dict[str, Any]:
+    """Devuelve árbol jerárquico completo de categorías eCommerce Odoo."""
+    client = await _build_client()
+    svc = OooCategoryService(client)
+    try:
+        tree = await svc.get_public_category_tree()
+        return _ok(tree)
+    except IntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+
+@router_ecommerce_categories.get("/{category_id}", response_model=dict)
+async def get_ecommerce_category(category_id: int) -> dict[str, Any]:
+    """Obtiene una categoría eCommerce Odoo por ID."""
+    client = await _build_client()
+    try:
+        items = await client.list(
+            "product.public.category",
+            limit=1,
+            filters={
+                "domain": [("id", "=", category_id)],
+                "fields": ["id", "name", "parent_id", "child_id"],
+            },
+        )
+        if not items:
+            raise IntegrationError(f"Categoría eCommerce {category_id} no encontrada")
+        return _ok(items[0])
+    except IntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+
+@router_ecommerce_categories.post("", response_model=dict, status_code=status.HTTP_201_CREATED)
+async def create_ecommerce_category(body: dict) -> dict[str, Any]:
+    """Crea una categoría eCommerce en Odoo (product.public.category)."""
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="El campo 'name' es obligatorio.",
+        )
+    client = await _build_client()
+    svc = OooCategoryService(client)
+    try:
+        return _ok(
+            await svc.create_public_category(name, body.get("parent_id")),
+            "Categoría eCommerce creada.",
+        )
+    except IntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+
+@router_ecommerce_categories.put("/{category_id}", response_model=dict)
+async def update_ecommerce_category(category_id: int, body: dict) -> dict[str, Any]:
+    """Actualiza una categoría eCommerce Odoo."""
+    client = await _build_client()
+    svc = OooCategoryService(client)
+    try:
+        return _ok(await svc.update_public_category(category_id, body), "Categoría eCommerce actualizada.")
+    except IntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+
+@router_ecommerce_categories.delete("/{category_id}", response_model=dict)
+async def delete_ecommerce_category(category_id: int) -> dict[str, Any]:
+    """Elimina una categoría eCommerce Odoo."""
+    client = await _build_client()
+    svc = OooCategoryService(client)
+    try:
+        await svc.delete_public_category(category_id)
+        return _ok(None, "Categoría eCommerce eliminada.")
+    except IntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+
+# ── Marcas ────────────────────────────────────────────────────────────────────
+
+_BRANDS_PARENT = "Marcas"
+
+
+@router_brands.get("", response_model=dict)
+async def list_odoo_brands(
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> dict[str, Any]:
+    """
+    Lista las marcas (subcategorías bajo 'Marcas' en product.public.category) en Odoo.
+
+    La categoría padre 'Marcas' debe existir en product.public.category previamente.
+
+    Args:
+        limit:  máximo de resultados.
+        offset: desplazamiento para paginación.
+
+    Returns:
+        PaginatedResponse con las marcas disponibles.
+    """
+    client = await _build_client()
+    svc = OooCategoryService(client)
+    try:
+        items = await svc.list_brands_public(brands_parent=_BRANDS_PARENT, limit=limit, offset=offset)
+        return _ok(_paginated(items, len(items), limit, offset).model_dump())
+    except IntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+
+@router_brands.post("", response_model=dict, status_code=status.HTTP_201_CREATED)
+async def create_odoo_brand(body: dict) -> dict[str, Any]:
+    """
+    Crea una nueva marca en product.public.category bajo 'Marcas' en Odoo.
+
+    La categoría padre 'Marcas' debe existir previamente en product.public.category.
+    Si la marca ya existe, la devuelve sin crear duplicados.
+
+    Args:
+        body: dict con campo ``name`` (nombre de la marca).
+
+    Returns:
+        Dict con los datos de la marca creada o existente.
+
+    Raises:
+        HTTPException 422: si la categoría padre 'Marcas' no existe.
+    """
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="El campo 'name' es obligatorio.",
+        )
+    client = await _build_client()
+    svc = OooCategoryService(client)
+    try:
+        brand = await svc.find_or_create_brand_public(name, brands_parent=_BRANDS_PARENT)
+        return _ok(brand, "Marca creada.")
+    except IntegrationError as exc:
+        if "no existe" in str(exc):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"La categoría '{_BRANDS_PARENT}' no existe en las categorías públicas de Odoo. "
+                    "Créala desde Odoo en eCommerce → Categorías de producto y nómbrala exactamente 'Marcas'."
+                ),
+            )
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+
+@router_brands.delete("/{brand_id}", response_model=dict)
+async def delete_odoo_brand(brand_id: int) -> dict[str, Any]:
+    """
+    Elimina una marca de product.public.category en Odoo.
+
+    Args:
+        brand_id: ID de la marca en product.public.category.
+
+    Returns:
+        Confirmación de eliminación.
+    """
+    client = await _build_client()
+    svc = OooCategoryService(client)
+    try:
+        await svc.delete_brand_public(brand_id)
+        return _ok(None, "Marca eliminada.")
     except IntegrationError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 

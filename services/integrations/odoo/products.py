@@ -291,8 +291,14 @@ class OdooProductService:
         "website_meta_description": "str",
         "website_meta_keywords": "str",
         "description": "str",
-        # Campo virtual: nombre de subcategoría — resuelto antes de enviar a Odoo
+        # Campo virtual: nombre de subcategoría interna — resuelto antes de enviar a Odoo
         "subcateg_id": "str",
+        # Campo virtual: nombre de marca (subcategoría bajo "Marcas") — resuelto antes de enviar a Odoo
+        "brand_id": "str",
+        # Campo virtual: categoría eCommerce (product.public.category) — resuelto antes de enviar a Odoo
+        "public_categ_id": "str",
+        # Campo virtual: subcategoría eCommerce — resuelto junto a public_categ_id
+        "public_subcateg_id": "str",
     }
 
     @classmethod
@@ -334,6 +340,9 @@ class OdooProductService:
         batch_size: int = 100,
         categ_name_to_id: dict[str, int] | None = None,
         subcateg_pair_to_id: dict[str, int] | None = None,
+        brand_name_to_id: dict[str, int] | None = None,
+        public_categ_name_to_id: dict[str, int] | None = None,
+        public_subcateg_pair_to_id: dict[str, int] | None = None,
     ) -> dict:
         """
         Importa múltiples productos desde CSV con upsert por default_code.
@@ -345,14 +354,17 @@ class OdooProductService:
           4. Actualización concurrente de existentes (N llamadas, sin búsqueda previa).
 
         Args:
-            rows:                 lista de dicts {columna_csv: valor_string}.
-            mapping:              dict {columna_csv: campo_odoo}. Columnas mapeadas a "" se ignoran.
-            overwrite:            si True, actualiza productos existentes; si False, los omite.
-            concurrency:          máximo de actualizaciones simultáneas contra Odoo.
-            batch_size:           tamaño del lote para búsquedas masivas y creaciones.
-            categ_name_to_id:     mapa {nombre_categoría: id_odoo} pre-validado en el endpoint.
-            subcateg_pair_to_id:  mapa {"padre||hijo": id_odoo} de subcategorías resueltas.
-                                  Si presente, sobreescribe categ_id con el ID de la subcategoría.
+            rows:                     lista de dicts {columna_csv: valor_string}.
+            mapping:                  dict {columna_csv: campo_odoo}. Columnas mapeadas a "" se ignoran.
+            overwrite:                si True, actualiza productos existentes; si False, los omite.
+            concurrency:              máximo de actualizaciones simultáneas contra Odoo.
+            batch_size:               tamaño del lote para búsquedas masivas y creaciones.
+            categ_name_to_id:         mapa {nombre_categoría: id_odoo} pre-validado en el endpoint.
+            subcateg_pair_to_id:      mapa {"padre||hijo": id_odoo} de subcategorías internas.
+                                      Si presente, sobreescribe categ_id con el ID de la subcategoría.
+            brand_name_to_id:         mapa {nombre_marca: id_odoo} de marcas resueltas bajo "Marcas".
+            public_categ_name_to_id:  mapa {nombre_cat_ecommerce: id_odoo} de categorías eCommerce.
+            public_subcateg_pair_to_id: mapa {"padre||hijo": id_odoo} de subcategorías eCommerce.
 
         Returns:
             Dict con claves: created (int), updated (int), skipped (int),
@@ -372,7 +384,36 @@ class OdooProductService:
                 if coerced is not False:
                     product_data[odoo_field] = coerced
 
-            # Resolver subcategoría — si hay par (padre||hijo) usa el ID de la subcategoría
+            # Acumular IDs para public_categ_ids (Many2many) — marca + categoría eCommerce
+            public_ids: list[int] = []
+
+            # Marca → public_categ_ids
+            if "brand_id" in product_data and brand_name_to_id:
+                brand_name = str(product_data["brand_id"]).strip()
+                if brand_name in brand_name_to_id:
+                    public_ids.append(brand_name_to_id[brand_name])
+                del product_data["brand_id"]
+
+            # Subcategoría eCommerce (tiene prioridad sobre categoría eCommerce simple)
+            if "public_subcateg_id" in product_data and public_subcateg_pair_to_id:
+                pub_parent = str(product_data.get("public_categ_id", "")).strip()
+                pub_sub = str(product_data["public_subcateg_id"]).strip()
+                pair_key = f"{pub_parent}||{pub_sub}"
+                if pair_key in public_subcateg_pair_to_id:
+                    public_ids.append(public_subcateg_pair_to_id[pair_key])
+                del product_data["public_subcateg_id"]
+                if "public_categ_id" in product_data:
+                    del product_data["public_categ_id"]
+            elif "public_categ_id" in product_data and public_categ_name_to_id:
+                pub_cat_name = str(product_data["public_categ_id"]).strip()
+                if pub_cat_name in public_categ_name_to_id:
+                    public_ids.append(public_categ_name_to_id[pub_cat_name])
+                del product_data["public_categ_id"]
+
+            if public_ids:
+                product_data["public_categ_ids"] = [(4, pid) for pid in public_ids]
+
+            # Resolver subcategoría / categoría interna (independiente de marca)
             if "subcateg_id" in product_data and subcateg_pair_to_id:
                 parent_name = str(product_data.get("categ_id", "")).strip()
                 subcat_name = str(product_data["subcateg_id"]).strip()
@@ -381,7 +422,6 @@ class OdooProductService:
                     product_data["categ_id"] = subcateg_pair_to_id[pair_key]
                 del product_data["subcateg_id"]
             elif "categ_id" in product_data and categ_name_to_id:
-                # Sin subcategoría: resolver categoría principal por nombre
                 cat_name = str(product_data["categ_id"]).strip()
                 if cat_name in categ_name_to_id:
                     product_data["categ_id"] = categ_name_to_id[cat_name]

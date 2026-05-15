@@ -4,7 +4,7 @@
  * @author Carlitos6712
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { listOdooProducts, deleteOdooProduct, updateOdooProduct, createOdooProduct, listOdooCategories, setOdooProductProperties, deleteOdooProducts } from '@/api/client'
+import { listOdooProducts, deleteOdooProduct, updateOdooProduct, createOdooProduct, listOdooCategories, setOdooProductProperties, deleteOdooProducts, listOdooBrands, listOdooPublicCategories } from '@/api/client'
 import type { OdooProduct, OdooCategory, OdooPropertyValue } from '@/types/odoo'
 import OdooCsvImport from './OdooCsvImport'
 import OdooProductProperties from './OdooProductProperties'
@@ -443,18 +443,12 @@ function initValues(p: OdooProduct | null): FormValues {
     return {
       name: '',
       default_code: '',
-      active: '1',
-      priority: '0',
       detailed_type: 'product',
-      tracking: 'none',
+      active: '1',
       categ_id: '',
       list_price: '0',
       compare_list_price: '',
       standard_price: '0',
-      weight: '',
-      volume: '',
-      sale_delay: '',
-      hs_code: '',
       sale_ok: '1',
       invoice_policy: 'order',
       description_sale: '',
@@ -466,24 +460,24 @@ function initValues(p: OdooProduct | null): FormValues {
       website_meta_title: '',
       website_meta_description: '',
       website_meta_keywords: '',
+      tracking: 'none',
+      weight: '',
+      volume: '',
+      sale_delay: '',
+      hs_code: '',
+      priority: '0',
       description: '',
     }
   }
   return {
     name: p.name,
     default_code: str(p.default_code),
-    active: p.active ? '1' : '0',
-    priority: str(p.priority),
     detailed_type: p.detailed_type ?? p.type ?? 'product',
-    tracking: p.tracking ?? 'none',
+    active: p.active ? '1' : '0',
     categ_id: p.categ_id ? String(p.categ_id[0]) : '',
     list_price: str(p.list_price),
     compare_list_price: str(p.compare_list_price),
     standard_price: str(p.standard_price),
-    weight: str(p.weight),
-    volume: str(p.volume),
-    sale_delay: str(p.sale_delay),
-    hs_code: str(p.hs_code),
     sale_ok: p.sale_ok ? '1' : '0',
     invoice_policy: str(p.invoice_policy) || 'order',
     description_sale: str(p.description_sale),
@@ -495,6 +489,12 @@ function initValues(p: OdooProduct | null): FormValues {
     website_meta_title: str(p.website_meta_title),
     website_meta_description: str(p.website_meta_description),
     website_meta_keywords: str(p.website_meta_keywords),
+    tracking: p.tracking ?? 'none',
+    weight: str(p.weight),
+    volume: str(p.volume),
+    sale_delay: str(p.sale_delay),
+    hs_code: str(p.hs_code),
+    priority: str(p.priority),
     description: str(p.description),
   }
 }
@@ -504,18 +504,12 @@ function buildPayload(values: FormValues): Partial<OdooProduct> {
 
   payload.name = values.name.trim()
   payload.default_code = values.default_code.trim() || false
-  payload.active = values.active === '1'
-  payload.priority = values.priority || '0'
   payload.detailed_type = values.detailed_type
-  payload.tracking = values.tracking
+  payload.active = values.active === '1'
   if (values.categ_id) payload.categ_id = parseInt(values.categ_id, 10)
   payload.list_price = parseFloat(values.list_price) || 0
   if (values.compare_list_price) payload.compare_list_price = parseFloat(values.compare_list_price)
   if (values.standard_price) payload.standard_price = parseFloat(values.standard_price)
-  if (values.weight) payload.weight = parseFloat(values.weight)
-  if (values.volume) payload.volume = parseFloat(values.volume)
-  if (values.sale_delay) payload.sale_delay = parseInt(values.sale_delay, 10)
-  payload.hs_code = values.hs_code.trim() || false
   payload.sale_ok = values.sale_ok === '1'
   payload.invoice_policy = values.invoice_policy || false
   payload.description_sale = values.description_sale.trim() || false
@@ -527,6 +521,12 @@ function buildPayload(values: FormValues): Partial<OdooProduct> {
   payload.website_meta_title = values.website_meta_title.trim() || false
   payload.website_meta_description = values.website_meta_description.trim() || false
   payload.website_meta_keywords = values.website_meta_keywords.trim() || false
+  payload.tracking = values.tracking
+  if (values.weight) payload.weight = parseFloat(values.weight)
+  if (values.volume) payload.volume = parseFloat(values.volume)
+  if (values.sale_delay) payload.sale_delay = parseInt(values.sale_delay, 10)
+  payload.hs_code = values.hs_code.trim() || false
+  payload.priority = values.priority || '0'
   payload.description = values.description.trim() || false
 
   return payload as Partial<OdooProduct>
@@ -536,7 +536,12 @@ function ProductModal({ product, onClose, onSuccess }: ProductModalProps) {
   const isCreate = product === null
   const [values, setValues] = useState<FormValues>(() => initValues(product))
   const [subcategId, setSubcategId] = useState('')
+  const [brandId, setBrandId] = useState('')
+  const [publicCategId, setPublicCategId] = useState('')
+  const [publicSubcategId, setPublicSubcategId] = useState('')
   const [categories, setCategories] = useState<OdooCategory[]>([])
+  const [brands, setBrands] = useState<OdooCategory[]>([])
+  const [publicCategories, setPublicCategories] = useState<OdooCategory[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [pendingProperties, setPendingProperties] = useState<OdooPropertyValue[]>([])
@@ -545,13 +550,27 @@ function ProductModal({ product, onClose, onSuccess }: ProductModalProps) {
     listOdooCategories(200, 0)
       .then((r) => setCategories(Array.isArray(r?.items) ? r.items : []))
       .catch(() => {})
+    listOdooBrands(200, 0)
+      .then((r) => setBrands(Array.isArray(r?.items) ? r.items : []))
+      .catch(() => {})
+    listOdooPublicCategories(500, 0)
+      .then((r) => setPublicCategories(Array.isArray(r?.items) ? r.items : []))
+      .catch(() => {})
   }, [])
 
-  // Subcategorías: hijos de la categoría seleccionada
+  // Subcategorías internas: hijos de la categoría seleccionada
   const subcategories = values.categ_id
     ? categories.filter((c) => {
         if (!c.parent_id) return false
         return c.parent_id[0] === parseInt(values.categ_id, 10)
+      })
+    : []
+
+  // Subcategorías eCommerce: hijos de la categoría pública seleccionada
+  const publicSubcategories = publicCategId
+    ? publicCategories.filter((c) => {
+        if (!c.parent_id) return false
+        return c.parent_id[0] === parseInt(publicCategId, 10)
       })
     : []
 
@@ -571,8 +590,22 @@ function ProductModal({ product, onClose, onSuccess }: ProductModalProps) {
     setSubmitting(true)
     try {
       const payload = buildPayload(values)
-      // Si hay subcategoría seleccionada, sobreescribe categ_id con la subcategoría
-      if (subcategId) payload.categ_id = parseInt(subcategId, 10) as unknown as typeof payload.categ_id
+      // Subcategoría interna sobreescribe categ_id
+      if (subcategId) {
+        payload.categ_id = parseInt(subcategId, 10) as unknown as typeof payload.categ_id
+      }
+      // public_categ_ids agrupa marca + categoría eCommerce (Many2many independiente)
+      const publicIds: number[] = []
+      if (brandId) publicIds.push(parseInt(brandId, 10))
+      // Subcategoría eCommerce tiene prioridad sobre categoría eCommerce simple
+      if (publicSubcategId) {
+        publicIds.push(parseInt(publicSubcategId, 10))
+      } else if (publicCategId) {
+        publicIds.push(parseInt(publicCategId, 10))
+      }
+      if (publicIds.length > 0) {
+        ;(payload as Record<string, unknown>).public_categ_ids = publicIds.map((id) => [4, id])
+      }
       if (isCreate) {
         const created = await createOdooProduct(payload)
         if (pendingProperties.length > 0) {
@@ -615,13 +648,13 @@ function ProductModal({ product, onClose, onSuccess }: ProductModalProps) {
 
         <div className="overflow-y-auto flex-1 px-6 py-4 space-y-4">
 
-          {/* Información general */}
+          {/* 1. Identificación (campos obligatorios primero) */}
           <div className={SECTION_CLS}>
-            <p className={SECTION_TITLE_CLS}>Información general</p>
+            <p className={SECTION_TITLE_CLS}>Identificación</p>
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2">
                 <label className={LABEL_CLS}>Nombre <span className="text-red-500">*</span></label>
-                <input type="text" value={values.name} onChange={(e) => set('name', e.target.value)} className={INPUT_CLS} />
+                <input type="text" value={values.name} onChange={(e) => set('name', e.target.value)} className={INPUT_CLS} autoFocus />
               </div>
               <div>
                 <label className={LABEL_CLS}>
@@ -629,27 +662,6 @@ function ProductModal({ product, onClose, onSuccess }: ProductModalProps) {
                 </label>
                 <input type="text" value={values.default_code} onChange={(e) => set('default_code', e.target.value)} className={INPUT_CLS} />
               </div>
-              <div>
-                <label className={LABEL_CLS}>Activo</label>
-                <select value={values.active} onChange={(e) => set('active', e.target.value)} className={INPUT_CLS}>
-                  <option value="1">Sí</option>
-                  <option value="0">No</option>
-                </select>
-              </div>
-              <div>
-                <label className={LABEL_CLS}>Favorito</label>
-                <select value={values.priority} onChange={(e) => set('priority', e.target.value)} className={INPUT_CLS}>
-                  <option value="0">Normal</option>
-                  <option value="1">Favorito</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* Tipo y categoría */}
-          <div className={SECTION_CLS}>
-            <p className={SECTION_TITLE_CLS}>Tipo y categoría</p>
-            <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className={LABEL_CLS}>Tipo de producto</label>
                 <select value={values.detailed_type} onChange={(e) => set('detailed_type', e.target.value)} className={INPUT_CLS}>
@@ -659,29 +671,35 @@ function ProductModal({ product, onClose, onSuccess }: ProductModalProps) {
                 </select>
               </div>
               <div>
-                <label className={LABEL_CLS}>Seguimiento</label>
-                <select value={values.tracking} onChange={(e) => set('tracking', e.target.value)} className={INPUT_CLS}>
-                  <option value="none">Sin seguimiento</option>
-                  <option value="lot">Por lote</option>
-                  <option value="serial">Por número de serie</option>
+                <label className={LABEL_CLS}>Activo</label>
+                <select value={values.active} onChange={(e) => set('active', e.target.value)} className={INPUT_CLS}>
+                  <option value="1">Sí</option>
+                  <option value="0">No</option>
                 </select>
               </div>
+            </div>
+          </div>
+
+          {/* 2. Clasificación */}
+          <div className={SECTION_CLS}>
+            <p className={SECTION_TITLE_CLS}>Clasificación</p>
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className={LABEL_CLS}>Categoría</label>
+                <label className={LABEL_CLS}>Categoría interna</label>
                 <select
                   value={values.categ_id}
                   onChange={(e) => { set('categ_id', e.target.value); setSubcategId('') }}
                   className={INPUT_CLS}
                 >
-                  <option value="">— Sin cambio —</option>
+                  <option value="">— Sin categoría —</option>
                   {categories.map((c) => (
                     <option key={c.id} value={String(c.id)}>{c.complete_name || c.name}</option>
                   ))}
                 </select>
               </div>
-              {subcategories.length > 0 && (
+              {subcategories.length > 0 ? (
                 <div>
-                  <label className={LABEL_CLS}>Subcategoría</label>
+                  <label className={LABEL_CLS}>Subcategoría interna</label>
                   <select
                     value={subcategId}
                     onChange={(e) => setSubcategId(e.target.value)}
@@ -693,27 +711,55 @@ function ProductModal({ product, onClose, onSuccess }: ProductModalProps) {
                     ))}
                   </select>
                 </div>
-              )}
+              ) : <div />}
               <div>
-                <label className={LABEL_CLS}>HS Code</label>
-                <input type="text" value={values.hs_code} onChange={(e) => set('hs_code', e.target.value)} placeholder="p.ej. 8471300000" className={INPUT_CLS} />
+                <label className={LABEL_CLS}>Categoría eCommerce</label>
+                <select
+                  value={publicCategId}
+                  onChange={(e) => { setPublicCategId(e.target.value); setPublicSubcategId('') }}
+                  className={INPUT_CLS}
+                >
+                  <option value="">— Sin categoría web —</option>
+                  {publicCategories.map((c) => (
+                    <option key={c.id} value={String(c.id)}>{c.complete_name || c.name}</option>
+                  ))}
+                </select>
               </div>
-              {!isCreate && (
-                <>
-                  <div>
-                    <label className={LABEL_CLS}>Unidad de medida</label>
-                    <input type="text" value={uomLabel} disabled className={`${INPUT_CLS} bg-gray-50 text-gray-500`} />
-                  </div>
-                  <div>
-                    <label className={LABEL_CLS}>UdM de compra</label>
-                    <input type="text" value={uomPoLabel} disabled className={`${INPUT_CLS} bg-gray-50 text-gray-500`} />
-                  </div>
-                </>
-              )}
+              {publicSubcategories.length > 0 ? (
+                <div>
+                  <label className={LABEL_CLS}>Subcategoría eCommerce</label>
+                  <select
+                    value={publicSubcategId}
+                    onChange={(e) => setPublicSubcategId(e.target.value)}
+                    className={INPUT_CLS}
+                  >
+                    <option value="">— Usar categoría padre —</option>
+                    {publicSubcategories.map((c) => (
+                      <option key={c.id} value={String(c.id)}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : <div />}
+              <div className="col-span-2">
+                <label className={LABEL_CLS}>Marca</label>
+                <select
+                  value={brandId}
+                  onChange={(e) => setBrandId(e.target.value)}
+                  className={INPUT_CLS}
+                >
+                  <option value="">— Sin marca —</option>
+                  {brands.map((b) => (
+                    <option key={b.id} value={String(b.id)}>{b.name}</option>
+                  ))}
+                </select>
+                {brands.length === 0 && (
+                  <p className="text-xs text-gray-400 mt-1">No hay marcas creadas. Crea marcas en la pestaña Marcas.</p>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* Precios */}
+          {/* 3. Precios */}
           <div className={SECTION_CLS}>
             <p className={SECTION_TITLE_CLS}>Precios</p>
             <div className="grid grid-cols-3 gap-3">
@@ -732,26 +778,7 @@ function ProductModal({ product, onClose, onSuccess }: ProductModalProps) {
             </div>
           </div>
 
-          {/* Medidas y logística */}
-          <div className={SECTION_CLS}>
-            <p className={SECTION_TITLE_CLS}>Medidas y logística</p>
-            <div className="grid grid-cols-4 gap-3">
-              <div>
-                <label className={LABEL_CLS}>Peso (kg)</label>
-                <input type="number" step="0.001" min="0" value={values.weight} onChange={(e) => set('weight', e.target.value)} className={INPUT_CLS} />
-              </div>
-              <div>
-                <label className={LABEL_CLS}>Volumen (m³)</label>
-                <input type="number" step="0.001" min="0" value={values.volume} onChange={(e) => set('volume', e.target.value)} className={INPUT_CLS} />
-              </div>
-              <div>
-                <label className={LABEL_CLS}>Plazo cliente (días)</label>
-                <input type="number" step="1" min="0" value={values.sale_delay} onChange={(e) => set('sale_delay', e.target.value)} className={INPUT_CLS} />
-              </div>
-            </div>
-          </div>
-
-          {/* Ventas */}
+          {/* 4. Ventas */}
           <div className={SECTION_CLS}>
             <p className={SECTION_TITLE_CLS}>Ventas</p>
             <div className="grid grid-cols-2 gap-3">
@@ -776,7 +803,7 @@ function ProductModal({ product, onClose, onSuccess }: ProductModalProps) {
             </div>
           </div>
 
-          {/* Compras */}
+          {/* 5. Compras */}
           <div className={SECTION_CLS}>
             <p className={SECTION_TITLE_CLS}>Compras</p>
             <div className="grid grid-cols-2 gap-3">
@@ -801,7 +828,7 @@ function ProductModal({ product, onClose, onSuccess }: ProductModalProps) {
             </div>
           </div>
 
-          {/* eCommerce */}
+          {/* 6. eCommerce */}
           <div className={SECTION_CLS}>
             <p className={SECTION_TITLE_CLS}>eCommerce</p>
             <div className="grid grid-cols-2 gap-3">
@@ -834,13 +861,63 @@ function ProductModal({ product, onClose, onSuccess }: ProductModalProps) {
             </div>
           </div>
 
-          {/* Descripción interna */}
+          {/* 7. Logística */}
+          <div className={SECTION_CLS}>
+            <p className={SECTION_TITLE_CLS}>Logística</p>
+            <div className="grid grid-cols-4 gap-3">
+              <div>
+                <label className={LABEL_CLS}>Seguimiento</label>
+                <select value={values.tracking} onChange={(e) => set('tracking', e.target.value)} className={INPUT_CLS}>
+                  <option value="none">Sin seguimiento</option>
+                  <option value="lot">Por lote</option>
+                  <option value="serial">Por serie</option>
+                </select>
+              </div>
+              <div>
+                <label className={LABEL_CLS}>Peso (kg)</label>
+                <input type="number" step="0.001" min="0" value={values.weight} onChange={(e) => set('weight', e.target.value)} className={INPUT_CLS} />
+              </div>
+              <div>
+                <label className={LABEL_CLS}>Volumen (m³)</label>
+                <input type="number" step="0.001" min="0" value={values.volume} onChange={(e) => set('volume', e.target.value)} className={INPUT_CLS} />
+              </div>
+              <div>
+                <label className={LABEL_CLS}>Plazo cliente (días)</label>
+                <input type="number" step="1" min="0" value={values.sale_delay} onChange={(e) => set('sale_delay', e.target.value)} className={INPUT_CLS} />
+              </div>
+              <div>
+                <label className={LABEL_CLS}>HS Code</label>
+                <input type="text" value={values.hs_code} onChange={(e) => set('hs_code', e.target.value)} placeholder="p.ej. 8471300000" className={INPUT_CLS} />
+              </div>
+              <div>
+                <label className={LABEL_CLS}>Favorito</label>
+                <select value={values.priority} onChange={(e) => set('priority', e.target.value)} className={INPUT_CLS}>
+                  <option value="0">Normal</option>
+                  <option value="1">Favorito</option>
+                </select>
+              </div>
+              {!isCreate && (
+                <>
+                  <div>
+                    <label className={LABEL_CLS}>UdM</label>
+                    <input type="text" value={uomLabel} disabled className={`${INPUT_CLS} bg-gray-50 text-gray-500`} />
+                  </div>
+                  <div>
+                    <label className={LABEL_CLS}>UdM compra</label>
+                    <input type="text" value={uomPoLabel} disabled className={`${INPUT_CLS} bg-gray-50 text-gray-500`} />
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* 8. Descripción interna */}
           <div className={SECTION_CLS}>
             <p className={SECTION_TITLE_CLS}>Descripción interna</p>
             <textarea rows={4} value={values.description} onChange={(e) => set('description', e.target.value)} className={INPUT_CLS} />
           </div>
 
-          {/* Campos extra — visible cuando hay categoría seleccionada */}
+          {/* 9. Campos extra — visible cuando hay categoría interna seleccionada */}
           {values.categ_id && (
             <div className={SECTION_CLS}>
               <p className={SECTION_TITLE_CLS}>Campos extra</p>
