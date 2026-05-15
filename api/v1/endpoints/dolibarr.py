@@ -726,6 +726,7 @@ async def create_product(data: dict) -> JSONResponse:
     """
     array_options: dict = data.pop("array_options", None) or {}
     category_name: str = (data.pop("category_name", None) or "").strip()
+    brand_name: str = (data.pop("brand_name", None) or "").strip()
 
     svc, cat_svc = await _get_services_async()
 
@@ -742,6 +743,17 @@ async def create_product(data: dict) -> JSONResponse:
                 ),
             )
         category_id = int(cat["id"])
+
+    brand_id: int | None = None
+    if brand_name:
+        try:
+            brand_cat = await cat_svc.find_or_create_brand(brand_name)
+            brand_id = int(brand_cat["id"])
+        except IntegrationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            )
 
     try:
         created = await svc.create_product(data)
@@ -784,6 +796,20 @@ async def create_product(data: dict) -> JSONResponse:
                 extra={"product_id": product_id, "category": category_name},
             )
 
+    if brand_id and product_id:
+        try:
+            await cat_svc.assign_product(brand_id, product_id)
+            logger.info(
+                "Marca asignada a producto creado",
+                extra={"product_id": product_id, "brand": brand_name},
+            )
+        except Exception as exc:
+            logger.warning(
+                "Error asignando marca tras crear producto",
+                exc_info=exc,
+                extra={"product_id": product_id, "brand": brand_name},
+            )
+
     return JSONResponse(
         content=_ok(created, "Producto creado."),
         status_code=status.HTTP_201_CREATED,
@@ -812,6 +838,7 @@ async def update_product(product_id: int, data: dict) -> JSONResponse:
     """
     array_options: dict = data.pop("array_options", None) or {}
     category_name: str = (data.pop("category_name", None) or "").strip()
+    brand_name: str = (data.pop("brand_name", None) or "").strip()
 
     svc, cat_svc = await _get_services_async()
 
@@ -828,6 +855,17 @@ async def update_product(product_id: int, data: dict) -> JSONResponse:
                 ),
             )
         category_id = int(cat["id"])
+
+    brand_id: int | None = None
+    if brand_name:
+        try:
+            brand_cat = await cat_svc.find_or_create_brand(brand_name)
+            brand_id = int(brand_cat["id"])
+        except IntegrationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            )
 
     try:
         updated = await svc.update_product(product_id, data)
@@ -866,6 +904,20 @@ async def update_product(product_id: int, data: dict) -> JSONResponse:
                 "Error asignando categoría tras actualizar producto",
                 exc_info=exc,
                 extra={"product_id": product_id, "category": category_name},
+            )
+
+    if brand_id:
+        try:
+            await cat_svc.assign_product(brand_id, product_id)
+            logger.info(
+                "Marca asignada a producto actualizado",
+                extra={"product_id": product_id, "brand": brand_name},
+            )
+        except Exception as exc:
+            logger.warning(
+                "Error asignando marca tras actualizar producto",
+                exc_info=exc,
+                extra={"product_id": product_id, "brand": brand_name},
             )
 
     # ── Sync Dolibarr → WordPress ─────────────────────────────────────────────
@@ -1074,6 +1126,7 @@ async def import_from_csv(
     overwrite: bool = Form(default=False),
     category_column: str = Form(default=""),
     subcategory_column: str = Form(default=""),
+    brand_column: str = Form(default=""),
 ) -> JSONResponse:
     """
     Inicia la importación masiva de productos desde CSV como tarea Celery asíncrona.
@@ -1120,12 +1173,14 @@ async def import_from_csv(
 
     cat_col = category_column.strip()
     subcat_col = subcategory_column.strip()
+    brand_col = brand_column.strip()
     _, cat_svc = await _get_services_async()
 
     category_name_to_id: dict[str, int] = {}
     subcateg_pair_to_id: dict[str, int] = {}  # clave: "padre||hijo"
+    brand_name_to_id: dict[str, int] = {}
 
-    if cat_col or subcat_col:
+    if cat_col or subcat_col or brand_col:
         try:
             text = content.decode("utf-8-sig")
         except UnicodeDecodeError:
@@ -1197,6 +1252,36 @@ async def import_from_csv(
                     ),
                 )
 
+        if brand_col:
+            # Resolver marcas bajo la categoría padre "Marcas"
+            unique_brands: set[str] = {
+                (row.get(brand_col) or "").strip()
+                for row in rows_csv
+                if (row.get(brand_col) or "").strip()
+            }
+            missing_brands_parent = False
+            for brand_name in unique_brands:
+                try:
+                    brand_cat = await cat_svc.find_or_create_brand(brand_name, brands_parent=_BRANDS_PARENT)
+                    brand_name_to_id[brand_name] = int(brand_cat["id"])
+                except IntegrationError as exc:
+                    if "no existe" in str(exc):
+                        missing_brands_parent = True
+                        break
+                    logger.warning(
+                        "Error resolviendo marca en pre-importación",
+                        exc_info=exc,
+                        extra={"brand": brand_name},
+                    )
+            if missing_brands_parent:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=(
+                        f"La categoría '{_BRANDS_PARENT}' no existe en Dolibarr. "
+                        "Créala primero en la pestaña Categorías antes de importar marcas."
+                    ),
+                )
+
     dolibarr_url, dolibarr_api_key = await _get_dolibarr_credentials()
 
     task_id = str(uuid.uuid4())
@@ -1226,6 +1311,8 @@ async def import_from_csv(
         dolibarr_api_key,
         subcat_col,
         subcateg_pair_to_id,
+        brand_col,
+        brand_name_to_id,
     )
 
     logger.info(
@@ -1340,6 +1427,7 @@ async def sync_from_job(request: SyncFromJobRequest) -> JSONResponse:
 
 
 categories_router = APIRouter(prefix="/dolibarr/categories", tags=["dolibarr-categories"])
+brands_router = APIRouter(prefix="/dolibarr/brands", tags=["dolibarr-brands"])
 
 
 async def _get_category_service() -> DolibarrCategoryService:
@@ -1616,6 +1704,77 @@ async def list_products_in_category(
         offset=offset,
         has_more=len(items) == limit,
     ).model_dump()))
+
+
+# ── Marcas ────────────────────────────────────────────────────────
+
+_BRANDS_PARENT = "Marcas"
+
+
+@brands_router.get("")
+async def list_brands(
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> JSONResponse:
+    """
+    Lista las marcas (subcategorías bajo la categoría 'Marcas' de tipo producto).
+
+    La categoría padre 'Marcas' debe existir previamente en Dolibarr.
+
+    Args:
+        limit:  máximo de resultados.
+        offset: desplazamiento para paginación.
+
+    Returns:
+        PaginatedResponse con las marcas disponibles.
+    """
+    svc = await _get_category_service()
+    try:
+        items = await svc.list_brands(brands_parent=_BRANDS_PARENT, limit=limit, offset=offset)
+    except IntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+    return JSONResponse(content=_ok(PaginatedResponse(
+        items=items,
+        total=len(items),
+        limit=limit,
+        offset=offset,
+        has_more=len(items) == limit,
+    ).model_dump()))
+
+
+@brands_router.post("", status_code=status.HTTP_201_CREATED)
+async def create_brand(
+    name: str = Body(..., embed=True),
+) -> JSONResponse:
+    """
+    Crea una nueva marca como subcategoría bajo la categoría 'Marcas' en Dolibarr.
+
+    La categoría padre 'Marcas' debe existir previamente en Dolibarr.
+    Si la marca ya existe, la devuelve sin crear duplicados.
+
+    Args:
+        name: nombre de la nueva marca.
+
+    Returns:
+        Dict con los datos de la marca creada o existente.
+
+    Raises:
+        HTTPException 422: si la categoría 'Marcas' no existe en Dolibarr.
+    """
+    svc = await _get_category_service()
+    try:
+        brand = await svc.find_or_create_brand(name.strip(), brands_parent=_BRANDS_PARENT)
+    except IntegrationError as exc:
+        if "no existe" in str(exc):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"La categoría '{_BRANDS_PARENT}' no existe en Dolibarr. Créala primero en la pestaña Categorías.",
+            )
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+    return JSONResponse(
+        content=_ok(brand, "Marca creada."),
+        status_code=status.HTTP_201_CREATED,
+    )
 
 
 # ── Terceros ─────────────────────────────────────────────────────

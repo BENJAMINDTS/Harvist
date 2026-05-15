@@ -14,9 +14,10 @@ import DolibarrInvoices from './DolibarrInvoices'
 import DolibarrStocks from './DolibarrStocks'
 import DolibarrConfig from './DolibarrConfig'
 import DolibarrExtraFields from './DolibarrExtraFields'
+import DolibarrBrands from './DolibarrBrands'
 import DolibarrCategories from './DolibarrCategories'
 
-type DolibarrTab = 'productos' | 'categorias' | 'terceros' | 'pedidos' | 'facturas' | 'stock' | 'campos-extra' | 'config'
+type DolibarrTab = 'productos' | 'categorias' | 'marcas' | 'terceros' | 'pedidos' | 'facturas' | 'stock' | 'campos-extra' | 'config'
 
 interface Props {
   className?: string
@@ -128,6 +129,7 @@ export default function DolibarrPanel({ className = '' }: Props) {
             [
               { id: 'productos', label: 'Productos' },
               { id: 'categorias', label: 'Categorías' },
+              { id: 'marcas', label: 'Marcas' },
               { id: 'terceros', label: 'Terceros' },
               { id: 'pedidos', label: 'Pedidos' },
               { id: 'facturas', label: 'Facturas' },
@@ -157,6 +159,7 @@ export default function DolibarrPanel({ className = '' }: Props) {
         <div className="p-6">
           {tab === 'productos' && <DolibarrProducts />}
           {tab === 'categorias' && <DolibarrCategories />}
+          {tab === 'marcas' && <DolibarrBrands />}
           {tab === 'terceros' && <DolibarrThirdparties />}
           {tab === 'pedidos' && <DolibarrOrders />}
           {tab === 'facturas' && <DolibarrInvoices />}

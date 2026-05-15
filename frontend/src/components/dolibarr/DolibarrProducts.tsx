@@ -19,6 +19,7 @@ import {
   getDolibarrImportStatus,
   deleteDolibarrProducts,
   listDolibarrCategories,
+  listDolibarrBrands,
 } from '@/api/client'
 import {
   type DolibarrProduct,
@@ -749,18 +750,22 @@ function CreateProductModal({ onClose, onSuccess }: CreateProductModalProps): Re
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [categories, setCategories] = useState<DolibarrCategory[]>([])
+  const [brands, setBrands] = useState<DolibarrCategory[]>([])
   const [selectedCategory, setSelectedCategory] = useState('')
   const [selectedSubcategory, setSelectedSubcategory] = useState('')
+  const [selectedBrand, setSelectedBrand] = useState('')
 
   useEffect(() => {
     Promise.all([
       getDolibarrProductFields(),
       listDolibarrCategories('product', 200, 0).catch(() => ({ items: [] as DolibarrCategory[], total: 0, limit: 200, offset: 0, has_more: false })),
+      listDolibarrBrands(200, 0).catch(() => ({ items: [] as DolibarrCategory[], total: 0, limit: 200, offset: 0, has_more: false })),
     ])
-      .then(([f, cats]) => {
+      .then(([f, cats, brnds]) => {
         setFields(f)
         setValues(initEmpty(f))
         setCategories(cats.items)
+        setBrands(brnds.items)
       })
       .catch((err) => setError((err as Error).message ?? 'Error cargando campos'))
       .finally(() => setFieldsLoading(false))
@@ -786,6 +791,9 @@ function CreateProductModal({ onClose, onSuccess }: CreateProductModalProps): Re
       setSubmitting(true)
       setError(null)
       const payload = buildPayload(values, fields) as Record<string, unknown>
+      if (selectedBrand) {
+        payload.brand_name = selectedBrand
+      }
       if (selectedSubcategory) {
         payload.category_name = selectedSubcategory
       } else if (selectedCategory) {
@@ -820,6 +828,21 @@ function CreateProductModal({ onClose, onSuccess }: CreateProductModalProps): Re
           ) : (
             <>
               <DynamicProductForm fields={fields} values={values} onChange={handleChange} />
+              {brands.length > 0 && (
+                <div className="border border-blue-200 bg-blue-50 rounded-lg p-4 space-y-2">
+                  <p className="text-xs font-semibold text-blue-800 uppercase tracking-wide">Marca (opcional)</p>
+                  <select
+                    value={selectedBrand}
+                    onChange={(e) => setSelectedBrand(e.target.value)}
+                    className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:border-transparent bg-white"
+                  >
+                    <option value="">— Sin marca —</option>
+                    {brands.map((b) => (
+                      <option key={b.id} value={b.label}>{b.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div className="border border-amber-200 bg-amber-50 rounded-lg p-4 space-y-3">
                 <p className="text-xs font-semibold text-amber-800 uppercase tracking-wide">Categoría (opcional)</p>
                 <p className="text-xs text-amber-700">
@@ -890,18 +913,22 @@ function EditProductModal({ product, onClose, onSuccess }: EditProductModalProps
   const [error, setError] = useState<string | null>(null)
   const [wpSync, setWpSync] = useState<{ synced: boolean; reason?: string; wc_id?: number } | null>(null)
   const [categories, setCategories] = useState<DolibarrCategory[]>([])
+  const [brands, setBrands] = useState<DolibarrCategory[]>([])
   const [selectedCategory, setSelectedCategory] = useState('')
   const [selectedSubcategory, setSelectedSubcategory] = useState('')
+  const [selectedBrand, setSelectedBrand] = useState('')
 
   useEffect(() => {
     Promise.all([
       getDolibarrProductFields(),
       listDolibarrCategories('product', 200, 0).catch(() => ({ items: [] as DolibarrCategory[], total: 0, limit: 200, offset: 0, has_more: false })),
+      listDolibarrBrands(200, 0).catch(() => ({ items: [] as DolibarrCategory[], total: 0, limit: 200, offset: 0, has_more: false })),
     ])
-      .then(([f, cats]) => {
+      .then(([f, cats, brnds]) => {
         setFields(f)
         setValues(initFromProduct(product, f))
         setCategories(cats.items)
+        setBrands(brnds.items)
       })
       .catch((err) => setError((err as Error).message ?? 'Error cargando campos'))
       .finally(() => setFieldsLoading(false))
@@ -928,6 +955,9 @@ function EditProductModal({ product, onClose, onSuccess }: EditProductModalProps
       setError(null)
       setWpSync(null)
       const payload = buildPayload(values, fields) as Record<string, unknown>
+      if (selectedBrand) {
+        payload.brand_name = selectedBrand
+      }
       if (selectedSubcategory) {
         payload.category_name = selectedSubcategory
       } else if (selectedCategory) {
@@ -965,6 +995,21 @@ function EditProductModal({ product, onClose, onSuccess }: EditProductModalProps
           ) : (
             <>
               <DynamicProductForm fields={fields} values={values} onChange={handleChange} />
+              {brands.length > 0 && (
+                <div className="border border-blue-200 bg-blue-50 rounded-lg p-4 space-y-2">
+                  <p className="text-xs font-semibold text-blue-800 uppercase tracking-wide">Marca (opcional)</p>
+                  <select
+                    value={selectedBrand}
+                    onChange={(e) => setSelectedBrand(e.target.value)}
+                    className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:border-transparent bg-white"
+                  >
+                    <option value="">— Sin cambiar —</option>
+                    {brands.map((b) => (
+                      <option key={b.id} value={b.label}>{b.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div className="border border-amber-200 bg-amber-50 rounded-lg p-4 space-y-3">
                 <p className="text-xs font-semibold text-amber-800 uppercase tracking-wide">Asignar a categoría (opcional)</p>
                 <p className="text-xs text-amber-700">
@@ -1052,6 +1097,7 @@ function CsvImportModal({ onClose, onSuccess }: CsvImportModalProps): React.Reac
   const [overwrite, setOverwrite] = useState(false)
   const [categoryColumn, setCategoryColumn] = useState('')
   const [subcategoryColumn, setSubcategoryColumn] = useState('')
+  const [brandColumn, setBrandColumn] = useState('')
   const [result, setResult] = useState<DolibarrImportTask['results'] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -1111,7 +1157,7 @@ function CsvImportModal({ onClose, onSuccess }: CsvImportModalProps): React.Reac
     setStep('importing')
 
     try {
-      const task = await importDolibarrCsv(file, activeMapping, overwrite, categoryColumn || undefined, subcategoryColumn || undefined)
+      const task = await importDolibarrCsv(file, activeMapping, overwrite, categoryColumn || undefined, subcategoryColumn || undefined, brandColumn || undefined)
 
       pollRef.current = setInterval(async () => {
         try {
@@ -1290,6 +1336,28 @@ function CsvImportModal({ onClose, onSuccess }: CsvImportModalProps): React.Reac
                       </select>
                     </div>
                   ))}
+                </div>
+              </div>
+
+              {/* Brand column selector */}
+              <div className="border border-blue-200 bg-blue-50 rounded-lg p-4 space-y-3">
+                <p className="text-xs font-semibold text-blue-800 uppercase tracking-wide">Marca (opcional)</p>
+                <p className="text-xs text-blue-700">
+                  Mapea una columna del CSV a la marca del producto. Cada valor se creará automáticamente como subcategoría bajo <strong>"Marcas"</strong> si no existe.
+                  La categoría padre <strong>"Marcas"</strong> debe existir previamente en Dolibarr.
+                </p>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-blue-800 shrink-0 w-36">Columna marca:</span>
+                  <select
+                    value={brandColumn}
+                    onChange={(e) => setBrandColumn(e.target.value)}
+                    className="flex-1 px-2 py-1.5 border border-blue-300 rounded text-sm focus:ring-2 focus:ring-blue-400 focus:border-transparent bg-white"
+                  >
+                    <option value="">— No asignar marca —</option>
+                    {preview?.headers.map((h) => (
+                      <option key={h} value={h}>{h}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 

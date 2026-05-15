@@ -575,6 +575,8 @@ def importar_productos_dolibarr(
     dolibarr_api_key: str,
     subcategory_column: str = "",
     subcateg_pair_to_id: dict | None = None,
+    brand_column: str = "",
+    brand_name_to_id: dict | None = None,
 ) -> dict:
     """
     Tarea Celery que importa productos en masa a Dolibarr desde un CSV.
@@ -595,6 +597,8 @@ def importar_productos_dolibarr(
         dolibarr_api_key:     clave API Dolibarr.
         subcategory_column:   nombre de la columna CSV con la subcategoría (opcional).
         subcateg_pair_to_id:  mapa "padre||hijo" → ID Dolibarr de la subcategoría.
+        brand_column:         nombre de la columna CSV con la marca (opcional).
+        brand_name_to_id:     mapa nombre_marca → ID Dolibarr de la marca ya resuelta.
 
     Returns:
         Dict con resumen de la importación o ``{"error": str}`` si falla.
@@ -637,7 +641,7 @@ def importar_productos_dolibarr(
 
         client = DolibarrClient(settings, override_url=dolibarr_url, override_api_key=dolibarr_api_key)
         svc = DolibarrProductService(client)
-        needs_cat_svc = bool(category_column or subcategory_column)
+        needs_cat_svc = bool(category_column or subcategory_column or brand_column)
         cat_svc = DolibarrCategoryService(client) if needs_cat_svc else None
 
         content = base64.b64decode(csv_b64.encode())
@@ -651,6 +655,8 @@ def importar_productos_dolibarr(
             category_name_to_id=category_name_to_id or None,
             subcategory_col=subcategory_column or None,
             subcateg_pair_to_id=subcateg_pair_to_id or None,
+            brand_col=brand_column or None,
+            brand_name_to_id=brand_name_to_id or None,
             progress_callback=_progress,
         )
 
