@@ -1327,6 +1327,115 @@ export async function deleteOdooCategory(id: number): Promise<void> {
   await apiClient.delete(`/odoo/categories/${id}`)
 }
 
+// ─── Categorías eCommerce Odoo (product.public.category) ─────────────────────
+
+/**
+ * Lista categorías eCommerce Odoo (product.public.category) con paginación.
+ *
+ * @author BenjaminDTS
+ */
+export async function listOdooPublicCategories(
+  limit = 100,
+  offset = 0,
+): Promise<PaginatedResponse<OdooCategory>> {
+  const response = await apiClient.get<ApiResponse<PaginatedResponse<OdooCategory>>>(
+    '/odoo/ecommerce/categories',
+    { params: { limit, offset } },
+  )
+  return response.data.data
+}
+
+/**
+ * Devuelve árbol jerárquico completo de categorías eCommerce Odoo.
+ *
+ * @author BenjaminDTS
+ */
+export async function getOdooPublicCategoryTree(): Promise<OooCategoryTree[]> {
+  const response = await apiClient.get<ApiResponse<OooCategoryTree[]>>('/odoo/ecommerce/categories/tree')
+  return response.data.data
+}
+
+/**
+ * Crea una categoría eCommerce en Odoo (product.public.category).
+ *
+ * @author BenjaminDTS
+ * @param name     - Nombre de la categoría.
+ * @param parentId - ID del padre (opcional).
+ */
+export async function createOdooPublicCategory(name: string, parentId?: number): Promise<OdooCategory> {
+  const body: Record<string, unknown> = { name }
+  if (parentId !== undefined) body.parent_id = parentId
+  const response = await apiClient.post<ApiResponse<OdooCategory>>('/odoo/ecommerce/categories', body)
+  return response.data.data
+}
+
+/**
+ * Actualiza una categoría eCommerce Odoo.
+ *
+ * @author BenjaminDTS
+ * @param id   - ID de la categoría.
+ * @param data - Campos a actualizar.
+ */
+export async function updateOdooPublicCategory(
+  id: number,
+  data: Record<string, unknown>,
+): Promise<OdooCategory> {
+  const response = await apiClient.put<ApiResponse<OdooCategory>>(`/odoo/ecommerce/categories/${id}`, data)
+  return response.data.data
+}
+
+/**
+ * Elimina una categoría eCommerce Odoo.
+ *
+ * @author BenjaminDTS
+ * @param id - ID de la categoría.
+ */
+export async function deleteOdooPublicCategory(id: number): Promise<void> {
+  await apiClient.delete(`/odoo/ecommerce/categories/${id}`)
+}
+
+// ─── Marcas Odoo ──────────────────────────────────────────────────────────────
+
+/**
+ * Lista las marcas de Odoo (subcategorías bajo "Marcas").
+ *
+ * @author BenjaminDTS
+ * @param limit  - Máximo de resultados.
+ * @param offset - Desplazamiento.
+ */
+export async function listOdooBrands(
+  limit = 100,
+  offset = 0,
+): Promise<{ items: OdooCategory[]; total: number; limit: number; offset: number; has_more: boolean }> {
+  const response = await apiClient.get<ApiResponse<{ items: OdooCategory[]; total: number; limit: number; offset: number; has_more: boolean }>>(
+    '/odoo/brands',
+    { params: { limit, offset } },
+  )
+  return response.data.data
+}
+
+/**
+ * Crea una nueva marca en Odoo bajo la categoría "Marcas".
+ * Si ya existe, devuelve la existente.
+ *
+ * @author BenjaminDTS
+ * @param name - Nombre de la marca.
+ */
+export async function createOdooBrand(name: string): Promise<OdooCategory> {
+  const response = await apiClient.post<ApiResponse<OdooCategory>>('/odoo/brands', { name })
+  return response.data.data
+}
+
+/**
+ * Elimina una marca de product.public.category en Odoo.
+ *
+ * @author BenjaminDTS
+ * @param id - ID de la marca en product.public.category.
+ */
+export async function deleteOdooBrand(id: number): Promise<void> {
+  await apiClient.delete(`/odoo/brands/${id}`)
+}
+
 /**
  * Lista partners Odoo (clientes / proveedores / todos).
  *
