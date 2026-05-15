@@ -146,8 +146,8 @@ def descargar_imagenes_producto(
                     cand_dir = storage.candidates_dir(job_id)
                     cand_dir.mkdir(parents=True, exist_ok=True)
 
-                    # Guardar candidata
-                    cand_path = storage.candidate_path(job_id, nombre_base, indice)
+                    # Guardar candidata — siempre usar producto.codigo para consistencia con list_candidates
+                    cand_path = storage.candidate_path(job_id, producto.codigo, indice)
                     cand_path.write_bytes(imagen_bytes)
 
                     imagenes_validas += 1
