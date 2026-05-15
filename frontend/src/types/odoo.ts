@@ -36,6 +36,7 @@ export interface OdooProduct {
   website_meta_title: string | false
   website_meta_description: string | false
   website_meta_keywords: string | false
+  public_categ_ids: number[]
 }
 
 export interface OdooCategory {

@@ -12,33 +12,45 @@ interface Props {
   onSuccess: () => void
 }
 
+// Ordenado por prioridad: identificación → clasificación → precios → ventas → compras → eCommerce → logística → otros
 const FIELD_LABELS: Record<string, string> = {
+  // Identificación (obligatorios)
   name: 'Nombre *',
   default_code: 'Referencia interna *',
-  active: 'Activo (1/0)',
-  priority: 'Favorito (0/1)',
   detailed_type: 'Tipo (consu/service/product)',
-  tracking: 'Seguimiento (none/lot/serial)',
-  categ_id: 'Categoría (nombre)',
-  subcateg_id: 'Subcategoría (nombre)',
+  active: 'Activo (1/0)',
+  // Clasificación
+  categ_id: 'Categoría interna (nombre)',
+  subcateg_id: 'Subcategoría interna (nombre)',
+  public_categ_id: 'Categoría eCommerce (nombre)',
+  public_subcateg_id: 'Subcategoría eCommerce (nombre)',
+  brand_id: 'Marca (bajo "Marcas")',
+  // Precios
   list_price: 'Precio de venta',
   compare_list_price: 'Precio comparativo',
   standard_price: 'Coste',
-  weight: 'Peso (kg)',
-  volume: 'Volumen (m³)',
-  sale_delay: 'Plazo cliente (días)',
-  hs_code: 'HS Code',
+  // Ventas
   sale_ok: 'Se puede vender (1/0)',
   invoice_policy: 'Política facturación (order/delivery)',
   description_sale: 'Descripción ventas',
+  // Compras
   purchase_ok: 'Se puede comprar (1/0)',
   purchase_method: 'Control compra (purchase/receive)',
   description_purchase: 'Descripción compras',
+  // eCommerce
   is_published: 'Publicado web (1/0)',
   available_in_pos: 'Disponible POS (1/0)',
   website_meta_title: 'Meta título (SEO)',
   website_meta_description: 'Meta descripción (SEO)',
   website_meta_keywords: 'Meta palabras clave',
+  // Logística
+  tracking: 'Seguimiento (none/lot/serial)',
+  weight: 'Peso (kg)',
+  volume: 'Volumen (m³)',
+  sale_delay: 'Plazo cliente (días)',
+  hs_code: 'HS Code',
+  // Otros
+  priority: 'Favorito (0/1)',
   description: 'Descripción interna',
 }
 
@@ -261,12 +273,47 @@ export default function OdooCsvImport({ onClose, onSuccess }: Props) {
               </div>
 
               {/* Aviso subcategoría cuando ambos campos están mapeados */}
-              {Object.values(mapping).includes('categ_id') && Object.values(mapping).includes('subcateg_id') && (
+              {Object.values(mapping).includes('categ_id') && Object.values(mapping).includes('subcateg_id') && !Object.values(mapping).includes('brand_id') && (
                 <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
                   <p className="font-semibold mb-1">Modo Categoría + Subcategoría activo</p>
                   <p className="text-xs text-amber-700">
                     Cada subcategoría se creará automáticamente bajo su categoría padre si no existe en Odoo.
                     La categoría padre <strong>debe existir</strong> previamente. El producto quedará asignado a la subcategoría.
+                  </p>
+                </div>
+              )}
+
+              {/* Aviso: categoría eCommerce + subcategoría eCommerce */}
+              {Object.values(mapping).includes('public_categ_id') && Object.values(mapping).includes('public_subcateg_id') && (
+                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 text-sm text-purple-800">
+                  <p className="font-semibold mb-1">Categoría eCommerce + Subcategoría eCommerce activo</p>
+                  <p className="text-xs text-purple-700">
+                    Cada subcategoría se creará automáticamente bajo su categoría padre si no existe.
+                    La categoría padre <strong>debe existir</strong> en la pestaña <em>Categorías web</em>.
+                    El producto quedará asignado a la subcategoría en <code>public_categ_ids</code>.
+                  </p>
+                </div>
+              )}
+
+              {/* Aviso informativo cuando marca y categoría están mapeadas simultáneamente */}
+              {Object.values(mapping).includes('brand_id') && (Object.values(mapping).includes('categ_id') || Object.values(mapping).includes('subcateg_id')) && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-sm text-green-800">
+                  <p className="font-semibold mb-1">Categoría + Marca — campos independientes</p>
+                  <p className="text-xs text-green-700">
+                    La <strong>Marca</strong> se asignará en <em>Categorías del sitio web</em> (<code>public_categ_ids</code>)
+                    y la <strong>Categoría interna</strong> en <code>categ_id</code>. Ambos campos son independientes.
+                    La categoría padre <strong>"Marcas"</strong> debe existir en eCommerce → Categorías de producto de Odoo.
+                  </p>
+                </div>
+              )}
+
+              {/* Aviso: marca + categoría eCommerce activos juntos */}
+              {Object.values(mapping).includes('brand_id') && (Object.values(mapping).includes('public_categ_id') || Object.values(mapping).includes('public_subcateg_id')) && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
+                  <p className="font-semibold mb-1">Marca + Categoría eCommerce — se asignan juntas</p>
+                  <p className="text-xs text-blue-700">
+                    Marca y categoría eCommerce se añadirán ambas a <code>public_categ_ids</code> del producto.
+                    Son campos compatibles y no se excluyen entre sí.
                   </p>
                 </div>
               )}
