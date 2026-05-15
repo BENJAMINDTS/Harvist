@@ -13,6 +13,7 @@ Cualquier nuevo recurso de v1 se registra aquí.
 from fastapi import APIRouter
 
 from api.v1.endpoints.dolibarr import (
+    brands_router as dolibarr_brands_router,
     categories_router,
     extrafields_router,
     invoices_router,
@@ -54,6 +55,7 @@ router.include_router(history_router)
 router.include_router(dolibarr_router_main)
 router.include_router(dolibarr_router_products)
 router.include_router(categories_router)
+router.include_router(dolibarr_brands_router)
 router.include_router(thirdparties_router)
 router.include_router(orders_router)
 router.include_router(invoices_router)

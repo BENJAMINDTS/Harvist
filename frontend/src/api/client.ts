@@ -936,6 +936,7 @@ export async function importDolibarrCsv(
   overwrite: boolean,
   categoryColumn?: string,
   subcategoryColumn?: string,
+  brandColumn?: string,
 ): Promise<DolibarrImportTask> {
   const form = new FormData()
   form.append('file', file)
@@ -943,6 +944,7 @@ export async function importDolibarrCsv(
   form.append('overwrite', String(overwrite))
   if (categoryColumn) form.append('category_column', categoryColumn)
   if (subcategoryColumn) form.append('subcategory_column', subcategoryColumn)
+  if (brandColumn) form.append('brand_column', brandColumn)
   const response = await apiClient.post<ApiResponse<DolibarrImportTask>>(
     '/dolibarr/products/import',
     form,
@@ -1051,6 +1053,38 @@ export async function updateDolibarrCategory(
  */
 export async function deleteDolibarrCategory(id: number | string): Promise<void> {
   await apiClient.delete(`/dolibarr/categories/${id}`)
+}
+
+// ─── Marcas Dolibarr ──────────────────────────────────────────────────────────
+
+/**
+ * Lista las marcas de Dolibarr (subcategorías bajo "Marcas").
+ *
+ * @author BenjaminDTS
+ * @param limit  - Máximo de resultados.
+ * @param offset - Desplazamiento.
+ */
+export async function listDolibarrBrands(
+  limit = 100,
+  offset = 0,
+): Promise<{ items: DolibarrCategory[]; total: number; limit: number; offset: number; has_more: boolean }> {
+  const response = await apiClient.get<ApiResponse<{ items: DolibarrCategory[]; total: number; limit: number; offset: number; has_more: boolean }>>(
+    '/dolibarr/brands',
+    { params: { limit, offset } },
+  )
+  return response.data.data
+}
+
+/**
+ * Crea una nueva marca en Dolibarr bajo la categoría "Marcas".
+ * Si ya existe, devuelve la existente.
+ *
+ * @author BenjaminDTS
+ * @param name - Nombre de la marca.
+ */
+export async function createDolibarrBrand(name: string): Promise<DolibarrCategory> {
+  const response = await apiClient.post<ApiResponse<DolibarrCategory>>('/dolibarr/brands', { name })
+  return response.data.data
 }
 
 /**
