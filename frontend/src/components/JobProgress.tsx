@@ -57,6 +57,14 @@ const ESTADO_BADGE: Record<EstadoJob, { label: string; classes: string }> = {
     label: 'Cancelado',
     classes: 'bg-yellow-100 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-400 border border-yellow-300 dark:border-yellow-800',
   },
+  pendiente_seleccion_fotos: {
+    label: 'Selección de fotos',
+    classes: 'bg-cyan-100 dark:bg-cyan-950 text-cyan-700 dark:text-cyan-400 border border-cyan-300 dark:border-cyan-700',
+  },
+  pendiente_validacion_marcas: {
+    label: 'Validación de marcas',
+    classes: 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-700',
+  },
 }
 
 /** Mapa de colores para la barra de progreso según estado del job */
@@ -66,6 +74,8 @@ const PROGRESS_BAR_COLOR: Record<EstadoJob, string> = {
   completado: 'bg-green-500',
   fallido: 'bg-red-500',
   cancelado: 'bg-yellow-500',
+  pendiente_seleccion_fotos: 'bg-cyan-500',
+  pendiente_validacion_marcas: 'bg-amber-500',
 }
 
 /** Configuración visual del indicador de estado del WebSocket */
@@ -212,7 +222,13 @@ export const JobProgress: React.FC<JobProgressProps> = ({
     if (
       isFinished &&
       progress !== null &&
-      (progress.estado === 'completado' || progress.estado === 'fallido' || progress.estado === 'cancelado') &&
+      (
+        progress.estado === 'completado' ||
+        progress.estado === 'fallido' ||
+        progress.estado === 'cancelado' ||
+        progress.estado === 'pendiente_seleccion_fotos' ||
+        progress.estado === 'pendiente_validacion_marcas'
+      ) &&
       !finishedNotifiedRef.current
     ) {
       finishedNotifiedRef.current = true
