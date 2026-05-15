@@ -89,8 +89,8 @@ const PhotoSelectionPanel: React.FC<PhotoSelectionPanelProps> = ({ jobId, onComp
   const totalCount = products.length
 
   // Marcar imagen como no cargada
-  const handleImageError = useCallback((codigo: string): void => {
-    setImageLoadErrors((prev) => new Set([...prev, `${codigo}-error`]))
+  const handleImageError = useCallback((key: string): void => {
+    setImageLoadErrors((prev) => new Set([...prev, key]))
   }, [])
 
   // Click en candidata — seleccionar para ese producto
@@ -211,13 +211,13 @@ const PhotoSelectionPanel: React.FC<PhotoSelectionPanelProps> = ({ jobId, onComp
         <button
           type="button"
           onClick={handleConfirm}
-          disabled={selectedCount !== totalCount || confirming}
+          disabled={totalCount === 0 || selectedCount !== totalCount || confirming}
           aria-busy={confirming}
           className={
             "w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg " +
             "text-sm font-semibold text-white transition-colors duration-150 " +
             "focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 " +
-            (selectedCount === totalCount && !confirming
+            (totalCount > 0 && selectedCount === totalCount && !confirming
               ? "bg-blue-600 hover:bg-blue-700 active:bg-blue-800 cursor-pointer"
               : "bg-gray-400 dark:bg-gray-600 cursor-not-allowed opacity-60")
           }
@@ -364,7 +364,7 @@ const PhotoSelectionPanel: React.FC<PhotoSelectionPanelProps> = ({ jobId, onComp
       </div>
 
       {/* Mensaje cuando todos están seleccionados */}
-      {selectedCount === totalCount && (
+      {totalCount > 0 && selectedCount === totalCount && (
         <div
           className="rounded-lg bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 p-4"
           role="status"

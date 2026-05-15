@@ -15,7 +15,14 @@ import type { ApiError } from '@/api/client'
 // Types
 // ---------------------------------------------------------------------------
 
-type EstadoJob = 'pendiente' | 'en_proceso' | 'completado' | 'fallido' | 'cancelado'
+type EstadoJob =
+  | 'pendiente'
+  | 'en_proceso'
+  | 'completado'
+  | 'fallido'
+  | 'cancelado'
+  | 'pendiente_seleccion_fotos'
+  | 'pendiente_validacion_marcas'
 
 interface JobHistoryItem {
   job_id: string
@@ -74,6 +81,14 @@ const ESTADO_BADGE: Record<EstadoJob, { label: string; classes: string }> = {
     label: 'Cancelado',
     classes: 'bg-yellow-100 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-400 border border-yellow-300 dark:border-yellow-800',
   },
+  pendiente_seleccion_fotos: {
+    label: 'Selección fotos',
+    classes: 'bg-cyan-100 dark:bg-cyan-950 text-cyan-700 dark:text-cyan-400 border border-cyan-300 dark:border-cyan-700',
+  },
+  pendiente_validacion_marcas: {
+    label: 'Validación marcas',
+    classes: 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-700',
+  },
 }
 
 /** Opciones del selector de filtro de estado */
@@ -84,6 +99,8 @@ const ESTADO_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'completado', label: 'Completado' },
   { value: 'fallido', label: 'Fallido' },
   { value: 'cancelado', label: 'Cancelado' },
+  { value: 'pendiente_seleccion_fotos', label: 'Selección fotos' },
+  { value: 'pendiente_validacion_marcas', label: 'Validación marcas' },
 ]
 
 // ---------------------------------------------------------------------------
@@ -444,6 +461,10 @@ export const JobHistory: React.FC<JobHistoryProps> = ({ onSelectJob }) => {
                               ? 'bg-yellow-500'
                               : item.estado === 'en_proceso'
                               ? 'bg-blue-500'
+                              : item.estado === 'pendiente_seleccion_fotos'
+                              ? 'bg-cyan-500'
+                              : item.estado === 'pendiente_validacion_marcas'
+                              ? 'bg-amber-500'
                               : 'bg-gray-400'
                           }`}
                           style={{ width: `${Math.min(100, Math.max(0, item.porcentaje))}%` }}

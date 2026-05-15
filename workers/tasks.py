@@ -415,7 +415,7 @@ def ejecutar_scraping(
                         "imagenes_descargadas": resumen.get("imagenes_descargadas", 0),
                         "imagenes_fallidas": resumen.get("imagenes_fallidas", 0),
                         "fotos_pendientes_seleccion": productos_con_candidatas,
-                        "estado": EstadoJob.PENDIENTE_SELECCION_FOTOS,
+                        "estado": EstadoJob.PENDIENTE_SELECCION_FOTOS.value,
                     }
 
         # Actualizar estado final: COMPLETADO
@@ -502,11 +502,12 @@ def ejecutar_scraping(
             )
         _actualizar_estado(redis_client, job_status)
 
+        resumen_retorno = {k: v for k, v in resumen.items() if k not in ("errores_csv", "_productos")}
         logger.info(
             "Tarea Celery completada",
-            extra={"job_id": job_id, **{k: v for k, v in resumen.items() if k != "errores_csv"}},
+            extra={"job_id": job_id, **resumen_retorno},
         )
-        return resumen
+        return resumen_retorno
 
     except JobCancelledError:
         # El job fue cancelado externamente — no reintenta, no es un error

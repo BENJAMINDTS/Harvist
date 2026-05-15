@@ -18,6 +18,8 @@ export type EstadoJob =
   | 'completado'
   | 'fallido'
   | 'cancelado'
+  | 'pendiente_seleccion_fotos'
+  | 'pendiente_validacion_marcas'
 
 /** Evento de progreso emitido por el WebSocket del backend */
 export interface JobProgressEvent {
@@ -48,7 +50,13 @@ interface UseJobWebSocketReturn {
 
 const MAX_RETRIES = 5
 const BASE_DELAY_MS = 1_000
-const FINISHED_STATES: EstadoJob[] = ['completado', 'fallido', 'cancelado']
+const FINISHED_STATES: EstadoJob[] = [
+  'completado',
+  'fallido',
+  'cancelado',
+  'pendiente_seleccion_fotos',
+  'pendiente_validacion_marcas',
+]
 
 /**
  * Conecta al WebSocket de progreso de un job y devuelve el estado reactivo.

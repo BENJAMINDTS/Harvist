@@ -72,6 +72,7 @@ const App: React.FC = () => {
   const [brandValidationDone, setBrandValidationDone] = useState(false)
   const [photoSelectionDone, setPhotoSelectionDone] = useState(false)
   const [selectPhotos, setSelectPhotos] = useState(false)
+  const [isPendingPhotoSelection, setIsPendingPhotoSelection] = useState(false)
 
   // ── Hash routing ────────────────────────────────────────────────────────
 
@@ -131,6 +132,7 @@ const App: React.FC = () => {
     setBrandValidationDone(false)
     setPhotoSelectionDone(false)
     setSelectPhotos(false)
+    setIsPendingPhotoSelection(false)
   }
 
   // ── Handlers de HomeScreen (Harvist) ─────────────────────────────────────
@@ -231,7 +233,7 @@ const App: React.FC = () => {
 
       // Detectar si está en estado de selección de fotos (Fase 7.5)
       if (estado === 'pendiente_seleccion_fotos') {
-        // No avanzamos de estado, dejamos que el PhotoSelectionPanel se muestre
+        setIsPendingPhotoSelection(true)
       } else if (estado === 'pendiente_validacion_marcas') {
         const brands = await getBrandsPending(jobId)
         setPendingBrands(brands)
@@ -325,6 +327,7 @@ const App: React.FC = () => {
     setBrandValidationDone(false)
     setPhotoSelectionDone(false)
     setSelectPhotos(false)
+    setIsPendingPhotoSelection(false)
   }
 
   /** Callback: desde el historial el usuario abre un job anterior */
@@ -482,7 +485,7 @@ const App: React.FC = () => {
 
             {(appState === 'running' || appState === 'done') && jobId && (
               <JobProgress
-                key={jobId}
+                key={`${jobId}-${photoSelectionDone ? '1' : '0'}-${brandValidationDone ? '1' : '0'}`}
                 jobId={jobId}
                 tipoJob={tipoJob}
                 onFinished={handleJobFinished}
@@ -582,7 +585,7 @@ const App: React.FC = () => {
             {/* Panel de selección de fotos — visible cuando el job espera selección de fotos (Fase 7.5) */}
             {appState === 'done' &&
               tipoJob === 'fotos' &&
-              selectPhotos &&
+              (selectPhotos || isPendingPhotoSelection) &&
               jobId !== null &&
               !photoSelectionDone && (
                 <section className="w-full max-w-4xl mx-auto">

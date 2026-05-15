@@ -164,17 +164,21 @@ class ScrapingPipeline:
                 },
             )
 
-        # ── Paso 3: Comprimir en ZIP ───────────────────────────────────────────
-        try:
-            zip_path = self._storage.create_zip(self._carpeta_id)
-            ruta_zip = str(zip_path)
-        except Exception as exc:
-            logger.error(
-                "Error al crear el ZIP",
-                exc_info=exc,
-                extra={"job_id": self._job_id},
-            )
+        # ── Paso 3: Comprimir en ZIP (solo si NO se está en modo candidatos) ───
+        # En modo candidatos el ZIP se genera tras la selección del usuario.
+        if save_all_candidates:
             ruta_zip = ""
+        else:
+            try:
+                zip_path = self._storage.create_zip(self._carpeta_id)
+                ruta_zip = str(zip_path)
+            except Exception as exc:
+                logger.error(
+                    "Error al crear el ZIP",
+                    exc_info=exc,
+                    extra={"job_id": self._job_id},
+                )
+                ruta_zip = ""
 
         resumen = {
             "total_productos": total,

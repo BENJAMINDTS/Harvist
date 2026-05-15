@@ -204,14 +204,23 @@ async def crear_job(
         ),
     ] = None,
     validate_brands: Annotated[
-        bool,
+        str,
         Form(
             description=(
-                "Si True, el job espera validación manual de marcas nuevas antes de escribirlas "
+                "Si true/1, el job espera validación manual de marcas nuevas antes de escribirlas "
                 "en brand_cache.json (Fase 7.4). Solo aplica con tipo_job=marcas."
             )
         ),
-    ] = False,
+    ] = "false",
+    select_photos: Annotated[
+        str,
+        Form(
+            description=(
+                "Si true/1, el job descarga todas las candidatas por producto y espera selección "
+                "manual del usuario antes de generar el ZIP (Fase 7.5). Solo aplica con tipo_job=fotos."
+            )
+        ),
+    ] = "false",
 ) -> JSONResponse:
     """
     Recibe un CSV de inventario, encola el trabajo de scraping y devuelve el job_id.
@@ -255,6 +264,24 @@ async def crear_job(
 
     job_id = str(uuid.uuid4())
 
+    # Form fields send strings; coerce explicitly to bool
+    if isinstance(select_photos, bool):
+        _select_photos = select_photos
+        _validate_brands = validate_brands if isinstance(validate_brands, bool) else False
+    else:
+        _select_photos = str(select_photos).lower().strip() in ("true", "1", "yes", "on")
+        _validate_brands = str(validate_brands).lower().strip() in ("true", "1", "yes", "on")
+
+    logger.debug(
+        "Parámetros recibidos en crear_job",
+        extra={
+            "select_photos_raw": select_photos,
+            "select_photos_bool": _select_photos,
+            "validate_brands_raw": validate_brands,
+            "validate_brands_bool": _validate_brands,
+        },
+    )
+
     config = SearchConfig(
         tipo_job=tipo_job,
         modo=modo,
@@ -263,7 +290,8 @@ async def crear_job(
         groq_api_key_usuario=groq_api_key_usuario,
         store_type_usuario=store_type_usuario,
         target_languages=target_languages or [],
-        validate_brands=validate_brands,
+        validate_brands=_validate_brands,
+        select_photos=_select_photos,
         column_mapping=ColumnMapping(
             columna_codigo=columna_codigo,
             columna_ean=columna_ean,
@@ -1177,7 +1205,12 @@ async def obtener_fotos_job(
 
         codigos: list[tuple[str, str]] = []  # (codigo, nombre)
         try:
-            reader = csv.DictReader(io.StringIO(csv_raw))
+            _primera_linea = csv_raw.split("\n")[0] if "\n" in csv_raw else csv_raw[:4096]
+            _candidatos = [",", ";", "\t", "|"]
+            _delimitador = max(_candidatos, key=lambda d: _primera_linea.count(d))
+            if _primera_linea.count(_delimitador) == 0:
+                _delimitador = ","
+            reader = csv.DictReader(io.StringIO(csv_raw), delimiter=_delimitador)
             config_raw = await redis.get(_JOB_CONFIG_KEY.format(job_id=job_id))
             config_dict = json.loads(config_raw) if config_raw else {}
             col_mapping = config_dict.get("column_mapping", {})
@@ -1215,7 +1248,7 @@ async def obtener_fotos_job(
                     info = storage.get_candidate_info(job_id, codigo, idx)
                     candidata = CandidateInfo(
                         index=idx,
-                        url=f"/api/v1/jobs/{job_id}/photos/{codigo}/candidates/{idx}",
+                        url=f"/api/v1/files/{job_id}/photos/{codigo}/candidates/{idx}",
                         width=info.get("width", 0),
                         height=info.get("height", 0),
                         size_bytes=info.get("size_bytes", 0),
@@ -1482,4 +1515,7 @@ async def websocket_progreso(websocket: WebSocket, job_id: str) -> None:
         logger.info("Cliente WebSocket desconectado", extra={"job_id": job_id})
     finally:
         await redis.aclose()
-        await websocket.close()
+        try:
+            await websocket.close()
+        except RuntimeError:
+            pass
