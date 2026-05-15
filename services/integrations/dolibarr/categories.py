@@ -461,6 +461,54 @@ class DolibarrCategoryService:
         )
         return created
 
+    async def list_brands(
+        self,
+        brands_parent: str = "Marcas",
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict]:
+        """
+        Lista las marcas (subcategorías bajo la categoría padre ``brands_parent``).
+
+        Args:
+            brands_parent: nombre exacto de la categoría padre de marcas.
+            limit:         máximo de resultados.
+            offset:        desplazamiento para paginación.
+
+        Returns:
+            Lista de dicts de subcategorías (marcas) bajo ``brands_parent``.
+            Lista vacía si el padre no existe.
+        """
+        parent = await self.find_category_by_name(brands_parent, type="product")
+        if not parent:
+            return []
+        parent_id = int(parent["id"])
+        all_cats = await self.list_categories(type="product", limit=500, offset=0)
+        return [
+            c for c in all_cats
+            if int(c.get("fk_parent") or 0) == parent_id
+        ][offset: offset + limit]
+
+    async def find_or_create_brand(
+        self,
+        brand_name: str,
+        brands_parent: str = "Marcas",
+    ) -> dict:
+        """
+        Busca una marca bajo ``brands_parent``, o la crea si no existe.
+
+        Args:
+            brand_name:    nombre exacto de la marca (subcategoría).
+            brands_parent: nombre exacto de la categoría padre de marcas.
+
+        Returns:
+            Dict de la subcategoría (marca) resuelta o creada.
+
+        Raises:
+            IntegrationError: si la categoría padre no existe en Dolibarr.
+        """
+        return await self.find_or_create_subcategory(brands_parent, brand_name, type="product")
+
     async def list_products_in_category(
         self,
         category_id: int,
