@@ -1,200 +1,297 @@
-# 🚀 Harvist
+<div align="center">
 
-**Plataforma integral de enriquecimiento de catálogos de producto** — Descarga masiva de imágenes, generación de descripciones SEO con IA, y resolución automática de marcas mediante cascada de 8 niveles (Amazon, Open*Facts, GS1, Google, Bing).
+# Harvist
 
-## 🎯 Características
+### Plataforma integrada de enriquecimiento y sincronización de catálogos de producto
 
-### 1. **Scraping de Imágenes** 📸
-- Descarga masiva de imágenes de productos desde CSV
-- Búsqueda en Bing Images (configurable: Google, DuckDuckGo)
-- Validación automática con Pillow (dimensiones, formato, corrupción)
-- Redimensionado automático a 300x300px
-- Patrón Productor/Consumidor (Selenium + ThreadPool)
-- Descarga final en ZIP comprimido
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://typescriptlang.org)
+[![Redis](https://img.shields.io/badge/Redis-7-DC382D?style=flat-square&logo=redis&logoColor=white)](https://redis.io)
+[![Celery](https://img.shields.io/badge/Celery-5.4-37814A?style=flat-square&logo=celery&logoColor=white)](https://docs.celeryq.dev)
+[![Tests](https://img.shields.io/badge/Tests-130%2B-success?style=flat-square&logo=pytest&logoColor=white)](tests/)
 
-### 2. **Generación IA de Descripciones SEO** 🤖
-- Descripciones optimizadas para buscadores usando Groq (llama-3.3-70b)
-- Salida estructurada: descripción corta (gancho 10 palabras) + larga (persuasiva 60+) + keywords + meta_description
-- Batch processing (múltiples productos por llamada)
-- Exportación CSV integrada en resultado final
+<br/>
 
-### 3. **Resolución EAN → Marca** 🏷️
-- Cascada automática de 8 niveles sin Selenium (solo httpx):
-  1. Validación checksum EAN (GS1 Módulo 10)
-  2. Caché GS1 en memoria (prefijos conocidos)
-  3. Amazon.es (ficha + listing)
-  4-6. Open*Facts (PetFood, Food, UPC)
-  7. Google Dorking
-  8. Bing Search
-  9. Not found
-- **Aprendizaje automático**: registra prefijos nuevos para acelerar futuras búsquedas
-- Resultado: CSV con marca, fabricante, fuente, nivel de confianza
+> Automatización inteligente de catálogos para e-commerce — imágenes, descripciones SEO con IA, resolución de marcas y sincronización con los principales ERPs y CMS del mercado.
+>
+> Desarrollado por **BenjaminDTS** & **Carlos Vico** · Nubium Solutions
 
-### 4. **Integraciones ERP/CMS** (Fase 8-10) 🔄
-- **Dolibarr** — CRUD productos, categorías, terceros, pedidos, facturas, stock (9 módulos)
-- **Odoo** — XML-RPC, gestión de product templates, variantes, partners, compras, ventas, inventario (10 módulos)
-- **WordPress/WooCommerce** — REST API, productos simple/variable/agrupado, variantes, medios, órdenes (11 módulos)
-
-### 5. **Frontend Moderno** 💻
-- React 18 + TypeScript + Vite + Tailwind CSS
-- Interfaz drag-and-drop para CSV
-- Progreso en tiempo real vía WebSocket
-- Historial de trabajos paginado
-- Componentes reutilizables y accesibles
+</div>
 
 ---
 
-## 📊 Stack Técnico
+## Capturas de pantalla
+
+<div align="center">
+
+### Dashboard principal
+![Dashboard principal](docs/screenshots/dashboard.png)
+
+</div>
+
+<br/>
+
+<table>
+<tr>
+<td width="50%">
+
+**Módulo Harvist** — Enriquecimiento de catálogo
+![Módulo Harvist](docs/screenshots/module-harvist.png)
+
+</td>
+<td width="50%">
+
+**Módulo Dolibarr** — ERP integrado
+![Módulo Dolibarr](docs/screenshots/module-dolibarr.png)
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**Módulo Odoo** — Gestión ERP
+![Módulo Odoo](docs/screenshots/module-odoo.png)
+
+</td>
+<td width="50%">
+
+**Módulo WordPress / WooCommerce**
+![Módulo WordPress](docs/screenshots/module-wordpress.jpg)
+
+</td>
+</tr>
+</table>
+
+---
+
+## ¿Qué hace Harvist?
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### 📸 Búsqueda de Imágenes
+Descarga masiva de imágenes de productos directamente desde un CSV de inventario. Busca en Bing, Google o DuckDuckGo usando Selenium con `undetected-chromedriver` para evitar bloqueos. Valida cada imagen con Pillow (dimensiones, formato, corrupción), redimensiona y entrega todo en un ZIP listo para usar.
+
+</td>
+<td width="50%" valign="top">
+
+### 🤖 Descripciones con IA
+Genera descripciones SEO optimizadas en batch usando **Groq** (llama-3.3-70b) o **Anthropic Claude**. Cada producto recibe: descripción corta (gancho), descripción larga (persuasiva), keywords y meta_description. Soporta reintentos con backoff exponencial y exportación CSV integrada.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### 🏷️ Fichas de Marca
+Resuelve `EAN → Marca` mediante una cascada automática de **8 niveles** sin Selenium:
+1. Checksum GS1 Módulo 10
+2. Caché local de prefijos conocidos
+3. Amazon.es
+4–6. Open Pet Food Facts / Open Food Facts / UPCItemDb
+7. Google Dorking
+8. Bing Search
+
+Aprende automáticamente y registra prefijos nuevos para acelerar trabajos futuros.
+
+</td>
+<td width="50%" valign="top">
+
+### 🔄 Integraciones ERP / CMS
+Gestiona y sincroniza catálogos directamente desde Harvist, sin salir de la plataforma:
+
+- **Dolibarr** — Productos, categorías, marcas, terceros, pedidos, facturas, stock, campos extra
+- **Odoo** — Productos + variantes, partners, compras, ventas, inventario, facturas
+- **WordPress / WooCommerce** — Productos, variantes, categorías, pedidos, clientes, medios
+
+Cada módulo muestra indicador de conexión en tiempo real.
+
+</td>
+</tr>
+</table>
+
+---
+
+## Stack tecnológico
+
+<div align="center">
 
 | Capa | Tecnología |
-|------|-----------|
-| **Backend API** | Python 3.11 + FastAPI |
-| **Queue/Worker** | Celery + Redis |
-| **Scraping** | undetected-chromedriver + Selenium 4 + Pillow |
-| **IA** | Groq API (llama-3.3-70b) |
-| **Storage** | LocalStorageService + S3 + Azure Blob |
-| **Frontend** | React 18 + TypeScript + Vite + Tailwind |
-| **Testing** | pytest (130+ tests unitarios + integración) |
-| **Docs** | OpenAPI 3.1.0 + Swagger UI |
+|:-----|:-----------|
+| 🐍 **Backend** | Python 3.11 · FastAPI 0.111 · Uvicorn |
+| ⚙️ **Tareas asíncronas** | Celery 5.4 · Redis 7 |
+| 🕷️ **Scraping** | Selenium 4 · undetected-chromedriver · Pillow |
+| 🧠 **IA** | Groq API (llama-3.3-70b) · Anthropic Claude API |
+| ⚛️ **Frontend** | React 18 · TypeScript · Vite · Tailwind CSS |
+| 🗄️ **Almacenamiento** | Local · AWS S3 · Azure Blob Storage |
+| ✅ **Testing** | pytest · pytest-asyncio · pytest-cov · 130+ tests |
+| 📖 **API Docs** | OpenAPI 3.1 · Swagger UI |
+
+</div>
 
 ---
 
-## 🚀 Quick Start
+## Instalación
 
-### Requisitos
-- Python 3.11+
-- Node.js 18+ (npm)
-- Docker + Docker Compose (para Redis)
-- Navegador instalado (Chrome, Chromium, Edge, Brave, Opera)
+### Requisitos previos
 
-### 1️⃣ Clonar y Configurar
+- **Python 3.11+**
+- **Node.js 18+** y npm
+- **Redis 7** — vía Docker (recomendado)
+- **Navegador** — Chrome, Chromium, Edge, Brave u Opera GX
+
+### 1 · Clonar el repositorio
 
 ```bash
 git clone https://github.com/BENJAMINDTS/Harvist.git
 cd Harvist
-
-# Python
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -e ".[dev]"
-
-# Node
-cd frontend && npm install && cd ..
-
-# Variables de entorno
-cp .env.example .env.development
-# Editar .env.development con credenciales reales
 ```
 
-### 2️⃣ Iniciar Servicios (en orden)
+### 2 · Instalar dependencias
 
 ```bash
-# Terminal 1: Redis
-docker compose up -d
+# Backend Python
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -e ".[dev]"
 
-# Terminal 2: Celery Worker
+# Frontend
+cd frontend && npm install && cd ..
+```
+
+### 3 · Configurar entorno
+
+```bash
+cp .env.example .env.development
+```
+
+Variables mínimas para arrancar:
+
+```env
+APP_ENV=development
+
+# Navegador
+BROWSER_TYPE=chrome
+BROWSER_BINARY_PATH=C:\Program Files\Google\Chrome\Application\chrome.exe
+
+# IA — elige uno
+AI_PROVIDER=groq
+GROQ_API_KEY=gsk_...
+
+# Integraciones (solo las que uses)
+DOLIBARR_URL=https://mi-dolibarr.com
+DOLIBARR_API_KEY=
+
+ODOO_URL=http://localhost:8069
+ODOO_DB=nombre_bd
+ODOO_USER=admin@empresa.com
+ODOO_PASSWORD=
+
+WORDPRESS_URL=https://mi-tienda.com
+WORDPRESS_CONSUMER_KEY=ck_...
+WORDPRESS_CONSUMER_SECRET=cs_...
+```
+
+Ver [`.env.example`](.env.example) para la referencia completa.
+
+### 4 · Crear directorio de datos
+
+```bash
+mkdir data
+```
+
+---
+
+## Arrancar los servicios
+
+Lanza los cuatro servicios en este orden:
+
+```bash
+# 1 — Redis
+docker run -d -p 6379:6379 redis:7-alpine
+
+# 2 — Celery worker
 .venv/bin/celery -A workers.celery_app worker --loglevel=info --pool=solo
 
-# Terminal 3: FastAPI
+# 3 — FastAPI backend
 .venv/bin/uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
 
-# Terminal 4: Vite (frontend)
+# 4 — Frontend Vite
 cd frontend && npm run dev
 ```
 
-**URLs:**
-- API Swagger: http://localhost:8000/api/docs
-- Frontend: http://localhost:5173
-- Redis: localhost:6379
+<div align="center">
 
-### 3️⃣ Usar la Aplicación
+| Servicio | URL |
+|:---------|:----|
+| 🌐 **Frontend** | http://localhost:5173 |
+| 🔌 **API REST** | http://localhost:8000/api/v1 |
+| 📖 **Swagger UI** | http://localhost:8000/api/docs |
+| 🗄️ **Redis** | localhost:6379 |
 
-1. Ve a http://localhost:5173
-2. Sube CSV con columnas: `codigo`, `nombre`, `marca`, `categoria`
-3. Elige modo búsqueda (EAN / Nombre+Marca / Custom)
-4. Activa opciones: Generar descripciones IA, Resolver marcas
-5. Crea job y espera progreso en tiempo real
-6. Descarga ZIP con imágenes + descripciones + marcas
+</div>
+
+> Si usas el skill `/launch` de Claude Code, los cuatro servicios arrancan con un solo comando.
 
 ---
 
-## 📁 Estructura del Proyecto
+## Uso básico
+
+1. Abre **http://localhost:5173**
+2. Accede al módulo **Harvist** y elige una herramienta:
+
+| Herramienta | Qué hace | Entrada |
+|:------------|:---------|:--------|
+| **Búsqueda de Imágenes** | Descarga imágenes por producto, genera ZIP | CSV con `codigo` + `nombre` o `ean` |
+| **Descripciones con IA** | Genera textos SEO en batch | CSV de inventario + tipo de tienda |
+| **Fichas de Marca** | Resuelve EAN → marca para todo el catálogo | CSV con columna `ean` |
+
+3. Para **ERPs / CMS**, usa las pestañas Dolibarr, Odoo o WordPress — conecta tus credenciales en Configuración y gestiona tu catálogo directamente.
+
+### Formato de CSV de entrada
+
+```csv
+codigo,nombre,ean
+REF-001,Collar ajustable para perro,8435269012345
+REF-002,Comedero acero inoxidable,8435269012346
+```
+
+---
+
+## Estructura del proyecto
 
 ```
 harvist/
-├── api/
-│   ├── core/
-│   │   ├── config.py           # Pydantic Settings v2
-│   │   ├── logging.py          # loguru JSON
-│   │   └── security.py         # CORS + rate limiting
-│   ├── main.py                 # App factory FastAPI
+├── api/                        # Capa HTTP — recibe, valida, delega
+│   ├── core/                   # Config (Pydantic v2) · Logging (loguru) · Security
 │   └── v1/
-│       ├── schemas/
-│       │   └── job.py          # JobStatus, JobCreate, SearchConfig
-│       ├── endpoints/
-│       │   ├── jobs.py         # POST/GET jobs, WS progreso
-│       │   └── files.py        # GET descarga, DELETE cleanup
-│       └── router.py           # Monta endpoints
+│       ├── endpoints/          # jobs · files · dolibarr · odoo · wordpress
+│       └── schemas/            # JobCreate · JobStatus · TipoJob · EstadoJob
 │
-├── services/
-│   ├── csv_parser.py           # Lectura y validación CSV
-│   ├── storage_service.py      # LocalStorageService + S3/Azure
-│   ├── scraper/
-│   │   ├── pipeline.py         # Orquestador Productor/Consumidor
-│   │   ├── producer.py         # Selenium + fábrica navegadores
-│   │   ├── consumer.py         # ThreadPool + validación Pillow
-│   │   ├── brand_scraper.py    # Cascada EAN → marca (8 niveles)
-│   │   ├── brand_cache.py      # GS1 cache + aprendizaje automático
-│   │   └── brand_validator.py  # EAN checksum + longest prefix match
-│   ├── ai/
-│   │   ├── groq_client.py      # Cliente Groq con reintentos
-│   │   └── description_generator.py # Descripciones SEO batch
-│   └── utils/
-│       ├── ean_http_clients.py # Open*Facts, UPC, Google, Bing
-│       └── amazon_brand_client.py # Scraping Amazon sin Selenium
+├── services/                   # Lógica de negocio pura
+│   ├── scraper/                # pipeline · producer (Selenium) · consumer (ThreadPool) · brand_scraper
+│   ├── ai/                     # groq_client · description_generator
+│   └── integrations/           # base · dolibarr/ · odoo/ · wordpress/
 │
-├── workers/
-│   ├── celery_app.py           # Configuración Celery
-│   └── tasks.py                # Tarea ejecutar_scraping
-│
+├── workers/                    # Celery app + tasks
+├── tests/                      # 130+ tests unitarios e integración
 ├── frontend/
-│   ├── src/
-│   │   ├── api/
-│   │   │   └── client.ts       # Axios + WebSocket builder
-│   │   ├── components/
-│   │   │   ├── CsvUploader.tsx
-│   │   │   ├── SearchConfig.tsx
-│   │   │   ├── JobProgress.tsx
-│   │   │   ├── JobHistory.tsx
-│   │   │   └── BrandsPanel.tsx (Fase 6.4)
-│   │   ├── hooks/
-│   │   │   └── useJobWebSocket.ts # Reconexión automática
-│   │   └── App.tsx             # State machine
-│   ├── package.json
-│   └── vite.config.ts
+│   └── src/
+│       ├── components/         # CsvUploader · SearchConfig · JobProgress · JobHistory · paneles ERP
+│       └── hooks/              # useJobWebSocket (reconexión automática con backoff)
 │
-├── tests/
-│   ├── unit/test_csv_parser.py
-│   ├── services/scraper/test_brand_*.py
-│   └── integration/test_jobs_endpoint.py
-│
-├── .github/
-│   ├── workflows/
-│   │   ├── harvist-roadmap.yml        # Auto-labels, comentarios
-│   │   └── update-project-status.yml  # Cierra issues, actualiza proyecto
-│   ├── AUTOMATION.md                  # Detalles de workflows
-│   └── ROADMAP_SETUP.md               # Pasos manuales para proyecto v2
-│
-├── CLAUDE.md                   # Reglas de desarrollo + arquitectura
-├── ROADMAP_QUICK_START.md      # Guía práctica + ejemplos
-├── .env.example                # Plantilla variables
-├── pyproject.toml              # Dependencias Python (lockfile)
-└── openapi.yaml                # Contrato OpenAPI 3.1.0
+├── docs/screenshots/           # Capturas de la interfaz
+├── data/                       # Git-ignored — brand_cache.json · gs1_prefixes.db
+├── .env.example
+└── pyproject.toml
 ```
 
 ---
 
-## 🧪 Testing
+## Testing
 
 ```bash
 # Todos los tests
@@ -210,129 +307,53 @@ pytest tests/integration/ -v
 pytest --cov=api --cov=services --cov=workers
 ```
 
-**Cobertura actual:** 130+ tests (unitarios + integración)
+```bash
+# Linter Python
+ruff check .
+
+# Auditoría de dependencias
+pip-audit
+
+# Type-check Frontend
+cd frontend && npm run type-check
+```
 
 ---
 
-## 📋 Roadmap
+## Seguridad
 
-### ✅ Completado (Fase 1-6.3)
-- Core scraping imágenes + ThreadPool
-- API REST + WebSocket tiempo real
-- Frontend 4 componentes + state machine
-- Celery + Redis persistencia
-- Generación descripciones SEO (Groq)
-- Historial + paginación
-- Resolución EAN → marca (cascada 8 niveles, sin Selenium)
-
-### 🔒 En Desarrollo (Fase 6.4 - 7.3)
-| # | Fase | Descripción | Estado |
-|---|------|-------------|--------|
-| 6.4 | Frontend marcas | Panel tabla de marcas resueltas | [#41](https://github.com/BENJAMINDTS/Harvist/issues/41) |
-| 7.1 | Textos SEO | Meta title + meta description | [#42](https://github.com/BENJAMINDTS/Harvist/issues/42) |
-| 7.2 | Traducción | Múltiples idiomas (EN, FR, DE, IT, PT) | [#43](https://github.com/BENJAMINDTS/Harvist/issues/43) |
-| 7.3 | Revisión manual | Panel editable pre-exportación | [#44](https://github.com/BENJAMINDTS/Harvist/issues/44) |
-
-### 📅 Próximo (Fase 8-10)
-| # | Fase | Descripción | Módulos |
-|---|------|-------------|---------|
-| 8 | **Dolibarr** | Integración ERP | Productos, Categorías, Terceros, Pedidos, Facturas, Stock | [#45-#53](https://github.com/BENJAMINDTS/Harvist/issues?q=is%3Aissue+Fase+8) |
-| 9 | **Odoo** | XML-RPC sync | Productos, Partners, Compras, Ventas, Inventario | [TBD](https://github.com/BENJAMINDTS/Harvist/issues) |
-| 10 | **WordPress/WC** | REST API sync | Productos, Variantes, Categorías, Órdenes, Medios | [TBD](https://github.com/BENJAMINDTS/Harvist/issues) |
+- Secretos exclusivamente en `.env` — nunca en código ni en Git
+- CORS con lista blanca explícita — nunca `*`
+- Rate limiting en todos los endpoints públicos (`slowapi`)
+- Cabeceras de seguridad HTTP en todas las respuestas
+- Validación Pydantic en entrada · logging JSON sin datos sensibles
+- HTTPS obligatorio en staging y producción
 
 ---
 
-## 🤝 Contribuir
+## Equipo
 
-### Pasos
+<div align="center">
 
-1. **Elige issue** de [Projects/Harvist Roadmap](https://github.com/BENJAMINDTS/Harvist/projects)
-2. **Crea rama** basada en el issue:
-   ```bash
-   git checkout main && git pull
-   git checkout -b feat/fase-7.1-seo-texts
-   ```
-3. **Commits atómicos** (Conventional Commits):
-   ```bash
-   git commit -m "feat: create seo_generator.py"
-   git commit -m "feat: add endpoint GET /api/v1/files/{id}/seo"
-   git commit -m "test: add unit tests"
-   ```
-4. **Push y PR**:
-   ```bash
-   git push -u origin feat/fase-7.1-seo-texts
-   ```
-5. **Body del PR menciona issue**:
-   ```markdown
-   Fixes #42
-   
-   ## Cambios
-   - [x] Service creado
-   - [x] Endpoint agregado
-   - [x] Tests escritos
-   ```
-6. **Workflow automatiza**:
-   - ✅ Vincula issue
-   - ✅ Agrega label "phase:7.1"
-   - ✅ Marca como "in-progress"
-   - ✅ Comenta checklist
+| | Nombre | Contribuciones |
+|:---:|:-------|:--------------|
+| 👤 | **BenjaminDTS** · [GitHub](https://github.com/BENJAMINDTS) | Arquitectura · Backend · Frontend · Scraping · IA · Integraciones ERP/CMS · Testing |
+| 👤 | **Carlos Vico** · [GitHub](https://github.com/Carlitos6712) | Arquitectura · Backend · Frontend · Scraping · IA · Integraciones ERP/CMS · Testing |
 
-7. **Mergea y workflow**:
-   - ✅ Cierra issue
-   - ✅ Comenta confirmación
-   - ✅ Actualiza proyecto
-
-### Reglas de Código
-
-- **Separación**: `api/` no importa `services/`
-- **Logs**: `loguru`, nunca `print()`, sin datos sensibles
-- **Env vars**: via `get_settings()` (Python) o env (TS)
-- **Docstrings**: pydoc (Python) / JSDoc (TypeScript)
-- **Tests**: lógica crítica debe tener tests
-- **Commits**: uno por acción concreta, no `git add .`
-
-### Documentación
-
-- [CLAUDE.md](CLAUDE.md) — Especificaciones técnicas + reglas de desarrollo
-- [ROADMAP_QUICK_START.md](ROADMAP_QUICK_START.md) — Guía práctica + ejemplos
-- [.github/AUTOMATION.md](.github/AUTOMATION.md) — Detalles de workflows
-- [.github/ROADMAP_SETUP.md](.github/ROADMAP_SETUP.md) — Pasos manuales
+</div>
 
 ---
 
-## 🔐 Seguridad
+<div align="center">
 
-- Secretos en `.env` (nunca en git)
-- CORS lista blanca (nunca `*`)
-- Rate limiting en endpoints públicos
-- Cabeceras HTTP de seguridad (helmet)
-- Validación Pydantic en entrada
-- Logging JSON sin datos sensibles
-- HTTPS obligatorio en producción
+**Harvist** · Nubium Solutions · 2026
 
 ---
 
-## 📞 Equipo
+### Licencia
 
-- **Benjamin DTS** ([GitHub](https://github.com/BENJAMINDTS)) — Architetto, Backend, Scraping
-- **Carlos Vico** ([GitHub](https://github.com/Carlitos6712)) — IA, Frontend, Integraciones
+Uso **no comercial** con atribución obligatoria y compartir igual.
+Permitido para uso personal, educativo, investigación y proyectos sin ánimo de lucro.
+Para licencias comerciales contacta a los autores. Ver [`LICENSE`](LICENSE) para los términos completos.
 
----
-
-## 📄 Licencia
-
-[Definir licencia]
-
----
-
-## 🔗 Links
-
-- **Issues**: https://github.com/BENJAMINDTS/Harvist/issues
-- **Projects**: https://github.com/BENJAMINDTS/Harvist/projects
-- **Swagger UI**: http://localhost:8000/api/docs (development only)
-- **OpenAPI Spec**: `openapi.yaml`
-
----
-
-**Última actualización:** 2026-04-28  
-**Status:** Fases 1-6.3 ✅ | Fases 6.4-7.3 🔨 | Fases 8-10 📋
+</div>
