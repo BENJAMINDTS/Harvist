@@ -357,7 +357,7 @@ const App: React.FC = () => {
   // ── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
+    <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-950">
       {/* ── Cabecera ── */}
       <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-6 py-4">
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-6">
@@ -434,6 +434,7 @@ const App: React.FC = () => {
       </header>
 
       {/* ── Contenido principal ── */}
+      <div className="flex-1 overflow-auto">
       <main className="max-w-6xl mx-auto px-4 py-8 space-y-6">
         {error && (
           <div className="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm" role="alert">
@@ -708,6 +709,7 @@ const App: React.FC = () => {
           </Suspense>
         )}
       </main>
+      </div>
     </div>
   )
 }

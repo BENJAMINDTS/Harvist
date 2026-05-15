@@ -55,13 +55,13 @@ const ModuleCard: React.FC<{
   <button
     type="button"
     onClick={onClick}
-    className="group flex flex-col gap-5 rounded-2xl border-2 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-6 text-left shadow-sm transition-all duration-200 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2"
+    className="group flex flex-col gap-3 rounded-2xl border-2 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4 text-left shadow-sm transition-all duration-200 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2"
     style={{
       '--tw-ring-color': buttonColor,
     } as React.CSSProperties}
   >
     <div
-      className="flex h-12 w-12 items-center justify-center rounded-xl transition-colors duration-200"
+      className="flex h-10 w-10 items-center justify-center rounded-xl transition-colors duration-200"
       style={{ backgroundColor: iconBg }}
     >
       <div style={{ color: iconColor }}>
@@ -79,7 +79,7 @@ const ModuleCard: React.FC<{
     </div>
 
     <div
-      className="inline-flex w-full items-center justify-center rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition-colors duration-200"
+      className="inline-flex w-full items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-white transition-colors duration-200"
       style={{ backgroundColor: buttonColor }}
       aria-hidden="true"
     >
@@ -95,11 +95,11 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
   onSelectWordpress,
 }) => {
   return (
-    <div className="flex flex-col items-center w-full max-w-4xl mx-auto px-4 py-12 gap-10">
-      <div className="flex flex-col items-center gap-4 text-center">
-        <NsLogo size={72} />
+    <div className="flex flex-col items-center w-full max-w-4xl mx-auto px-4 py-4 gap-6">
+      <div className="flex flex-col items-center gap-2 text-center">
+        <NsLogo size={52} />
         <div>
-          <h1 className="text-4xl font-bold tracking-tight" style={{ color: '#1B5FAB' }}>
+          <h1 className="text-3xl font-bold tracking-tight" style={{ color: '#1B5FAB' }}>
             Harvist
           </h1>
           <p className="mt-2 text-base text-gray-500 dark:text-gray-400">
@@ -108,11 +108,11 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 w-full sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 w-full sm:grid-cols-2">
         <ModuleCard
           title="Harvist"
           description="Enriquecimiento masivo de productos: imágenes, descripciones SEO y resolución de marcas desde CSV"
-          icon={<ImageDownloadIcon className="h-7 w-7" />}
+          icon={<ImageDownloadIcon className="h-6 w-6" />}
           iconBg="#EFF6FF"
           iconColor="#1B5FAB"
           buttonColor="#1B5FAB"
@@ -122,7 +122,7 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
         <ModuleCard
           title="Dolibarr"
           description="Sincronización de productos, categorías, proveedores, pedidos, facturas e inventario con tu ERP Dolibarr"
-          icon={<CubeIcon className="h-7 w-7" />}
+          icon={<CubeIcon className="h-6 w-6" />}
           iconBg="#FEF3C7"
           iconColor="#D97706"
           buttonColor="#D97706"
@@ -132,7 +132,7 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
         <ModuleCard
           title="Odoo"
           description="Gestión integrada de productos, variantes, partners, compras, ventas e inventario en Odoo"
-          icon={<CubeIcon className="h-7 w-7" />}
+          icon={<CubeIcon className="h-6 w-6" />}
           iconBg="#DDD6FE"
           iconColor="#6366F1"
           buttonColor="#6366F1"
@@ -142,7 +142,7 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
         <ModuleCard
           title="WordPress/WooCommerce"
           description="Publicación de productos, variantes, categorías, atributos, pedidos y clientes en tu tienda online"
-          icon={<GlobalIcon className="h-7 w-7" />}
+          icon={<GlobalIcon className="h-6 w-6" />}
           iconBg="#F0FDF4"
           iconColor="#16A34A"
           buttonColor="#16A34A"
