@@ -610,6 +610,8 @@ class DolibarrProductService:
         category_name_to_id: dict[str, int] | None = None,
         subcategory_col: str | None = None,
         subcateg_pair_to_id: dict[str, int] | None = None,
+        brand_col: str | None = None,
+        brand_name_to_id: dict[str, int] | None = None,
         progress_callback: Callable[[int, int], None] | None = None,
     ) -> list[dict[str, Any]]:
         """
@@ -643,6 +645,8 @@ class DolibarrProductService:
             category_name_to_id:  mapa nombre_categoría → ID ya validado.
             subcategory_col:      nombre de la columna CSV con la subcategoría (opcional).
             subcateg_pair_to_id:  mapa "padre||hijo" → ID subcategoría ya resuelto.
+            brand_col:            nombre de la columna CSV con la marca (opcional).
+            brand_name_to_id:     mapa nombre_marca → ID Dolibarr de la marca ya resuelta.
             progress_callback:    función opcional ``(procesados, total) → None``.
 
         Returns:
@@ -726,7 +730,24 @@ class DolibarrProductService:
 
                 result["dolibarr_id"] = dolibarr_id
 
-                # Asignar subcategoría si se proporcionó columna de subcategoría
+                # Asignar marca (independiente de categoría)
+                if brand_col and category_svc and brand_name_to_id:
+                    brand_name = (row.get(brand_col) or "").strip()
+                    brand_cat_id = brand_name_to_id.get(brand_name)
+                    if brand_cat_id:
+                        try:
+                            await category_svc.assign_product(brand_cat_id, dolibarr_id)
+                            logger.info(
+                                "Marca asignada via CSV import",
+                                extra={"ref": ref, "brand": brand_name, "dolibarr_id": dolibarr_id},
+                            )
+                        except Exception as cat_exc:
+                            logger.warning(
+                                "Error asignando marca en CSV import",
+                                exc_info=cat_exc,
+                                extra={"ref": ref, "brand": brand_name},
+                            )
+                # Asignar subcategoría o categoría (independiente de marca)
                 if subcategory_col and category_col and category_svc and subcateg_pair_to_id:
                     parent_name = (row.get(category_col) or "").strip()
                     subcat_name = (row.get(subcategory_col) or "").strip()
@@ -747,7 +768,6 @@ class DolibarrProductService:
                                 extra={"ref": ref, "subcategory": subcat_name},
                             )
                 elif category_col and category_svc and category_name_to_id:
-                    # Asignar categoría simple (sin subcategoría)
                     cat_name = (row.get(category_col) or "").strip()
                     cat_id = category_name_to_id.get(cat_name)
                     if cat_id:
