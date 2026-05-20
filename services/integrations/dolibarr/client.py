@@ -71,7 +71,7 @@ class DolibarrClient(IntegrationClient):
                 "Content-Type": "application/json",
                 "Accept": "application/json",
             },
-            timeout=httpx.Timeout(connect=5.0, read=30.0, write=30.0, pool=5.0),
+            timeout=httpx.Timeout(connect=5.0, read=3600.0, write=3600.0, pool=5.0),
         )
 
         logger.info(

@@ -21,6 +21,7 @@ import {
   importWordPressCsv,
   getWordPressImportStatus,
   getWordPressCategoryTree,
+  syncWordPressAllToDolibarr,
 } from '@/api/client'
 import type {
   WooProduct,
@@ -125,6 +126,10 @@ export default function WordPressProducts() {
 
   // ── Selección masiva ────────────────────────────────────────────────────────
   const [selectedProductIds, setSelectedProductIds] = useState<Set<number>>(new Set())
+
+  // ── Sync masivo a Dolibarr ─────────────────────────────────────────────────
+  const [syncingToDoli, setSyncingToDoli] = useState(false)
+  const [syncToDoliResult, setSyncToDoliResult] = useState<{ created: number; updated: number; errors: number } | null>(null)
 
   // ── Campos del formulario ──────────────────────────────────────────────────
   // Información básica
@@ -285,6 +290,20 @@ export default function WordPressProducts() {
     }
   }
 
+  const handleSyncAllToDolibarr = async (): Promise<void> => {
+    if (!confirm('¿Sincronizar todos los productos de WooCommerce a Dolibarr? Se crearán o actualizarán por SKU/ref.')) return
+    setSyncingToDoli(true)
+    setSyncToDoliResult(null)
+    try {
+      const result = await syncWordPressAllToDolibarr()
+      setSyncToDoliResult({ created: result.created, updated: result.updated, errors: result.errors })
+    } catch (err: unknown) {
+      setError((err as { message?: string })?.message ?? 'Error en sync masivo a Dolibarr')
+    } finally {
+      setSyncingToDoli(false)
+    }
+  }
+
   const resetForm = () => {
     setFormName(''); setFormSku(''); setFormSlug(''); setFormType('simple')
     setFormStatus('publish'); setFormPrice(''); setFormSalePrice('')
@@ -429,6 +448,17 @@ export default function WordPressProducts() {
           >
             Importar CSV
           </button>
+          <button
+            onClick={handleSyncAllToDolibarr}
+            disabled={syncingToDoli}
+            className="px-4 py-2 text-sm bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-1"
+          >
+            {syncingToDoli ? (
+              <><span className="animate-spin inline-block">↻</span> Sincronizando...</>
+            ) : (
+              '→ Dolibarr'
+            )}
+          </button>
         </div>
         {selectedProductIds.size > 0 && (
           <button
@@ -477,6 +507,16 @@ export default function WordPressProducts() {
       {error && (
         <div className="bg-red-50 border-l-4 border-red-400 p-4 rounded text-sm text-red-700">
           {error}
+        </div>
+      )}
+
+      {syncToDoliResult && (
+        <div className="bg-green-50 border-l-4 border-green-400 p-4 rounded text-sm text-green-700 flex items-center justify-between">
+          <span>
+            Sync a Dolibarr completado — {syncToDoliResult.created} creados, {syncToDoliResult.updated} actualizados
+            {syncToDoliResult.errors > 0 && `, ${syncToDoliResult.errors} errores`}
+          </span>
+          <button onClick={() => setSyncToDoliResult(null)} className="text-green-600 hover:text-green-800 font-bold ml-4">✕</button>
         </div>
       )}
 

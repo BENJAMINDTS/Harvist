@@ -615,6 +615,27 @@ export async function deleteDolibarrProducts(ids: number[]): Promise<void> {
 }
 
 /**
+ * Sincroniza todos los productos de Dolibarr a WooCommerce.
+ * Crea los que no existen y actualiza los que sí.
+ *
+ * @author Carlos Vico
+ * @returns Resumen: total, created, updated, skipped, errors.
+ */
+export async function syncDolibarrAllToWordPress(): Promise<{
+  total: number
+  created: number
+  updated: number
+  skipped: number
+  errors: number
+  error_details: string[]
+}> {
+  const r = await apiClient.post<ApiResponse<{
+    total: number; created: number; updated: number; skipped: number; errors: number; error_details: string[]
+  }>>('/dolibarr/products/sync-all-to-wordpress', null, { timeout: 3_600_000 })
+  return r.data.data
+}
+
+/**
  * Sincroniza productos desde un job Harvist completado a Dolibarr.
  *
  * @author BenjaminDTS
@@ -948,7 +969,7 @@ export async function importDolibarrCsv(
   const response = await apiClient.post<ApiResponse<DolibarrImportTask>>(
     '/dolibarr/products/import',
     form,
-    { timeout: 30_000 },
+    { timeout: 3_600_000 },
   )
   return response.data.data
 }
@@ -1987,6 +2008,27 @@ export async function syncWordPressFromJob(
   return r.data.data
 }
 
+/**
+ * Sincroniza todos los productos de WooCommerce a Dolibarr.
+ * Crea los que no existen y actualiza los que sí.
+ *
+ * @author Carlos Vico
+ * @returns Resumen: total, created, updated, skipped, errors.
+ */
+export async function syncWordPressAllToDolibarr(): Promise<{
+  total: number
+  created: number
+  updated: number
+  skipped: number
+  errors: number
+  error_details: string[]
+}> {
+  const r = await apiClient.post<ApiResponse<{
+    total: number; created: number; updated: number; skipped: number; errors: number; error_details: string[]
+  }>>('/wordpress/products/sync-all-to-dolibarr', null, { timeout: 3_600_000 })
+  return r.data.data
+}
+
 // ── Categories ────────────────────────────────────────────────────────────────
 
 /**
@@ -2388,7 +2430,7 @@ export async function importWordPressCsv(
   const r = await apiClient.post<ApiResponse<WpImportTask>>(
     '/wordpress/products/csv/import',
     form,
-    { timeout: 30_000 },
+    { timeout: 3_600_000 },
   )
   return r.data.data
 }
