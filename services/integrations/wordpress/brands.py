@@ -41,6 +41,10 @@ class WordPressBrandService:
         """
         Busca o crea el atributo global 'brand' (pa_brand) en WooCommerce.
 
+        WooCommerce almacena los slugs de atributo con prefijo ``pa_`` en la taxonomía
+        interna, y la REST API devuelve ese slug prefijado. Por tanto se compara tanto
+        ``brand`` como ``pa_brand`` para encontrar un atributo existente.
+
         Returns:
             ID del atributo de producto para marcas.
         """
@@ -49,8 +53,10 @@ class WordPressBrandService:
 
         attrs: list[dict[str, Any]] = await self._client.list("products/attributes", limit=100)
         for attr in attrs:
-            if attr.get("slug") == _BRAND_ATTR_SLUG:
+            attr_slug: str = attr.get("slug", "")
+            if attr_slug in (_BRAND_ATTR_SLUG, f"pa_{_BRAND_ATTR_SLUG}"):
                 self._attr_id = int(attr["id"])
+                logger.debug("Atributo pa_brand encontrado", extra={"attr_id": self._attr_id, "slug": attr_slug})
                 return self._attr_id
 
         created = await self._client.create(
