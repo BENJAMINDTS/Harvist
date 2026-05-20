@@ -4,6 +4,16 @@
  * @author Carlos Vico
  */
 
+export interface WooProductAttribute {
+  id: number
+  name: string
+  slug: string
+  position: number
+  visible: boolean
+  variation: boolean
+  options: string[]
+}
+
 export interface WooProduct {
   id: number
   name: string
@@ -22,6 +32,7 @@ export interface WooProduct {
   stock_status: 'instock' | 'outofstock' | 'onbackorder'
   categories: WooCategoryRef[]
   images: WooImage[]
+  attributes: WooProductAttribute[]
   date_created: string
   date_modified: string
 }
