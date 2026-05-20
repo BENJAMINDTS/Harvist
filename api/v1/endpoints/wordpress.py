@@ -786,6 +786,58 @@ async def update_product(product_id: int, body: dict[str, Any] = Body(...)) -> d
     return _ok(result, "Producto actualizado en WooCommerce.")
 
 
+@router_products.put("/{product_id}/brand")
+async def set_product_brand(product_id: int, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """
+    Asigna o elimina la marca de un producto WooCommerce de forma atómica.
+
+    Obtiene el producto actual, preserva todos sus atributos no relacionados
+    con pa_brand, y aplica o elimina la marca indicada.
+
+    Args:
+        product_id: ID del producto WooCommerce.
+        body: ``{"brand_term_id": 5}`` para asignar, ``{"brand_term_id": null}`` para quitar.
+
+    Returns:
+        Dict con el producto actualizado.
+    """
+    client = await _get_client()
+    try:
+        brand_svc = WordPressBrandService(client)
+        product_svc = WordPressProductService(client)
+
+        product = await product_svc.get(product_id)
+        existing_attrs: list[dict[str, Any]] = product.get("attributes", [])
+        non_brand_attrs = [
+            a for a in existing_attrs
+            if a.get("slug") not in ("pa_brand", "brand")
+        ]
+
+        brand_term_id = body.get("brand_term_id")
+        new_attrs: list[dict[str, Any]] = list(non_brand_attrs)
+
+        if brand_term_id is not None:
+            brand_term = await brand_svc.get(int(brand_term_id))
+            attr_id = await brand_svc._get_attribute_id()
+            new_attrs.append({
+                "id": attr_id,
+                "options": [brand_term["name"]],
+                "visible": True,
+                "variation": False,
+            })
+
+        updated = await product_svc.update(product_id, {"attributes": new_attrs})
+        logger.info(
+            "Marca de producto actualizada",
+            extra={"product_id": product_id, "brand_term_id": brand_term_id},
+        )
+        return _ok(updated, "Marca del producto actualizada.")
+    except IntegrationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    finally:
+        await client.close()
+
+
 @router_products.delete("/{product_id}")
 async def delete_product(product_id: int) -> dict[str, Any]:
     """
