@@ -13,6 +13,7 @@ import {
   updateWordPressBrand,
   deleteWordPressBrand,
   getWordPressBrandProducts,
+  setWordPressProductBrand,
 } from '@/api/client'
 import type { WooBrand, WooProduct } from '@/types/wordpress'
 
@@ -40,6 +41,7 @@ export default function WordPressBrands() {
 
   const [brandProducts, setBrandProducts] = useState<WooProduct[]>([])
   const [productsLoading, setProductsLoading] = useState(false)
+  const [removingProductId, setRemovingProductId] = useState<number | null>(null)
 
   const load = async () => {
     setLoading(true)
@@ -81,6 +83,25 @@ export default function WordPressBrands() {
       setBrandProducts([])
     } finally {
       setProductsLoading(false)
+    }
+  }
+
+  const handleRemoveProductFromBrand = async (product: WooProduct) => {
+    if (!confirm(`¿Quitar la marca de "${product.name}"?`)) return
+    setRemovingProductId(product.id)
+    try {
+      await setWordPressProductBrand(product.id, null)
+      setBrandProducts((prev) => prev.filter((p) => p.id !== product.id))
+      // Decrement count optimistically in the brands list
+      setBrands((prev) =>
+        prev.map((b) =>
+          b.id === modal?.brand?.id ? { ...b, count: Math.max(0, b.count - 1) } : b,
+        ),
+      )
+    } catch (err: unknown) {
+      alert((err as { message?: string })?.message ?? 'Error quitando la marca del producto.')
+    } finally {
+      setRemovingProductId(null)
     }
   }
 
@@ -313,7 +334,7 @@ export default function WordPressBrands() {
                 <table className="w-full">
                   <thead className="bg-gray-50 sticky top-0">
                     <tr>
-                      {['ID', 'Nombre', 'SKU', 'Precio', 'Stock', 'Estado'].map((h) => (
+                      {['ID', 'Nombre', 'SKU', 'Precio', 'Stock', 'Estado', 'Acciones'].map((h) => (
                         <th
                           key={h}
                           className="px-4 py-3 text-left text-xs font-semibold text-gray-700"
@@ -345,6 +366,15 @@ export default function WordPressBrands() {
                           >
                             {p.status}
                           </span>
+                        </td>
+                        <td className="px-4 py-3 text-sm">
+                          <button
+                            onClick={() => handleRemoveProductFromBrand(p)}
+                            disabled={removingProductId === p.id}
+                            className="text-red-600 hover:text-red-800 text-xs font-medium disabled:opacity-50"
+                          >
+                            {removingProductId === p.id ? 'Quitando…' : 'Quitar marca'}
+                          </button>
                         </td>
                       </tr>
                     ))}
