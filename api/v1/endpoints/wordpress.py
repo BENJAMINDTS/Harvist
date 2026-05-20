@@ -53,16 +53,20 @@ Rutas bajo /api/v1/wordpress/db:
 
 from __future__ import annotations
 
+import base64
 import json
+import uuid
 from pathlib import Path
 from typing import Any
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Body, File, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, Body, File, Form, HTTPException, Query, Request, UploadFile, status
+from fastapi.responses import JSONResponse
 from loguru import logger
 
 from api.core.config import get_settings
 from api.v1.schemas.integrations import (
+    CsvImportPreview,
     IntegrationStatus,
     PaginatedResponse,
     SyncFromJobRequest,
@@ -685,21 +689,19 @@ async def list_products(
     """
     client = await _get_client()
     try:
-        svc = WordPressProductService(client)
-        items = await svc.list(
-            limit=limit,
-            offset=offset,
-            status=status_filter,
-            category=category,
-            search=search,
-        )
+        filters: dict[str, Any] = {"status": status_filter}
+        if category is not None:
+            filters["category"] = category
+        if search:
+            filters["search"] = search
+        items, total = await client.list_paged("products", limit=limit, offset=offset, filters=filters)
         return _ok(
             PaginatedResponse(
                 items=items,
-                total=len(items),
+                total=total,
                 limit=limit,
                 offset=offset,
-                has_more=len(items) == limit,
+                has_more=(offset + len(items)) < total,
             ).model_dump(),
             "Productos obtenidos.",
         )
@@ -907,6 +909,37 @@ async def delete_product(product_id: int) -> dict[str, Any]:
         await client.close()
 
 
+@router_products.delete("")
+async def bulk_delete_products(ids: list[int] = Body(...)) -> dict[str, Any]:
+    """
+    Elimina múltiples productos de WooCommerce en una sola operación batch.
+
+    Args:
+        ids: lista de IDs de productos a eliminar.
+
+    Returns:
+        Respuesta estándar con el número de productos eliminados.
+    """
+    if not ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="La lista de IDs no puede estar vacía.",
+        )
+    client = await _get_client()
+    try:
+        result = await client.batch_delete("products", ids)
+        deleted_count = len(result.get("delete", []))
+        logger.info(
+            "Batch delete WordPress completado",
+            extra={"ids": ids, "deleted": deleted_count},
+        )
+        return _ok({"deleted": deleted_count}, f"{deleted_count} productos eliminados de WooCommerce.")
+    except IntegrationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    finally:
+        await client.close()
+
+
 @router_products.post("/sync")
 async def sync_from_job(body: SyncFromJobRequest) -> dict[str, Any]:
     """
@@ -989,6 +1022,168 @@ async def sync_from_job(body: SyncFromJobRequest) -> dict[str, Any]:
         )
     finally:
         await client.close()
+
+
+# ── CSV Import ──────────────────────────────────────────────────────────────
+
+_MAX_CSV_BYTES = 10 * 1024 * 1024  # 10 MB
+_WP_IMPORT_KEY = "wordpress_import:{task_id}"
+_WP_IMPORT_TTL = 86400  # 24 horas
+
+
+@router_products.get("/csv/fields")
+async def get_csv_import_fields() -> JSONResponse:
+    """
+    Devuelve la lista de campos WooCommerce disponibles para el mapeo CSV.
+
+    No requiere conexión a WordPress.
+
+    Returns:
+        Lista de {key, label} para construir el selector de mapeo en el frontend.
+    """
+    from services.integrations.wordpress.products import WC_IMPORT_FIELDS  # noqa: PLC0415
+
+    return JSONResponse(content=_ok(WC_IMPORT_FIELDS, "Campos WooCommerce disponibles."))
+
+
+@router_products.post("/csv/preview")
+async def csv_preview(file: UploadFile) -> JSONResponse:
+    """
+    Pre-analiza un CSV y devuelve cabeceras + filas de muestra.
+
+    No requiere conexión a WordPress. Sirve para construir la UI de mapeo
+    antes de lanzar la importación real.
+
+    Args:
+        file: archivo CSV (multipart).
+
+    Returns:
+        CsvImportPreview con headers, preview (≤5 filas) y total_rows.
+    """
+    content = await file.read()
+    if len(content) > _MAX_CSV_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"El CSV supera el límite de 10 MB ({len(content)} bytes).",
+        )
+
+    svc = WordPressProductService.__new__(WordPressProductService)
+    try:
+        preview_data = svc.parse_csv_preview(content, preview_rows=5)
+    except Exception as exc:
+        logger.error("Error pre-analizando CSV para WordPress", exc_info=exc)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"No se pudo parsear el CSV: {exc}",
+        )
+
+    result = CsvImportPreview(**preview_data)
+    return JSONResponse(content=_ok(result.model_dump(), "CSV analizado."))
+
+
+@router_products.post("/csv/import", status_code=status.HTTP_202_ACCEPTED)
+async def import_from_csv(
+    file: UploadFile,
+    mapping: str = Form(...),
+    overwrite: bool = Form(default=False),
+    brand_column: str = Form(default=""),
+    category_column: str = Form(default=""),
+    subcategory_column: str = Form(default=""),
+) -> JSONResponse:
+    """
+    Inicia la importación masiva de productos desde CSV como tarea Celery asíncrona.
+
+    Valida el CSV y el mapeo de forma síncrona. Si todo es correcto,
+    encola la tarea y devuelve un ``task_id`` inmediatamente (HTTP 202).
+    El cliente debe hacer polling a ``GET /csv/import/{task_id}`` para
+    consultar el progreso y obtener los resultados.
+
+    Args:
+        file:                CSV de productos (multipart).
+        mapping:             JSON string con el mapeo columna_csv → campo_woocommerce.
+        overwrite:           si True, actualiza productos que ya existen (por SKU).
+        brand_column:        nombre de la columna CSV con la marca (opcional).
+        category_column:     nombre de la columna CSV con la categoría raíz (opcional).
+        subcategory_column:  nombre de la columna CSV con la subcategoría (opcional).
+
+    Returns:
+        HTTP 202 con ``{task_id, status: "pending"}``.
+    """
+    from workers.tasks import importar_productos_wordpress  # noqa: PLC0415
+
+    content = await file.read()
+    if len(content) > _MAX_CSV_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"El CSV supera el límite de 10 MB ({len(content)} bytes).",
+        )
+
+    try:
+        mapping_dict: dict[str, str] = json.loads(mapping)
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"El campo 'mapping' no es JSON válido: {exc}",
+        )
+
+    if not any(v == "name" for v in mapping_dict.values()):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="El mapeo debe incluir al menos una columna asignada al campo 'name' (Nombre).",
+        )
+
+    settings = get_settings()
+    task_id = str(uuid.uuid4())
+    csv_b64 = base64.b64encode(content).decode()
+
+    creds = await _get_wp_credentials()
+
+    importar_productos_wordpress.delay(
+        task_id=task_id,
+        csv_b64=csv_b64,
+        mapping=mapping_dict,
+        overwrite=overwrite,
+        brand_column=brand_column.strip(),
+        category_column=category_column.strip(),
+        subcategory_column=subcategory_column.strip(),
+        wp_url=creds.get("url", ""),
+        wp_consumer_key=creds.get("consumer_key", ""),
+        wp_consumer_secret=creds.get("consumer_secret", ""),
+    )
+
+    logger.info("Importación WordPress encolada", extra={"task_id": task_id})
+
+    return JSONResponse(
+        status_code=status.HTTP_202_ACCEPTED,
+        content=_ok({"task_id": task_id, "status": "pending"}, "Importación iniciada."),
+    )
+
+
+@router_products.get("/csv/import/{task_id}")
+async def get_import_status(task_id: str) -> JSONResponse:
+    """
+    Consulta el estado de una tarea de importación CSV de WordPress.
+
+    Args:
+        task_id: UUID de la tarea devuelto por POST /csv/import.
+
+    Returns:
+        Estado actual: pending/running/completed/failed + progreso + resultados.
+    """
+    redis_url = get_settings().redis_url or "redis://localhost:6379/0"
+    redis = aioredis.from_url(redis_url, decode_responses=True)
+    try:
+        raw = await redis.get(_WP_IMPORT_KEY.format(task_id=task_id))
+    finally:
+        await redis.aclose()
+
+    if raw is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Tarea {task_id} no encontrada o expirada.",
+        )
+
+    return JSONResponse(content=_ok(json.loads(raw), "Estado de importación."))
 
 
 # ── Categories ──────────────────────────────────────────────────────────────

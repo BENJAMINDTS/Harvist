@@ -274,6 +274,77 @@ class WordPressClient(IntegrationClient):
         result: list[dict[str, Any]] = response.json() if response.content else []
         return result
 
+    async def list_paged(
+        self,
+        resource: str,
+        limit: int = 50,
+        offset: int = 0,
+        filters: dict[str, Any] | None = None,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """
+        Lista recursos con paginación y devuelve el total real desde la cabecera X-WP-Total.
+
+        Args:
+            resource: nombre del recurso (ej: "products").
+            limit:    elementos por página.
+            offset:   desplazamiento absoluto.
+            filters:  filtros adicionales como query params.
+
+        Returns:
+            Tupla (items, total) donde total proviene de X-WP-Total.
+        """
+        page = (offset // limit) + 1
+        params: dict[str, Any] = {"per_page": limit, "page": page}
+        if filters:
+            params.update(filters)
+
+        response = await self._wc_request("GET", resource, params=params)
+        if response.status_code >= 400:
+            hint = ""
+            if response.status_code == 404:
+                hint = " — Verifica que la URL sea correcta y que WooCommerce REST API esté habilitada."
+            elif response.status_code == 401:
+                hint = " — Consumer Key o Consumer Secret incorrectos."
+            elif response.status_code == 403:
+                hint = " — La API Key no tiene permisos de lectura/escritura."
+            raise IntegrationError(
+                f"WooCommerce devolvió HTTP {response.status_code} al listar '{resource}'.{hint}",
+                platform="wordpress",
+                status_code=response.status_code,
+            )
+        items: list[dict[str, Any]] = response.json() if response.content else []
+        total = int(response.headers.get("X-WP-Total", len(items)))
+        return items, total
+
+    async def batch_delete(self, resource: str, ids: list[int]) -> dict[str, Any]:
+        """
+        Elimina múltiples recursos en una sola petición usando el endpoint batch de WooCommerce.
+
+        Args:
+            resource: nombre del recurso (ej: "products").
+            ids:      lista de IDs a eliminar.
+
+        Returns:
+            Dict con el resultado del batch (campo "delete" con los recursos eliminados).
+        """
+        response = await self._wc_request(
+            "POST",
+            f"{resource}/batch",
+            json={"delete": ids},
+        )
+        if response.status_code >= 400:
+            raise IntegrationError(
+                f"Error en batch delete de '{resource}': HTTP {response.status_code}",
+                platform="wordpress",
+                status_code=response.status_code,
+            )
+        result: dict[str, Any] = response.json() if response.content else {}
+        logger.info(
+            "Batch delete WooCommerce completado",
+            extra={"resource": resource, "count": len(ids)},
+        )
+        return result
+
     async def get(self, resource: str, resource_id: int | str) -> dict[str, Any]:
         """
         Obtiene un recurso por su ID.

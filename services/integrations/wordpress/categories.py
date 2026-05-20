@@ -135,3 +135,19 @@ class WordPressCategoryService:
             if cat["name"].lower() == name.lower() and cat.get("parent", 0) == parent_id:
                 return cat
         return await self.create({"name": name, "parent": parent_id})
+
+    async def find_or_create_subcategory(self, parent_name: str, sub_name: str) -> dict[str, Any]:
+        """
+        Busca o crea una subcategoría bajo una categoría padre.
+
+        Crea la categoría padre si tampoco existe.
+
+        Args:
+            parent_name: nombre de la categoría padre (se crea en raíz si no existe).
+            sub_name:    nombre de la subcategoría hija.
+
+        Returns:
+            Dict de la subcategoría encontrada o creada.
+        """
+        parent = await self.find_or_create(parent_name, parent_id=0)
+        return await self.find_or_create(sub_name, parent_id=parent["id"])

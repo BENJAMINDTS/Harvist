@@ -1795,6 +1795,8 @@ import type {
   WooOrder,
   WooCustomer,
   WooMedia,
+  WcImportField,
+  WpImportTask,
   WordPressConfigRequest,
   WordPressConfigResponse,
   WordPressDBConfigRequest,
@@ -1861,24 +1863,26 @@ export async function saveWordPressDBConfig(config: WordPressDBConfigRequest): P
 // ── Products ─────────────────────────────────────────────────────────────────
 
 /**
- * Lista productos WooCommerce con paginación.
+ * Lista productos WooCommerce con paginación completa.
  *
  * @author Carlos Vico
  * @param limit  - Elementos por página.
  * @param offset - Desplazamiento.
  * @param status - Filtro de estado.
- * @returns Lista de WooProduct.
+ * @param search - Búsqueda por nombre o SKU.
+ * @returns Objeto con items, total, limit, offset y has_more.
  */
 export async function listWordPressProducts(
   limit = 50,
   offset = 0,
   status = 'any',
-): Promise<WooProduct[]> {
-  const r = await apiClient.get<ApiResponse<{ items: WooProduct[] }>>(
+  search = '',
+): Promise<{ items: WooProduct[]; total: number; limit: number; offset: number; has_more: boolean }> {
+  const r = await apiClient.get<ApiResponse<{ items: WooProduct[]; total: number; limit: number; offset: number; has_more: boolean }>>(
     '/wordpress/products',
-    { params: { limit, offset, status } },
+    { params: { limit, offset, status, ...(search ? { search } : {}) } },
   )
-  return r.data.data.items
+  return r.data.data
 }
 
 /**
@@ -1929,6 +1933,16 @@ export async function updateWordPressProduct(
  */
 export async function deleteWordPressProduct(id: number): Promise<void> {
   await apiClient.delete(`/wordpress/products/${id}`)
+}
+
+/**
+ * Elimina múltiples productos de WooCommerce en una sola operación batch.
+ *
+ * @author Carlos Vico
+ * @param ids - Array de IDs de productos a eliminar.
+ */
+export async function deleteWordPressProducts(ids: number[]): Promise<void> {
+  await apiClient.delete('/wordpress/products', { data: ids })
 }
 
 /**
@@ -2314,5 +2328,91 @@ export async function queryWordPressDB(
     '/wordpress/db/query',
     { sql, params },
   )
+  return r.data.data
+}
+
+/**
+ * Devuelve la lista de campos WooCommerce disponibles para el mapeo CSV.
+ *
+ * @returns Lista de {key, label}.
+ */
+export async function getWordPressCsvFields(): Promise<WcImportField[]> {
+  const r = await apiClient.get<ApiResponse<WcImportField[]>>('/wordpress/products/csv/fields')
+  return r.data.data
+}
+
+/**
+ * Pre-analiza un CSV de productos WooCommerce: devuelve cabeceras, filas de muestra y total.
+ *
+ * @param file - Archivo CSV seleccionado por el usuario.
+ * @returns Objeto con headers, preview y total_rows.
+ */
+export async function previewWordPressCsv(
+  file: File,
+): Promise<{ headers: string[]; preview: Record<string, string>[]; total_rows: number }> {
+  const form = new FormData()
+  form.append('file', file)
+  const r = await apiClient.post<ApiResponse<{ headers: string[]; preview: Record<string, string>[]; total_rows: number }>>(
+    '/wordpress/products/csv/preview',
+    form,
+  )
+  return r.data.data
+}
+
+/**
+ * Importa productos en masa a WooCommerce desde un CSV con mapeo de columnas.
+ *
+ * @param file                - Archivo CSV.
+ * @param mapping             - Mapeo columna_csv → campo_woocommerce.
+ * @param overwrite           - Si true, actualiza productos existentes por SKU.
+ * @param brandColumn         - Columna CSV con la marca (opcional).
+ * @param categoryColumn      - Columna CSV con la categoría raíz (opcional).
+ * @param subcategoryColumn   - Columna CSV con la subcategoría (opcional).
+ * @returns WpImportTask con task_id para polling.
+ */
+export async function importWordPressCsv(
+  file: File,
+  mapping: Record<string, string>,
+  overwrite: boolean,
+  brandColumn?: string,
+  categoryColumn?: string,
+  subcategoryColumn?: string,
+): Promise<WpImportTask> {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('mapping', JSON.stringify(mapping))
+  form.append('overwrite', String(overwrite))
+  if (brandColumn) form.append('brand_column', brandColumn)
+  if (categoryColumn) form.append('category_column', categoryColumn)
+  if (subcategoryColumn) form.append('subcategory_column', subcategoryColumn)
+  const r = await apiClient.post<ApiResponse<WpImportTask>>(
+    '/wordpress/products/csv/import',
+    form,
+    { timeout: 30_000 },
+  )
+  return r.data.data
+}
+
+/**
+ * Consulta el estado de una tarea de importación CSV de WordPress.
+ *
+ * @param taskId - UUID de la tarea devuelto por importWordPressCsv.
+ * @returns WpImportTask con progreso y resultados cuando completa.
+ */
+export async function getWordPressImportStatus(taskId: string): Promise<WpImportTask> {
+  const r = await apiClient.get<ApiResponse<WpImportTask>>(
+    `/wordpress/products/csv/import/${taskId}`,
+  )
+  return r.data.data
+}
+
+/**
+ * Devuelve el árbol jerárquico de categorías WooCommerce.
+ *
+ * @author Carlos Vico
+ * @returns Lista de WooCategory raíz, cada una con campo children.
+ */
+export async function getWordPressCategoryTree(): Promise<WooCategory[]> {
+  const r = await apiClient.get<ApiResponse<WooCategory[]>>('/wordpress/categories/tree')
   return r.data.data
 }
