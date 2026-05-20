@@ -9,6 +9,7 @@ import { getWordPressStatus } from '@/api/client'
 import type { IntegrationStatus } from '@/types/dolibarr'
 import WordPressProducts from './WordPressProducts'
 import WordPressCategories from './WordPressCategories'
+import WordPressBrands from './WordPressBrands'
 import WordPressOrders from './WordPressOrders'
 import WordPressCustomers from './WordPressCustomers'
 import WordPressMedia from './WordPressMedia'
@@ -17,6 +18,7 @@ import WordPressConfig from './WordPressConfig'
 type WordPressTab =
   | 'productos'
   | 'categorias'
+  | 'marcas'
   | 'pedidos'
   | 'clientes'
   | 'media'
@@ -132,6 +134,7 @@ export default function WordPressPanel({ className = '' }: Props) {
             [
               { id: 'productos', label: 'Productos' },
               { id: 'categorias', label: 'Categorías' },
+              { id: 'marcas', label: 'Marcas' },
               { id: 'pedidos', label: 'Pedidos' },
               { id: 'clientes', label: 'Clientes' },
               { id: 'media', label: 'Media' },
@@ -159,6 +162,7 @@ export default function WordPressPanel({ className = '' }: Props) {
         <div className="p-6">
           {tab === 'productos' && <WordPressProducts />}
           {tab === 'categorias' && <WordPressCategories />}
+          {tab === 'marcas' && <WordPressBrands />}
           {tab === 'pedidos' && <WordPressOrders />}
           {tab === 'clientes' && <WordPressCustomers />}
           {tab === 'media' && <WordPressMedia />}
