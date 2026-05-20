@@ -76,6 +76,7 @@ from api.v1.schemas.integrations import (
     WordPressDBConfigResponse,
 )
 from services.integrations.base import IntegrationError, IntegrationNotConfiguredError
+from services.integrations.dolibarr.categories import DolibarrCategoryService
 from services.integrations.dolibarr.client import DolibarrClient
 from services.integrations.dolibarr.products import DolibarrProductService
 from services.integrations.dolibarr.stocks import DolibarrStockService
@@ -206,12 +207,12 @@ async def _get_db_credentials() -> dict[str, Any]:
     )
 
 
-async def _get_dolibarr_product_service() -> DolibarrProductService | None:
+async def _get_dolibarr_client_for_sync() -> DolibarrClient | None:
     """
-    Construye DolibarrProductService desde Redis o .env.
+    Construye DolibarrClient desde Redis o .env para uso en sync.
 
     Returns:
-        DolibarrProductService si Dolibarr está configurado, None si no.
+        DolibarrClient si Dolibarr está configurado, None si no.
     """
     settings = get_settings()
     redis_client: aioredis.Redis | None = None
@@ -237,8 +238,35 @@ async def _get_dolibarr_product_service() -> DolibarrProductService | None:
         else:
             return None
 
-    client = DolibarrClient(settings, override_url=url, override_api_key=api_key)
-    return DolibarrProductService(client)
+    return DolibarrClient(settings, override_url=url, override_api_key=api_key)
+
+
+async def _get_dolibarr_product_service() -> DolibarrProductService | None:
+    """
+    Construye DolibarrProductService desde Redis o .env.
+
+    Returns:
+        DolibarrProductService si Dolibarr está configurado, None si no.
+    """
+    doli_client = await _get_dolibarr_client_for_sync()
+    if doli_client is None:
+        return None
+    return DolibarrProductService(doli_client)
+
+
+async def _get_dolibarr_services_for_sync() -> (
+    tuple[DolibarrProductService, DolibarrCategoryService] | None
+):
+    """
+    Construye DolibarrProductService y DolibarrCategoryService desde Redis o .env.
+
+    Returns:
+        Tupla (DolibarrProductService, DolibarrCategoryService) o None si no configurado.
+    """
+    doli_client = await _get_dolibarr_client_for_sync()
+    if doli_client is None:
+        return None
+    return DolibarrProductService(doli_client), DolibarrCategoryService(doli_client)
 
 
 def _map_wc_to_dolibarr(wc_product: dict[str, Any]) -> dict[str, Any]:
@@ -273,6 +301,29 @@ def _map_wc_to_dolibarr(wc_product: dict[str, Any]) -> dict[str, Any]:
         except (ValueError, TypeError):
             pass
     return mapping
+
+
+def _extract_wc_brand_name(wc_product: dict[str, Any]) -> str:
+    """
+    Extrae el nombre de marca de un producto WooCommerce.
+
+    Soporta modo nativo (campo brands[]) y modo atributo (pa_brand / brand).
+
+    Args:
+        wc_product: dict del producto WooCommerce.
+
+    Returns:
+        Nombre de la marca o cadena vacía si no hay marca asignada.
+    """
+    brands = wc_product.get("brands", [])
+    if brands:
+        return (brands[0].get("name") or "").strip()
+    for attr in wc_product.get("attributes", []):
+        if attr.get("slug") in ("pa_brand", "brand", "pa_marca", "marca"):
+            opts = attr.get("options", [])
+            if opts:
+                return opts[0].strip()
+    return ""
 
 
 async def _sync_wc_stock_to_dolibarr(
@@ -784,20 +835,21 @@ async def update_product(product_id: int, body: dict[str, Any] = Body(...)) -> d
     sku: str = item.get("sku", "").strip()
 
     if sku:
-        doli_svc = await _get_dolibarr_product_service()
-        if doli_svc is not None:
+        doli_services = await _get_dolibarr_services_for_sync()
+        if doli_services is not None:
+            doli_svc, doli_cat_svc = doli_services
             try:
                 existing = await doli_svc._find_product_by_ref(sku)
                 if existing:
+                    doli_id = int(existing["id"])
                     dolibarr_payload = _map_wc_to_dolibarr(item)
-                    # ref + label son obligatorios en Dolibarr PUT
                     dolibarr_payload.setdefault("ref", sku)
                     dolibarr_payload.setdefault("label", item.get("name", sku))
-                    await doli_svc.update_product(int(existing["id"]), dolibarr_payload)
+                    await doli_svc.update_product(doli_id, dolibarr_payload)
                     dolibarr_sync = {"synced": True, "dolibarr_id": existing["id"]}
                     logger.info(
                         "Producto sincronizado WP→Dolibarr",
-                        extra={"wc_id": product_id, "sku": sku, "dolibarr_id": existing["id"]},
+                        extra={"wc_id": product_id, "sku": sku, "dolibarr_id": doli_id},
                     )
 
                     # ── Stock WC → Dolibarr ───────────────────────────────────
@@ -810,6 +862,43 @@ async def update_product(product_id: int, body: dict[str, Any] = Body(...)) -> d
                                 "Sync stock WP→Dolibarr falló",
                                 exc_info=exc,
                                 extra={"sku": sku},
+                            )
+
+                    # ── Categoría WC → Dolibarr ───────────────────────────────
+                    wc_categories = item.get("categories", [])
+                    if wc_categories:
+                        cat_name = (wc_categories[0].get("name") or "").strip()
+                        if cat_name:
+                            try:
+                                doli_cat = await doli_cat_svc.find_category_by_name(cat_name)
+                                if doli_cat:
+                                    await doli_cat_svc.assign_product(int(doli_cat["id"]), doli_id)
+                                    logger.info(
+                                        "Categoría sincronizada WP→Dolibarr",
+                                        extra={"sku": sku, "category": cat_name},
+                                    )
+                            except Exception as exc:
+                                logger.warning(
+                                    "Sync categoría WP→Dolibarr falló",
+                                    exc_info=exc,
+                                    extra={"sku": sku, "category": cat_name},
+                                )
+
+                    # ── Marca WC → Dolibarr ───────────────────────────────────
+                    brand_name = _extract_wc_brand_name(item)
+                    if brand_name:
+                        try:
+                            doli_brand = await doli_cat_svc.find_or_create_brand(brand_name)
+                            await doli_cat_svc.assign_product(int(doli_brand["id"]), doli_id)
+                            logger.info(
+                                "Marca sincronizada WP→Dolibarr",
+                                extra={"sku": sku, "brand": brand_name},
+                            )
+                        except Exception as exc:
+                            logger.warning(
+                                "Sync marca WP→Dolibarr falló",
+                                exc_info=exc,
+                                extra={"sku": sku, "brand": brand_name},
                             )
                 else:
                     dolibarr_sync = {"synced": False, "reason": f"SKU '{sku}' no encontrado en Dolibarr"}
