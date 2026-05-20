@@ -1790,6 +1790,7 @@ export async function deleteOdooProductProperty(
 import type {
   WooProduct,
   WooCategory,
+  WooBrand,
   WooOrder,
   WooCustomer,
   WooMedia,
@@ -1988,6 +1989,22 @@ export async function createWordPressCategory(
 }
 
 /**
+ * Actualiza una categoría en WooCommerce.
+ *
+ * @author BenjaminDTS
+ * @param id   - ID de la categoría.
+ * @param data - Campos a actualizar (name, description, image).
+ * @returns WooCategory actualizada.
+ */
+export async function updateWordPressCategory(
+  id: number,
+  data: Partial<WooCategory>,
+): Promise<WooCategory> {
+  const r = await apiClient.put<ApiResponse<WooCategory>>(`/wordpress/categories/${id}`, data)
+  return r.data.data
+}
+
+/**
  * Elimina una categoría de WooCommerce.
  *
  * @author Carlos Vico
@@ -1995,6 +2012,81 @@ export async function createWordPressCategory(
  */
 export async function deleteWordPressCategory(id: number): Promise<void> {
   await apiClient.delete(`/wordpress/categories/${id}`)
+}
+
+// ── Brands ────────────────────────────────────────────────────────────────────
+
+/**
+ * Lista las marcas de WooCommerce (términos de pa_brand).
+ *
+ * @author BenjaminDTS
+ * @param limit  - Máximo de resultados.
+ * @param offset - Desplazamiento.
+ * @returns Lista de WooBrand.
+ */
+export async function listWordPressBrands(limit = 100, offset = 0): Promise<WooBrand[]> {
+  const r = await apiClient.get<ApiResponse<{ items: WooBrand[] }>>(
+    '/wordpress/brands',
+    { params: { limit, offset } },
+  )
+  return r.data.data.items
+}
+
+/**
+ * Crea una nueva marca en WooCommerce (término pa_brand).
+ *
+ * @author BenjaminDTS
+ * @param name        - Nombre de la marca.
+ * @param description - Descripción opcional.
+ * @returns WooBrand creada.
+ */
+export async function createWordPressBrand(name: string, description = ''): Promise<WooBrand> {
+  const r = await apiClient.post<ApiResponse<WooBrand>>('/wordpress/brands', { name, description })
+  return r.data.data
+}
+
+/**
+ * Actualiza una marca de WooCommerce.
+ *
+ * @author BenjaminDTS
+ * @param id   - ID del término de marca.
+ * @param data - Campos a actualizar (name, description, slug).
+ * @returns WooBrand actualizada.
+ */
+export async function updateWordPressBrand(id: number, data: Partial<WooBrand>): Promise<WooBrand> {
+  const r = await apiClient.put<ApiResponse<WooBrand>>(`/wordpress/brands/${id}`, data)
+  return r.data.data
+}
+
+/**
+ * Elimina una marca de WooCommerce.
+ *
+ * @author BenjaminDTS
+ * @param id - ID del término de marca.
+ */
+export async function deleteWordPressBrand(id: number): Promise<void> {
+  await apiClient.delete(`/wordpress/brands/${id}`)
+}
+
+/**
+ * Lista los productos de WooCommerce que tienen asignada una marca.
+ *
+ * @author BenjaminDTS
+ * @param termId - ID del término de marca.
+ * @param limit  - Máximo de resultados.
+ * @param offset - Desplazamiento.
+ * @returns Lista de WooProduct.
+ */
+export async function getWordPressBrandProducts(
+  termId: number,
+  limit = 50,
+  offset = 0,
+): Promise<WooProduct[]> {
+  const r = await apiClient.get<ApiResponse<{ items: WooProduct[] }>>(
+    `/wordpress/brands/${termId}/products`,
+    { params: { limit, offset } },
+  )
+  return r.data.data.items
 }
 
 // ── Orders ────────────────────────────────────────────────────────────────────

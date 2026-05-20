@@ -189,3 +189,11 @@ export interface WPSiteInfo {
   admin_email: string | null
   db_version: string | null
 }
+
+export interface WooBrand {
+  id: number
+  name: string
+  slug: string
+  description: string
+  count: number
+}
