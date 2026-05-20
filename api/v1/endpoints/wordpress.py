@@ -787,23 +787,93 @@ async def get_product(product_id: int) -> dict[str, Any]:
 @router_products.post("", status_code=status.HTTP_201_CREATED)
 async def create_product(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
     """
-    Crea un producto en WooCommerce.
+    Crea un producto en WooCommerce y propaga la creación a Dolibarr si está configurado.
+
+    El producto se busca en Dolibarr por ref = SKU. Si existe se actualiza;
+    si no existe se crea. La operación WooCommerce se completa igualmente aunque
+    Dolibarr no esté configurado o el sync falle.
 
     Args:
         body: campos del producto (name, type, regular_price, sku, etc.).
 
     Returns:
-        Dict con el producto creado.
+        Dict con el producto creado e información del sync a Dolibarr.
     """
     client = await _get_client()
     try:
         svc = WordPressProductService(client)
         item = await svc.create(body)
-        return _ok(item, "Producto creado en WooCommerce.")
     except IntegrationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
         await client.close()
+
+    dolibarr_sync: dict[str, Any] = {"synced": False, "reason": "Dolibarr no configurado"}
+    sku: str = item.get("sku", "").strip()
+
+    if sku:
+        doli_services = await _get_dolibarr_services_for_sync()
+        if doli_services is not None:
+            doli_svc, doli_cat_svc = doli_services
+            try:
+                doli_payload = _map_wc_to_dolibarr(item)
+                doli_payload["ref"] = sku
+                doli_payload.setdefault("label", item.get("name", sku))
+                doli_payload.setdefault("tosell", 1)
+                doli_payload.setdefault("tobuy", 1)
+
+                existing = await doli_svc._find_product_by_ref(sku)
+                if existing:
+                    doli_id = int(existing["id"])
+                    await doli_svc.update_product(doli_id, doli_payload)
+                    dolibarr_sync = {"synced": True, "action": "updated", "dolibarr_id": doli_id}
+                    logger.info(
+                        "Producto actualizado en Dolibarr (sync desde creación WP)",
+                        extra={"wc_id": item.get("id"), "sku": sku, "dolibarr_id": doli_id},
+                    )
+                else:
+                    doli_created = await doli_svc.create_product(doli_payload)
+                    doli_id = int(doli_created["id"])
+                    dolibarr_sync = {"synced": True, "action": "created", "dolibarr_id": doli_id}
+                    logger.info(
+                        "Producto creado en Dolibarr (sync desde creación WP)",
+                        extra={"wc_id": item.get("id"), "sku": sku, "dolibarr_id": doli_id},
+                    )
+
+                # ── Categoría WC → Dolibarr ───────────────────────────────────
+                wc_categories = item.get("categories", [])
+                if wc_categories:
+                    cat_name = (wc_categories[0].get("name") or "").strip()
+                    if cat_name:
+                        try:
+                            doli_cat = await doli_cat_svc.find_category_by_name(cat_name)
+                            if doli_cat:
+                                await doli_cat_svc.assign_product(int(doli_cat["id"]), doli_id)
+                        except Exception as exc:
+                            logger.warning(
+                                "Sync categoría WP→Dolibarr (create) falló",
+                                exc_info=exc,
+                                extra={"sku": sku},
+                            )
+
+                # ── Marca WC → Dolibarr ───────────────────────────────────────
+                brand_name = _extract_wc_brand_name(item)
+                if brand_name:
+                    try:
+                        doli_brand = await doli_cat_svc.find_or_create_brand(brand_name)
+                        await doli_cat_svc.assign_product(int(doli_brand["id"]), doli_id)
+                    except Exception as exc:
+                        logger.warning(
+                            "Sync marca WP→Dolibarr (create) falló",
+                            exc_info=exc,
+                            extra={"sku": sku},
+                        )
+
+            except Exception as exc:
+                dolibarr_sync = {"synced": False, "reason": str(exc)}
+                logger.warning("Sync WP→Dolibarr (create) falló", exc_info=exc, extra={"sku": sku})
+
+    return _ok({**item, "dolibarr_sync": dolibarr_sync}, "Producto creado en WooCommerce.")
 
 
 @router_products.put("/{product_id}")
