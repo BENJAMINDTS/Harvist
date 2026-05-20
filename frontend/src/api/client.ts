@@ -2054,6 +2054,42 @@ export async function getWordPressBrandAttribute(): Promise<{ id: number; slug: 
 }
 
 /**
+ * Lista todos los atributos de producto globales de WooCommerce.
+ *
+ * Útil para identificar qué atributo almacena las marcas y configurar el override.
+ *
+ * @author BenjaminDTS
+ * @returns Lista de atributos con id, name, slug, term_count.
+ */
+export async function listWordPressAllAttributes(): Promise<
+  { id: number; name: string; slug: string; term_count: number }[]
+> {
+  const r = await apiClient.get<
+    ApiResponse<{ id: number; name: string; slug: string; term_count: number }[]>
+  >('/wordpress/brands/all-attributes')
+  return r.data.data
+}
+
+/**
+ * Configura qué atributo de WooCommerce se usará para marcas.
+ *
+ * Guarda el ID en Redis para que todas las llamadas posteriores usen ese atributo.
+ *
+ * @author BenjaminDTS
+ * @param attrId - ID del atributo seleccionado.
+ * @returns Objeto con id, slug y name del atributo configurado.
+ */
+export async function configureWordPressBrandAttribute(
+  attrId: number,
+): Promise<{ id: number; slug: string; name: string }> {
+  const r = await apiClient.put<ApiResponse<{ id: number; slug: string; name: string }>>(
+    '/wordpress/brands/attribute',
+    { attr_id: attrId },
+  )
+  return r.data.data
+}
+
+/**
  * Lista las marcas de WooCommerce (términos de pa_brand).
  *
  * @author BenjaminDTS

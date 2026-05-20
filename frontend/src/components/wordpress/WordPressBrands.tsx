@@ -14,8 +14,18 @@ import {
   deleteWordPressBrand,
   getWordPressBrandProducts,
   setWordPressProductBrand,
+  listWordPressAllAttributes,
+  configureWordPressBrandAttribute,
+  getWordPressBrandAttribute,
 } from '@/api/client'
 import type { WooBrand, WooProduct } from '@/types/wordpress'
+
+interface WooAttribute {
+  id: number
+  name: string
+  slug: string
+  term_count: number
+}
 
 const INPUT_CLS =
   'w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm'
@@ -43,6 +53,12 @@ export default function WordPressBrands() {
   const [productsLoading, setProductsLoading] = useState(false)
   const [removingProductId, setRemovingProductId] = useState<number | null>(null)
 
+  const [allAttributes, setAllAttributes] = useState<WooAttribute[]>([])
+  const [currentAttr, setCurrentAttr] = useState<{ id: number; name: string; slug: string } | null>(null)
+  const [showAttrConfig, setShowAttrConfig] = useState(false)
+  const [selectedAttrId, setSelectedAttrId] = useState<number | ''>('')
+  const [savingAttr, setSavingAttr] = useState(false)
+
   const load = async () => {
     setLoading(true)
     setError(null)
@@ -56,7 +72,37 @@ export default function WordPressBrands() {
     }
   }
 
+  const loadAttrInfo = async () => {
+    try {
+      const [attrs, current] = await Promise.all([
+        listWordPressAllAttributes(),
+        getWordPressBrandAttribute(),
+      ])
+      setAllAttributes(attrs)
+      setCurrentAttr(current)
+      setSelectedAttrId(current.id)
+    } catch {
+      // non-critical
+    }
+  }
+
   useEffect(() => { load() }, [])
+  useEffect(() => { loadAttrInfo() }, [])
+
+  const handleConfigureAttr = async () => {
+    if (!selectedAttrId) return
+    setSavingAttr(true)
+    try {
+      const updated = await configureWordPressBrandAttribute(Number(selectedAttrId))
+      setCurrentAttr(updated)
+      setShowAttrConfig(false)
+      await load()
+    } catch (err: unknown) {
+      alert((err as { message?: string })?.message ?? 'Error configurando el atributo.')
+    } finally {
+      setSavingAttr(false)
+    }
+  }
 
   const openCreate = () => {
     setFormName('')
@@ -150,6 +196,59 @@ export default function WordPressBrands() {
 
   return (
     <div className="space-y-4">
+      {/* Attribute config banner */}
+      <div className="flex items-center gap-3 px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm">
+        <span className="text-gray-600">
+          Atributo activo:
+          {currentAttr
+            ? <strong className="ml-1 text-gray-900">{currentAttr.name} ({currentAttr.slug})</strong>
+            : <span className="ml-1 text-gray-400">detectando…</span>}
+        </span>
+        <button
+          onClick={() => setShowAttrConfig((v) => !v)}
+          className="ml-auto text-xs text-purple-600 hover:text-purple-800 font-medium"
+        >
+          {showAttrConfig ? '▲ Cerrar' : '⚙ Cambiar atributo'}
+        </button>
+      </div>
+
+      {/* Attribute selector panel */}
+      {showAttrConfig && (
+        <div className="border border-purple-200 bg-purple-50 rounded-lg p-4 space-y-3">
+          <p className="text-sm text-gray-700 font-medium">
+            Selecciona el atributo de WooCommerce donde están tus marcas:
+          </p>
+          {allAttributes.length === 0 ? (
+            <p className="text-sm text-gray-400">Cargando atributos...</p>
+          ) : (
+            <div className="flex gap-2 flex-wrap items-end">
+              <select
+                value={selectedAttrId}
+                onChange={(e) => setSelectedAttrId(e.target.value ? Number(e.target.value) : '')}
+                className={`${INPUT_CLS} max-w-xs`}
+              >
+                <option value="">— Selecciona un atributo —</option>
+                {allAttributes.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name} ({a.slug}) — {a.term_count} términos
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={handleConfigureAttr}
+                disabled={!selectedAttrId || savingAttr}
+                className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium disabled:opacity-50"
+              >
+                {savingAttr ? 'Guardando…' : 'Aplicar'}
+              </button>
+            </div>
+          )}
+          <p className="text-xs text-gray-500">
+            Busca el atributo que contiene tus marcas (e.g. "Marca", "Brand"). La selección se guarda en el servidor.
+          </p>
+        </div>
+      )}
+
       {/* Toolbar */}
       <div className="flex flex-wrap gap-2 items-center">
         <input
@@ -172,9 +271,6 @@ export default function WordPressBrands() {
         >
           + Nueva marca
         </button>
-        <span className="text-xs text-gray-400 ml-auto">
-          Las marcas se gestionan como el atributo pa_brand de WooCommerce
-        </span>
       </div>
 
       {error && (
