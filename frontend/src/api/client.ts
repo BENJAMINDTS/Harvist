@@ -1789,7 +1789,6 @@ export async function deleteOdooProductProperty(
 
 import type {
   WooProduct,
-  WooProductAttribute,
   WooCategory,
   WooBrand,
   WooOrder,
