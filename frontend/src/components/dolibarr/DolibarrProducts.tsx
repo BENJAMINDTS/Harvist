@@ -20,6 +20,7 @@ import {
   deleteDolibarrProducts,
   listDolibarrCategories,
   listDolibarrBrands,
+  syncDolibarrAllToWordPress,
 } from '@/api/client'
 import {
   type DolibarrProduct,
@@ -82,6 +83,8 @@ export default function DolibarrProducts() {
   const [goToPageInput, setGoToPageInput] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedProductIds, setSelectedProductIds] = useState<Set<number>>(new Set())
+  const [syncingToWP, setSyncingToWP] = useState(false)
+  const [syncToWPResult, setSyncToWPResult] = useState<{ created: number; updated: number; errors: number } | null>(null)
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   
   const loadProducts = useCallback(async (limit = 10, offset = 0, query = '') => {
@@ -211,9 +214,22 @@ export default function DolibarrProducts() {
       clearTimeout(searchTimeoutRef.current)
     }
     searchTimeoutRef.current = setTimeout(() => {
-      // Al buscar, siempre volvemos a la primera página
       loadProducts(pagination.limit, 0, query)
     }, 300)
+  }
+
+  const handleSyncAllToWordPress = async () => {
+    if (!confirm('¿Sincronizar todos los productos de Dolibarr a WooCommerce? Se crearán o actualizarán por SKU/ref.')) return
+    setSyncingToWP(true)
+    setSyncToWPResult(null)
+    try {
+      const result = await syncDolibarrAllToWordPress()
+      setSyncToWPResult({ created: result.created, updated: result.updated, errors: result.errors })
+    } catch (err) {
+      setError((err as Error).message ?? 'Error en sync masivo a WordPress')
+    } finally {
+      setSyncingToWP(false)
+    }
   }
 
   return (
@@ -237,6 +253,17 @@ export default function DolibarrProducts() {
             className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-medium"
           >
             Importar CSV
+          </button>
+          <button
+            onClick={handleSyncAllToWordPress}
+            disabled={syncingToWP}
+            className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50 text-sm font-medium flex items-center gap-1"
+          >
+            {syncingToWP ? (
+              <><span className="animate-spin">↻</span> Sincronizando...</>
+            ) : (
+              '→ WordPress'
+            )}
           </button>
         </div>
         {/* Botón de eliminar seleccionados */}
@@ -268,6 +295,16 @@ export default function DolibarrProducts() {
       {error && (
         <div className="bg-red-50 border-l-4 border-red-400 p-4 rounded text-sm text-red-700">
           {error}
+        </div>
+      )}
+
+      {syncToWPResult && (
+        <div className="bg-green-50 border-l-4 border-green-400 p-4 rounded text-sm text-green-700 flex items-center justify-between">
+          <span>
+            Sync a WordPress completado — {syncToWPResult.created} creados, {syncToWPResult.updated} actualizados
+            {syncToWPResult.errors > 0 && `, ${syncToWPResult.errors} errores`}
+          </span>
+          <button onClick={() => setSyncToWPResult(null)} className="text-green-600 hover:text-green-800 font-bold ml-4">✕</button>
         </div>
       )}
 
