@@ -324,3 +324,19 @@ class WordPressBrandService:
                 "attribute_term": brand_id,
             },
         )
+
+    async def find_or_create_by_name(self, name: str) -> dict[str, Any]:
+        """
+        Busca una marca por nombre exacto (case-insensitive). Si no existe, la crea.
+
+        Args:
+            name: nombre de la marca a buscar o crear.
+
+        Returns:
+            Dict con los datos de la marca (id, name, slug).
+        """
+        brands = await self.list(limit=200)
+        for brand in brands:
+            if brand.get("name", "").lower() == name.lower():
+                return brand
+        return await self.create(name)
