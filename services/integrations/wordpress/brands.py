@@ -1,16 +1,25 @@
 """
-Servicio de gestión de marcas WooCommerce via atributo global de producto.
+Servicio de gestión de marcas WooCommerce.
 
-Las marcas se modelan como términos de un atributo de producto WooCommerce.
-El atributo se detecta automáticamente buscando por slug conocidos (brand,
-pa_brand, marca, pa_marca, …) o por nombre que contenga "brand"/"marca".
-Si no existe ninguno se crea un atributo "brand" (pa_brand).
+Soporta dos backends de marcas:
 
-El ID del atributo puede fijarse externamente mediante set_attribute_override()
-para sobrescribir la detección automática.
+**Nativo (prioritario):**
+  WooCommerce 8.6+ o plugin WooCommerce Brands instala el endpoint
+  ``/wc/v3/products/brands`` con taxonomía ``product_brand``.
+  En este modo las marcas se gestionan directamente por ese endpoint
+  y se asignan a productos via el campo ``brands: [{id}]``.
+
+**Atributo (fallback):**
+  Marcas modeladas como términos de un atributo global de producto.
+  El atributo se detecta por slug (brand, pa_brand, marca, pa_marca…)
+  o por nombre que contenga "brand"/"marca". Si no existe se crea.
+
+La detección es automática: se intenta el endpoint nativo primero;
+si devuelve 404 se cae al modo atributo. El resultado se cachea
+por instancia.
 
 :author: BenjaminDTS
-:version: 1.1.0
+:version: 2.0.0
 """
 
 from __future__ import annotations
@@ -19,52 +28,83 @@ from typing import Any
 
 from loguru import logger
 
+from services.integrations.base import IntegrationError
 from services.integrations.wordpress.client import WordPressClient
 
 _BRAND_ATTR_SLUG = "brand"
 _BRAND_ATTR_NAME = "Marca"
 
-# Slugs comunes para el atributo de marca en WooCommerce (con y sin prefijo pa_)
 _BRAND_SLUG_CANDIDATES: frozenset[str] = frozenset({
     "brand", "pa_brand",
     "marca", "pa_marca",
     "brands", "pa_brands",
     "marcas", "pa_marcas",
 })
-
-# Palabras clave para detección por nombre del atributo (case-insensitive)
 _BRAND_NAME_KEYWORDS: frozenset[str] = frozenset({"brand", "marca"})
+
+_NATIVE_RESOURCE = "products/brands"
 
 
 class WordPressBrandService:
     """
-    Servicio CRUD para marcas WooCommerce (términos del atributo de marca).
+    Servicio CRUD para marcas WooCommerce.
 
-    Detecta automáticamente el atributo de marca existente en WooCommerce
-    buscando por slug o por nombre. Soporta override manual del ID de atributo.
+    Auto-detecta si el sitio usa el endpoint nativo ``products/brands``
+    (WooCommerce 8.6+ / plugin Brands) y lo usa; si no existe cae al
+    modo de atributo global (pa_brand / pa_marca).
 
     :author: BenjaminDTS
     """
 
-    def __init__(self, client: WordPressClient, attr_id_override: int | None = None) -> None:
+    def __init__(
+        self,
+        client: WordPressClient,
+        attr_id_override: int | None = None,
+        use_native_override: bool | None = None,
+    ) -> None:
         """
         Args:
-            client:           instancia de WordPressClient ya configurada.
-            attr_id_override: ID de atributo forzado externamente (omite detección automática).
+            client:              WordPressClient ya configurado.
+            attr_id_override:    Fuerza un ID de atributo concreto (modo atributo).
+            use_native_override: True/False fuerza el modo; None = auto-detectar.
         """
         self._client = client
         self._attr_id: int | None = attr_id_override
+        self._use_native: bool | None = use_native_override
+
+    # ── Detección de backend ─────────────────────────────────────────────────
+
+    async def _native_available(self) -> bool:
+        """
+        Comprueba si el endpoint nativo de marcas está disponible.
+
+        Cachea el resultado por instancia para no repetir la petición.
+
+        Returns:
+            True si ``/wc/v3/products/brands`` responde con 2xx.
+        """
+        if self._use_native is not None:
+            return self._use_native
+        try:
+            await self._client.list(_NATIVE_RESOURCE, limit=1)
+            self._use_native = True
+            logger.debug("WooCommerce native brands endpoint detectado")
+        except IntegrationError:
+            self._use_native = False
+            logger.debug("WooCommerce native brands no disponible, usando atributo")
+        return self._use_native
+
+    # ── Modo atributo: helpers ───────────────────────────────────────────────
 
     async def _get_attribute_id(self) -> int:
         """
-        Detecta o crea el atributo de marca en WooCommerce.
+        Detecta o crea el atributo global de marca en WooCommerce.
 
-        Estrategia de detección (por orden de prioridad):
-          1. Override externo via constructor.
+        Estrategia (en orden):
+          1. Override externo.
           2. Slug exacto en ``_BRAND_SLUG_CANDIDATES``.
-          3. Nombre del atributo contiene "brand" o "marca" (case-insensitive);
-             si hay varios candidatos, se elige el que más términos tenga.
-          4. Creación de un nuevo atributo "brand" (pa_brand).
+          3. Nombre del atributo contiene "brand"/"marca"; mayor ``term_count`` gana.
+          4. Creación de nuevo atributo "brand" (pa_brand).
 
         Returns:
             ID del atributo de producto para marcas.
@@ -74,7 +114,6 @@ class WordPressBrandService:
 
         attrs: list[dict[str, Any]] = await self._client.list("products/attributes", limit=100)
 
-        # Paso 1: coincidencia exacta de slug
         for attr in attrs:
             if attr.get("slug", "").lower() in _BRAND_SLUG_CANDIDATES:
                 self._attr_id = int(attr["id"])
@@ -84,7 +123,6 @@ class WordPressBrandService:
                 )
                 return self._attr_id
 
-        # Paso 2: nombre contiene keyword "brand"/"marca"; preferir mayor term_count
         name_candidates = [
             a for a in attrs
             if any(kw in a.get("name", "").lower() for kw in _BRAND_NAME_KEYWORDS)
@@ -98,7 +136,6 @@ class WordPressBrandService:
             )
             return self._attr_id
 
-        # Paso 3: crear atributo nuevo
         created = await self._client.create(
             "products/attributes",
             {
@@ -116,92 +153,108 @@ class WordPressBrandService:
     def _terms_resource(self, attr_id: int) -> str:
         return f"products/attributes/{attr_id}/terms"
 
+    # ── CRUD público ─────────────────────────────────────────────────────────
+
     async def list(self, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
         """
-        Lista todos los términos de marca (pa_brand).
+        Lista las marcas disponibles en WooCommerce.
 
         Args:
-            limit: máximo de términos a retornar.
+            limit: máximo de marcas a retornar.
             offset: desplazamiento para paginación.
 
         Returns:
-            Lista de dicts con id, name, slug, count, description.
+            Lista de dicts con id, name, slug, count/term_count, description.
         """
+        if await self._native_available():
+            return await self._client.list(_NATIVE_RESOURCE, limit=limit, offset=offset)
         attr_id = await self._get_attribute_id()
         return await self._client.list(self._terms_resource(attr_id), limit=limit, offset=offset)
 
-    async def get(self, term_id: int) -> dict[str, Any]:
+    async def get(self, brand_id: int) -> dict[str, Any]:
         """
-        Obtiene un término de marca por su ID.
+        Obtiene una marca por su ID.
 
         Args:
-            term_id: ID del término WooCommerce.
+            brand_id: ID de la marca WooCommerce.
 
         Returns:
-            Dict con los datos del término.
+            Dict con los datos de la marca.
         """
+        if await self._native_available():
+            return await self._client.get(_NATIVE_RESOURCE, brand_id)
         attr_id = await self._get_attribute_id()
-        return await self._client.get(self._terms_resource(attr_id), term_id)
+        return await self._client.get(self._terms_resource(attr_id), brand_id)
 
     async def create(self, name: str, description: str = "") -> dict[str, Any]:
         """
-        Crea un nuevo término de marca en WooCommerce.
+        Crea una nueva marca en WooCommerce.
 
         Args:
             name: nombre de la marca.
             description: descripción opcional.
 
         Returns:
-            Dict con el término creado.
+            Dict con la marca creada.
 
         Raises:
-            IntegrationError: si la creación falla en WooCommerce.
+            IntegrationError: si la creación falla.
         """
-        attr_id = await self._get_attribute_id()
         data: dict[str, Any] = {"name": name}
         if description:
             data["description"] = description
-        result = await self._client.create(self._terms_resource(attr_id), data)
-        logger.info("Marca WooCommerce creada", extra={"term_id": result.get("id"), "name": name})
+
+        if await self._native_available():
+            result = await self._client.create(_NATIVE_RESOURCE, data)
+        else:
+            attr_id = await self._get_attribute_id()
+            result = await self._client.create(self._terms_resource(attr_id), data)
+
+        logger.info("Marca WooCommerce creada", extra={"brand_id": result.get("id"), "name": name})
         return result
 
-    async def update(self, term_id: int, data: dict[str, Any]) -> dict[str, Any]:
+    async def update(self, brand_id: int, data: dict[str, Any]) -> dict[str, Any]:
         """
-        Actualiza un término de marca existente.
+        Actualiza una marca existente.
 
         Args:
-            term_id: ID del término.
+            brand_id: ID de la marca.
             data: campos a actualizar (name, description, slug).
 
         Returns:
-            Dict con el término actualizado.
+            Dict con la marca actualizada.
         """
-        attr_id = await self._get_attribute_id()
-        result = await self._client.update(self._terms_resource(attr_id), term_id, data)
-        logger.info("Marca WooCommerce actualizada", extra={"term_id": term_id})
+        if await self._native_available():
+            result = await self._client.update(_NATIVE_RESOURCE, brand_id, data)
+        else:
+            attr_id = await self._get_attribute_id()
+            result = await self._client.update(self._terms_resource(attr_id), brand_id, data)
+
+        logger.info("Marca WooCommerce actualizada", extra={"brand_id": brand_id})
         return result
 
-    async def delete(self, term_id: int) -> bool:
+    async def delete(self, brand_id: int) -> bool:
         """
-        Elimina un término de marca de WooCommerce.
+        Elimina una marca de WooCommerce.
 
         Args:
-            term_id: ID del término a eliminar.
+            brand_id: ID de la marca a eliminar.
 
         Returns:
             True si se eliminó correctamente.
         """
-        attr_id = await self._get_attribute_id()
-        result = await self._client.delete(self._terms_resource(attr_id), term_id)
-        logger.info("Marca WooCommerce eliminada", extra={"term_id": term_id})
+        if await self._native_available():
+            result = await self._client.delete(_NATIVE_RESOURCE, brand_id)
+        else:
+            attr_id = await self._get_attribute_id()
+            result = await self._client.delete(self._terms_resource(attr_id), brand_id)
+
+        logger.info("Marca WooCommerce eliminada", extra={"brand_id": brand_id})
         return result
 
     async def list_all_attributes(self) -> list[dict[str, Any]]:
         """
-        Lista todos los atributos de producto globales de WooCommerce.
-
-        Útil para que el usuario identifique cuál de sus atributos corresponde
-        a las marcas y pueda configurar el override.
+        Lista todos los atributos globales de WooCommerce.
 
         Returns:
             Lista de atributos con id, name, slug, term_count.
@@ -210,24 +263,36 @@ class WordPressBrandService:
 
     async def get_attribute_info(self) -> dict[str, Any]:
         """
-        Devuelve los metadatos del atributo global pa_brand.
+        Devuelve metadatos del backend de marcas activo.
 
-        Útil para que el frontend conozca el ID del atributo y pueda
-        construir el payload de ``attributes`` al crear o actualizar productos.
+        Incluye el campo ``use_native`` para que el frontend sepa qué
+        campo usar al asignar marcas a productos (``brands`` vs ``attributes``).
 
         Returns:
-            Dict con id, slug y name del atributo pa_brand.
+            Dict con id, slug, name, use_native.
         """
+        if await self._native_available():
+            return {
+                "id": 0,
+                "slug": "product_brand",
+                "name": "Brands (nativo WooCommerce)",
+                "use_native": True,
+            }
         attr_id = await self._get_attribute_id()
         attrs: list[dict[str, Any]] = await self._client.list("products/attributes", limit=100)
         for attr in attrs:
             if int(attr["id"]) == attr_id:
-                return attr
-        return {"id": attr_id, "slug": f"pa_{_BRAND_ATTR_SLUG}", "name": _BRAND_ATTR_NAME}
+                return {**attr, "use_native": False}
+        return {
+            "id": attr_id,
+            "slug": f"pa_{_BRAND_ATTR_SLUG}",
+            "name": _BRAND_ATTR_NAME,
+            "use_native": False,
+        }
 
     async def get_products(
         self,
-        term_id: int,
+        brand_id: int,
         limit: int = 50,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
@@ -235,13 +300,20 @@ class WordPressBrandService:
         Lista los productos que tienen asignada una marca concreta.
 
         Args:
-            term_id: ID del término de marca.
-            limit: máximo de productos a retornar.
-            offset: desplazamiento para paginación.
+            brand_id: ID de la marca.
+            limit: máximo de productos.
+            offset: desplazamiento.
 
         Returns:
             Lista de productos WooCommerce con la marca especificada.
         """
+        if await self._native_available():
+            return await self._client.list(
+                "products",
+                limit=limit,
+                offset=offset,
+                filters={"brand": brand_id},
+            )
         attr_id = await self._get_attribute_id()
         return await self._client.list(
             "products",
@@ -249,6 +321,6 @@ class WordPressBrandService:
             offset=offset,
             filters={
                 "attribute": f"pa_{_BRAND_ATTR_SLUG}",
-                "attribute_term": term_id,
+                "attribute_term": brand_id,
             },
         )
