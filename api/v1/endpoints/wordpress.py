@@ -827,8 +827,11 @@ async def set_product_brand(product_id: int, body: dict[str, Any] = Body(...)) -
     """
     Asigna o elimina la marca de un producto WooCommerce de forma atómica.
 
-    Obtiene el producto actual, preserva todos sus atributos no relacionados
-    con pa_brand, y aplica o elimina la marca indicada.
+    Detecta automáticamente si el sitio usa el endpoint nativo de marcas
+    (WooCommerce Brands / 8.6+) o el modo de atributo global (pa_brand).
+
+    Modo nativo:   actualiza el campo ``brands`` del producto.
+    Modo atributo: preserva atributos no-brand y reemplaza el atributo de marca.
 
     Args:
         product_id: ID del producto WooCommerce.
@@ -842,30 +845,38 @@ async def set_product_brand(product_id: int, body: dict[str, Any] = Body(...)) -
         brand_svc = await _get_brand_service(client)
         product_svc = WordPressProductService(client)
 
-        product = await product_svc.get(product_id)
-        existing_attrs: list[dict[str, Any]] = product.get("attributes", [])
-        non_brand_attrs = [
-            a for a in existing_attrs
-            if a.get("slug") not in ("pa_brand", "brand")
-        ]
-
         brand_term_id = body.get("brand_term_id")
-        new_attrs: list[dict[str, Any]] = list(non_brand_attrs)
+        use_native = await brand_svc._native_available()
 
-        if brand_term_id is not None:
-            brand_term = await brand_svc.get(int(brand_term_id))
-            attr_id = await brand_svc._get_attribute_id()
-            new_attrs.append({
-                "id": attr_id,
-                "options": [brand_term["name"]],
-                "visible": True,
-                "variation": False,
-            })
+        if use_native:
+            # Native brands: update product.brands field
+            brands_payload: list[dict[str, Any]] = (
+                [{"id": int(brand_term_id)}] if brand_term_id is not None else []
+            )
+            updated = await product_svc.update(product_id, {"brands": brands_payload})
+        else:
+            # Attribute mode: get product, rebuild attributes array preserving non-brand attrs
+            product = await product_svc.get(product_id)
+            existing_attrs: list[dict[str, Any]] = product.get("attributes", [])
+            non_brand_attrs = [
+                a for a in existing_attrs
+                if a.get("slug") not in ("pa_brand", "brand", "pa_marca", "marca")
+            ]
+            new_attrs: list[dict[str, Any]] = list(non_brand_attrs)
+            if brand_term_id is not None:
+                brand_term = await brand_svc.get(int(brand_term_id))
+                attr_id = await brand_svc._get_attribute_id()
+                new_attrs.append({
+                    "id": attr_id,
+                    "options": [brand_term["name"]],
+                    "visible": True,
+                    "variation": False,
+                })
+            updated = await product_svc.update(product_id, {"attributes": new_attrs})
 
-        updated = await product_svc.update(product_id, {"attributes": new_attrs})
         logger.info(
             "Marca de producto actualizada",
-            extra={"product_id": product_id, "brand_term_id": brand_term_id},
+            extra={"product_id": product_id, "brand_term_id": brand_term_id, "native": use_native},
         )
         return _ok(updated, "Marca del producto actualizada.")
     except IntegrationError as exc:
