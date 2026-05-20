@@ -1789,6 +1789,7 @@ export async function deleteOdooProductProperty(
 
 import type {
   WooProduct,
+  WooProductAttribute,
   WooCategory,
   WooBrand,
   WooOrder,
@@ -1931,6 +1932,28 @@ export async function deleteWordPressProduct(id: number): Promise<void> {
 }
 
 /**
+ * Asigna o elimina la marca de un producto WooCommerce de forma atómica.
+ *
+ * Preserva todos los atributos existentes del producto excepto pa_brand,
+ * y aplica la marca indicada (o la elimina si brandTermId es null).
+ *
+ * @author BenjaminDTS
+ * @param productId   - ID del producto WooCommerce.
+ * @param brandTermId - ID del término de marca, o null para quitar la marca.
+ * @returns WooProduct actualizado.
+ */
+export async function setWordPressProductBrand(
+  productId: number,
+  brandTermId: number | null,
+): Promise<WooProduct> {
+  const r = await apiClient.put<ApiResponse<WooProduct>>(
+    `/wordpress/products/${productId}/brand`,
+    { brand_term_id: brandTermId },
+  )
+  return r.data.data
+}
+
+/**
  * Sincroniza productos de un job Harvist a WooCommerce.
  *
  * @author Carlos Vico
@@ -2015,6 +2038,21 @@ export async function deleteWordPressCategory(id: number): Promise<void> {
 }
 
 // ── Brands ────────────────────────────────────────────────────────────────────
+
+/**
+ * Obtiene los metadatos del atributo global pa_brand de WooCommerce.
+ *
+ * Necesario para construir el payload de attributes al asignar una marca a un producto.
+ *
+ * @author BenjaminDTS
+ * @returns Objeto con id, slug y name del atributo pa_brand.
+ */
+export async function getWordPressBrandAttribute(): Promise<{ id: number; slug: string; name: string }> {
+  const r = await apiClient.get<ApiResponse<{ id: number; slug: string; name: string }>>(
+    '/wordpress/brands/attribute',
+  )
+  return r.data.data
+}
 
 /**
  * Lista las marcas de WooCommerce (términos de pa_brand).
