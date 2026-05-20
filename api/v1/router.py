@@ -43,6 +43,7 @@ from api.v1.endpoints.wordpress import (
     router_main as wordpress_router_main,
     router_products as wordpress_router_products,
     router_categories as wordpress_router_categories,
+    router_brands as wordpress_router_brands,
     router_orders as wordpress_router_orders,
     router_customers as wordpress_router_customers,
     router_media as wordpress_router_media,
@@ -77,6 +78,7 @@ router.include_router(odoo_router_properties)
 router.include_router(wordpress_router_main)
 router.include_router(wordpress_router_products)
 router.include_router(wordpress_router_categories)
+router.include_router(wordpress_router_brands)
 router.include_router(wordpress_router_orders)
 router.include_router(wordpress_router_customers)
 router.include_router(wordpress_router_media)
