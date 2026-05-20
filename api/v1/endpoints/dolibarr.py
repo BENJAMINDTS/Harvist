@@ -1188,6 +1188,98 @@ async def delete_products_bulk(ids: list[int] = Body(...)) -> JSONResponse:
         )
 
 
+@router_products.post("/sync-all-to-wordpress")
+async def sync_all_to_wordpress() -> JSONResponse:
+    """
+    Sincroniza todos los productos de Dolibarr a WooCommerce.
+
+    Para cada producto de Dolibarr: busca en WooCommerce por SKU=ref.
+    Si existe → actualiza; si no → crea. Aplica semáforo de concurrencia 5
+    para no sobrecargar la API de WooCommerce.
+
+    Returns:
+        Resumen con total, created, updated, skipped, errors.
+    """
+    doli_svc = await _get_service_async()
+    wp_client = await _get_wordpress_client_for_sync()
+    if wp_client is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="WordPress no está configurado.",
+        )
+
+    total = created = updated = skipped = errors = 0
+    error_details: list[str] = []
+    semaphore = asyncio.Semaphore(5)
+
+    try:
+        wp_prod_svc = WordPressProductService(wp_client)
+
+        offset = 0
+        limit = 100
+        while True:
+            batch = await doli_svc.list_products(limit=limit, offset=offset)
+            if not batch:
+                break
+            total += len(batch)
+
+            async def _sync_one(product: dict[str, Any]) -> tuple[str, str | None]:
+                ref = (product.get("ref") or "").strip()
+                if not ref:
+                    return "skipped", None
+                async with semaphore:
+                    try:
+                        wc_payload = _map_dolibarr_to_wc(product)
+                        wc_payload["sku"] = ref
+                        wc_payload.setdefault("status", "publish")
+                        wc_payload.setdefault("type", "simple")
+                        existing = await wp_prod_svc.find_by_sku(ref)
+                        if existing:
+                            await wp_prod_svc.update(int(existing["id"]), wc_payload)
+                            return "updated", None
+                        else:
+                            await wp_prod_svc.create(wc_payload)
+                            return "created", None
+                    except Exception as exc:
+                        return "error", f"{ref}: {exc}"
+
+            results = await asyncio.gather(*[_sync_one(p) for p in batch])
+            for action, err in results:
+                if action == "created":
+                    created += 1
+                elif action == "updated":
+                    updated += 1
+                elif action == "skipped":
+                    skipped += 1
+                else:
+                    errors += 1
+                    if err:
+                        error_details.append(err)
+
+            if len(batch) < limit:
+                break
+            offset += limit
+
+        logger.info(
+            "Sync masivo Dolibarr→WordPress completado",
+            extra={"total": total, "created": created, "updated": updated, "errors": errors},
+        )
+    finally:
+        await wp_client.close()
+
+    return JSONResponse(content=_ok(
+        {
+            "total": total,
+            "created": created,
+            "updated": updated,
+            "skipped": skipped,
+            "errors": errors,
+            "error_details": error_details[:20],
+        },
+        f"Sync completado: {created} creados, {updated} actualizados, {errors} errores.",
+    ))
+
+
 @router_products.post("/{product_id}/image")
 async def upload_image(product_id: int, file: UploadFile) -> JSONResponse:
     """
