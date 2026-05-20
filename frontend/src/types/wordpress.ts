@@ -33,6 +33,7 @@ export interface WooProduct {
   categories: WooCategoryRef[]
   images: WooImage[]
   attributes: WooProductAttribute[]
+  brands: WooBrandRef[]
   date_created: string
   date_modified: string
 }
@@ -207,4 +208,17 @@ export interface WooBrand {
   slug: string
   description: string
   count: number
+}
+
+export interface WooBrandRef {
+  id: number
+  name: string
+  slug: string
+}
+
+export interface WooBrandAttributeInfo {
+  id: number
+  slug: string
+  name: string
+  use_native: boolean
 }
