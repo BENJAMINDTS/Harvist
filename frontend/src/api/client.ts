@@ -615,6 +615,27 @@ export async function deleteDolibarrProducts(ids: number[]): Promise<void> {
 }
 
 /**
+ * Sincroniza todos los productos de Dolibarr a WooCommerce.
+ * Crea los que no existen y actualiza los que sí.
+ *
+ * @author Carlos Vico
+ * @returns Resumen: total, created, updated, skipped, errors.
+ */
+export async function syncDolibarrAllToWordPress(): Promise<{
+  total: number
+  created: number
+  updated: number
+  skipped: number
+  errors: number
+  error_details: string[]
+}> {
+  const r = await apiClient.post<ApiResponse<{
+    total: number; created: number; updated: number; skipped: number; errors: number; error_details: string[]
+  }>>('/dolibarr/products/sync-all-to-wordpress')
+  return r.data.data
+}
+
+/**
  * Sincroniza productos desde un job Harvist completado a Dolibarr.
  *
  * @author BenjaminDTS
@@ -1984,6 +2005,27 @@ export async function syncWordPressFromJob(
     '/wordpress/products/sync',
     { job_id: jobId, product_codes: productCodes, overwrite },
   )
+  return r.data.data
+}
+
+/**
+ * Sincroniza todos los productos de WooCommerce a Dolibarr.
+ * Crea los que no existen y actualiza los que sí.
+ *
+ * @author Carlos Vico
+ * @returns Resumen: total, created, updated, skipped, errors.
+ */
+export async function syncWordPressAllToDolibarr(): Promise<{
+  total: number
+  created: number
+  updated: number
+  skipped: number
+  errors: number
+  error_details: string[]
+}> {
+  const r = await apiClient.post<ApiResponse<{
+    total: number; created: number; updated: number; skipped: number; errors: number; error_details: string[]
+  }>>('/wordpress/products/sync-all-to-dolibarr')
   return r.data.data
 }
 
