@@ -75,6 +75,7 @@ from services.integrations.base import IntegrationError, IntegrationNotConfigure
 from services.integrations.dolibarr.client import DolibarrClient
 from services.integrations.dolibarr.products import DolibarrProductService
 from services.integrations.dolibarr.stocks import DolibarrStockService
+from services.integrations.wordpress.brands import WordPressBrandService
 from services.integrations.wordpress.categories import WordPressCategoryService
 from services.integrations.wordpress.client import WordPressClient
 from services.integrations.wordpress.customers import WordPressCustomerService
@@ -87,6 +88,7 @@ from services.storage_service import get_storage_service
 router_main = APIRouter(prefix="/wordpress", tags=["wordpress"])
 router_products = APIRouter(prefix="/wordpress/products", tags=["wordpress-products"])
 router_categories = APIRouter(prefix="/wordpress/categories", tags=["wordpress-categories"])
+router_brands = APIRouter(prefix="/wordpress/brands", tags=["wordpress-brands"])
 router_orders = APIRouter(prefix="/wordpress/orders", tags=["wordpress-orders"])
 router_customers = APIRouter(prefix="/wordpress/customers", tags=["wordpress-customers"])
 router_media = APIRouter(prefix="/wordpress/media", tags=["wordpress-media"])
@@ -985,6 +987,136 @@ async def delete_category(category_id: int) -> dict[str, Any]:
         svc = WordPressCategoryService(client)
         await svc.delete(category_id)
         return _ok({}, "Categoría eliminada.")
+    except IntegrationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    finally:
+        await client.close()
+
+
+# ── Brands ──────────────────────────────────────────────────────────────────
+
+
+@router_brands.get("")
+async def list_brands(
+    limit: int = Query(default=100, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> dict[str, Any]:
+    """
+    Lista los términos de marca del atributo pa_brand de WooCommerce.
+
+    Args:
+        limit: máximo de marcas a retornar.
+        offset: desplazamiento para paginación.
+
+    Returns:
+        Lista de términos de marca con id, name, slug, count, description.
+    """
+    client = await _get_client()
+    try:
+        svc = WordPressBrandService(client)
+        items = await svc.list(limit=limit, offset=offset)
+        return _ok({"items": items, "total": len(items), "limit": limit, "offset": offset})
+    except IntegrationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    finally:
+        await client.close()
+
+
+@router_brands.post("", status_code=status.HTTP_201_CREATED)
+async def create_brand(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """
+    Crea un nuevo término de marca en el atributo pa_brand de WooCommerce.
+
+    Args:
+        body: campos de la marca (name requerido, description opcional).
+
+    Returns:
+        Término de marca creado.
+    """
+    name: str = body.get("name", "").strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="El campo 'name' es obligatorio.")
+    description: str = body.get("description", "")
+    client = await _get_client()
+    try:
+        svc = WordPressBrandService(client)
+        result = await svc.create(name=name, description=description)
+        return _ok(result, "Marca creada.")
+    except IntegrationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    finally:
+        await client.close()
+
+
+@router_brands.put("/{term_id}")
+async def update_brand(term_id: int, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """
+    Actualiza un término de marca en WooCommerce.
+
+    Args:
+        term_id: ID del término a actualizar.
+        body: campos a modificar (name, description, slug).
+
+    Returns:
+        Término de marca actualizado.
+    """
+    client = await _get_client()
+    try:
+        svc = WordPressBrandService(client)
+        result = await svc.update(term_id, body)
+        return _ok(result, "Marca actualizada.")
+    except IntegrationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    finally:
+        await client.close()
+
+
+@router_brands.delete("/{term_id}")
+async def delete_brand(term_id: int) -> dict[str, Any]:
+    """
+    Elimina un término de marca del atributo pa_brand de WooCommerce.
+
+    Args:
+        term_id: ID del término a eliminar.
+
+    Returns:
+        Confirmación de eliminación.
+    """
+    client = await _get_client()
+    try:
+        svc = WordPressBrandService(client)
+        await svc.delete(term_id)
+        return _ok({}, "Marca eliminada.")
+    except IntegrationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    finally:
+        await client.close()
+
+
+@router_brands.get("/{term_id}/products")
+async def get_brand_products(
+    term_id: int,
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> dict[str, Any]:
+    """
+    Lista los productos que tienen asignada una marca concreta.
+
+    Args:
+        term_id: ID del término de marca.
+        limit: máximo de productos a retornar.
+        offset: desplazamiento para paginación.
+
+    Returns:
+        Lista de productos WooCommerce con la marca especificada.
+    """
+    client = await _get_client()
+    try:
+        svc = WordPressBrandService(client)
+        items = await svc.get_products(term_id=term_id, limit=limit, offset=offset)
+        return _ok(
+            {"items": items, "total": len(items), "limit": limit, "offset": offset},
+        )
     except IntegrationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
