@@ -318,8 +318,13 @@ class WordPressClient(IntegrationClient):
         """
         response = await self._wc_request("POST", resource, json=data)
         if response.status_code >= 400:
+            try:
+                wc_detail = response.json()
+                wc_msg = wc_detail.get("message") or wc_detail.get("code") or str(wc_detail)
+            except Exception:
+                wc_msg = response.text[:300]
             raise IntegrationError(
-                f"Error al crear {resource} en WordPress",
+                f"Error al crear {resource} en WordPress (HTTP {response.status_code}): {wc_msg}",
                 platform="wordpress",
                 status_code=response.status_code,
             )
@@ -345,8 +350,13 @@ class WordPressClient(IntegrationClient):
         """
         response = await self._wc_request("PUT", f"{resource}/{resource_id}", json=data)
         if response.status_code >= 400:
+            try:
+                wc_detail = response.json()
+                wc_msg = wc_detail.get("message") or wc_detail.get("code") or str(wc_detail)
+            except Exception:
+                wc_msg = response.text[:300]
             raise IntegrationError(
-                f"Error al actualizar {resource}/{resource_id} en WordPress",
+                f"Error al actualizar {resource}/{resource_id} en WordPress (HTTP {response.status_code}): {wc_msg}",
                 platform="wordpress",
                 status_code=response.status_code,
             )
