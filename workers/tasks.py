@@ -706,6 +706,156 @@ def importar_productos_dolibarr(
         redis_client.close()
 
 
+_WP_IMPORT_KEY = "wordpress_import:{task_id}"
+_WP_IMPORT_TTL = 86400  # 24 horas
+
+
+@celery_app.task(
+    bind=True,
+    name="workers.tasks.importar_productos_wordpress",
+)
+def importar_productos_wordpress(
+    self,
+    task_id: str,
+    csv_b64: str,
+    mapping: dict,
+    overwrite: bool,
+    brand_column: str = "",
+    category_column: str = "",
+    subcategory_column: str = "",
+    wp_url: str = "",
+    wp_consumer_key: str = "",
+    wp_consumer_secret: str = "",
+) -> dict:
+    """
+    Tarea Celery que importa productos en masa a WooCommerce desde un CSV.
+
+    Se ejecuta de forma asíncrona. Actualiza el progreso en Redis cada 10 filas
+    para que el frontend pueda consultarlo mediante polling.
+
+    Args:
+        self:                instancia de la tarea (bind=True).
+        task_id:             UUID de la tarea, usado como clave Redis.
+        csv_b64:             contenido del CSV codificado en base64.
+        mapping:             dict columna_csv → campo_woocommerce.
+        overwrite:           si True, actualiza productos con SKU existente.
+        brand_column:        nombre de la columna CSV con la marca (opcional).
+        category_column:     nombre de la columna CSV con la categoría raíz (opcional).
+        subcategory_column:  nombre de la columna CSV con la subcategoría (opcional).
+        wp_url:              URL base de WordPress.
+        wp_consumer_key:     Consumer Key WooCommerce.
+        wp_consumer_secret:  Consumer Secret WooCommerce.
+
+    Returns:
+        Dict con resumen de la importación o ``{"error": str}`` si falla.
+
+    :author: Carlitos6712
+    """
+    settings = get_settings()
+    redis_client = _get_redis_client()
+
+    def _set_state(state: dict) -> None:
+        redis_client.set(
+            _WP_IMPORT_KEY.format(task_id=task_id),
+            json.dumps(state, ensure_ascii=False),
+            ex=_WP_IMPORT_TTL,
+        )
+
+    def _progress(processed: int, total: int) -> None:
+        _set_state({
+            "task_id": task_id,
+            "status": "running",
+            "progress": {"processed": processed, "total": total},
+            "message": f"Importando {processed} de {total} productos...",
+            "results": None,
+        })
+
+    _set_state({
+        "task_id": task_id,
+        "status": "running",
+        "progress": {"processed": 0, "total": 0},
+        "message": "Iniciando importación...",
+        "results": None,
+    })
+
+    logger.info("Importación WordPress iniciada", extra={"task_id": task_id})
+
+    async def _run() -> list[dict]:
+        from services.integrations.wordpress.brands import WordPressBrandService  # noqa: PLC0415
+        from services.integrations.wordpress.categories import WordPressCategoryService  # noqa: PLC0415
+        from services.integrations.wordpress.client import WordPressClient  # noqa: PLC0415
+        from services.integrations.wordpress.products import WordPressProductService  # noqa: PLC0415
+
+        client = WordPressClient(
+            settings,
+            override_url=wp_url,
+            override_consumer_key=wp_consumer_key,
+            override_consumer_secret=wp_consumer_secret,
+        )
+        svc = WordPressProductService(client)
+        brand_svc = WordPressBrandService(client) if brand_column else None
+        cat_svc = WordPressCategoryService(client) if (category_column or subcategory_column) else None
+
+        content = base64.b64decode(csv_b64.encode())
+
+        return await svc.import_from_csv(
+            content=content,
+            mapping=mapping,
+            overwrite=overwrite,
+            brand_col=brand_column or None,
+            brand_svc=brand_svc,
+            category_col=category_column or None,
+            subcategory_col=subcategory_column or None,
+            category_svc=cat_svc,
+            progress_callback=_progress,
+        )
+
+    try:
+        rows = asyncio.run(_run())
+
+        created = sum(1 for r in rows if r.get("action") == "created")
+        updated = sum(1 for r in rows if r.get("action") == "updated")
+        skipped = sum(1 for r in rows if r.get("action") == "skipped")
+        errors = sum(1 for r in rows if r.get("action") == "error")
+
+        results = {
+            "total": len(rows),
+            "created": created,
+            "updated": updated,
+            "skipped": skipped,
+            "errors": errors,
+            "results": rows,
+        }
+
+        _set_state({
+            "task_id": task_id,
+            "status": "completed",
+            "progress": {"processed": len(rows), "total": len(rows)},
+            "message": f"Completado: {created} creados, {updated} actualizados, {errors} errores.",
+            "results": results,
+        })
+
+        logger.info(
+            "Importación WordPress completada",
+            extra={"task_id": task_id, "total": len(rows), "created": created, "errors": errors},
+        )
+        return results
+
+    except Exception as exc:
+        logger.error("Error en importación WordPress", exc_info=exc, extra={"task_id": task_id})
+        _set_state({
+            "task_id": task_id,
+            "status": "failed",
+            "progress": {"processed": 0, "total": 0},
+            "message": f"Error: {exc}",
+            "results": None,
+        })
+        return {"error": str(exc)}
+
+    finally:
+        redis_client.close()
+
+
 @celery_app.task(name="cleanup_stale_candidates")
 def cleanup_stale_candidates() -> dict:
     """
