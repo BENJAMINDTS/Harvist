@@ -53,6 +53,7 @@ Rutas bajo /api/v1/wordpress/db:
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import uuid
@@ -1097,6 +1098,100 @@ async def bulk_delete_products(ids: list[int] = Body(...)) -> dict[str, Any]:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
         await client.close()
+
+
+@router_products.post("/sync-all-to-dolibarr")
+async def sync_all_to_dolibarr() -> dict[str, Any]:
+    """
+    Sincroniza todos los productos de WooCommerce a Dolibarr.
+
+    Para cada producto WooCommerce con SKU: busca en Dolibarr por ref=SKU.
+    Si existe → actualiza; si no → crea. Aplica semáforo de concurrencia 5.
+
+    Returns:
+        Resumen con total, created, updated, skipped, errors.
+    """
+    doli_services = await _get_dolibarr_services_for_sync()
+    if doli_services is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Dolibarr no está configurado.",
+        )
+
+    doli_svc, _ = doli_services
+    client = await _get_client()
+
+    total = created = updated = skipped = errors = 0
+    error_details: list[str] = []
+    semaphore = asyncio.Semaphore(5)
+
+    try:
+        wp_svc = WordPressProductService(client)
+
+        offset = 0
+        limit = 100
+        while True:
+            batch, _ = await client.list_paged("products", limit=limit, offset=offset)
+            if not batch:
+                break
+            total += len(batch)
+
+            async def _sync_one(product: dict[str, Any]) -> tuple[str, str | None]:
+                sku = (product.get("sku") or "").strip()
+                if not sku:
+                    return "skipped", None
+                async with semaphore:
+                    try:
+                        doli_payload = _map_wc_to_dolibarr(product)
+                        doli_payload["ref"] = sku
+                        doli_payload.setdefault("label", product.get("name", sku))
+                        doli_payload.setdefault("tosell", 1)
+                        doli_payload.setdefault("tobuy", 1)
+                        existing = await doli_svc._find_product_by_ref(sku)
+                        if existing:
+                            await doli_svc.update_product(int(existing["id"]), doli_payload)
+                            return "updated", None
+                        else:
+                            await doli_svc.create_product(doli_payload)
+                            return "created", None
+                    except Exception as exc:
+                        return "error", f"{sku}: {exc}"
+
+            results = await asyncio.gather(*[_sync_one(p) for p in batch])
+            for action, err in results:
+                if action == "created":
+                    created += 1
+                elif action == "updated":
+                    updated += 1
+                elif action == "skipped":
+                    skipped += 1
+                else:
+                    errors += 1
+                    if err:
+                        error_details.append(err)
+
+            if len(batch) < limit:
+                break
+            offset += limit
+
+        logger.info(
+            "Sync masivo WooCommerce→Dolibarr completado",
+            extra={"total": total, "created": created, "updated": updated, "errors": errors},
+        )
+    finally:
+        await client.close()
+
+    return _ok(
+        {
+            "total": total,
+            "created": created,
+            "updated": updated,
+            "skipped": skipped,
+            "errors": errors,
+            "error_details": error_details[:20],
+        },
+        f"Sync completado: {created} creados, {updated} actualizados, {errors} errores.",
+    )
 
 
 @router_products.post("/sync")
