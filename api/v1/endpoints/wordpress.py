@@ -1022,6 +1022,28 @@ async def list_brands(
         await client.close()
 
 
+@router_brands.get("/attribute")
+async def get_brand_attribute() -> dict[str, Any]:
+    """
+    Devuelve los metadatos del atributo global pa_brand de WooCommerce.
+
+    Crea el atributo si no existe. Útil para que el frontend construya el
+    payload de ``attributes`` al asignar marcas a productos.
+
+    Returns:
+        Dict con id, slug y name del atributo pa_brand.
+    """
+    client = await _get_client()
+    try:
+        svc = WordPressBrandService(client)
+        attr = await svc.get_attribute_info()
+        return _ok(attr)
+    except IntegrationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    finally:
+        await client.close()
+
+
 @router_brands.post("", status_code=status.HTTP_201_CREATED)
 async def create_brand(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
     """

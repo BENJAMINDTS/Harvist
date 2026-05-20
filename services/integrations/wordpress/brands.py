@@ -156,6 +156,23 @@ class WordPressBrandService:
         logger.info("Marca WooCommerce eliminada", extra={"term_id": term_id})
         return result
 
+    async def get_attribute_info(self) -> dict[str, Any]:
+        """
+        Devuelve los metadatos del atributo global pa_brand.
+
+        Útil para que el frontend conozca el ID del atributo y pueda
+        construir el payload de ``attributes`` al crear o actualizar productos.
+
+        Returns:
+            Dict con id, slug y name del atributo pa_brand.
+        """
+        attr_id = await self._get_attribute_id()
+        attrs: list[dict[str, Any]] = await self._client.list("products/attributes", limit=100)
+        for attr in attrs:
+            if int(attr["id"]) == attr_id:
+                return attr
+        return {"id": attr_id, "slug": f"pa_{_BRAND_ATTR_SLUG}", "name": _BRAND_ATTR_NAME}
+
     async def get_products(
         self,
         term_id: int,
