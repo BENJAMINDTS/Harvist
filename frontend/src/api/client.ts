@@ -1791,6 +1791,7 @@ import type {
   WooProduct,
   WooCategory,
   WooBrand,
+  WooBrandAttributeInfo,
   WooOrder,
   WooCustomer,
   WooMedia,
@@ -2046,8 +2047,8 @@ export async function deleteWordPressCategory(id: number): Promise<void> {
  * @author BenjaminDTS
  * @returns Objeto con id, slug y name del atributo pa_brand.
  */
-export async function getWordPressBrandAttribute(): Promise<{ id: number; slug: string; name: string }> {
-  const r = await apiClient.get<ApiResponse<{ id: number; slug: string; name: string }>>(
+export async function getWordPressBrandAttribute(): Promise<WooBrandAttributeInfo> {
+  const r = await apiClient.get<ApiResponse<WooBrandAttributeInfo>>(
     '/wordpress/brands/attribute',
   )
   return r.data.data
@@ -2081,8 +2082,8 @@ export async function listWordPressAllAttributes(): Promise<
  */
 export async function configureWordPressBrandAttribute(
   attrId: number,
-): Promise<{ id: number; slug: string; name: string }> {
-  const r = await apiClient.put<ApiResponse<{ id: number; slug: string; name: string }>>(
+): Promise<WooBrandAttributeInfo> {
+  const r = await apiClient.put<ApiResponse<WooBrandAttributeInfo>>(
     '/wordpress/brands/attribute',
     { attr_id: attrId },
   )

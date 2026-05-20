@@ -14,7 +14,7 @@ import {
   listWordPressBrands,
   getWordPressBrandAttribute,
 } from '@/api/client'
-import type { WooProduct, WooProductAttribute, WooBrand } from '@/types/wordpress'
+import type { WooProduct, WooProductAttribute, WooBrand, WooBrandAttributeInfo } from '@/types/wordpress'
 
 const STATUS_COLORS: Record<string, string> = {
   publish: 'bg-green-100 text-green-800',
@@ -32,10 +32,11 @@ const STOCK_COLORS: Record<string, string> = {
 const INPUT_CLS =
   'w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm'
 
-/** Extrae el nombre de la marca del array de atributos WooCommerce. */
+/** Extrae el nombre de la marca: campo nativo brands[] primero, luego atributos. */
 function getProductBrandName(product: WooProduct): string {
+  if (product.brands?.length) return product.brands[0].name
   const attr = product.attributes?.find(
-    (a) => a.slug === 'pa_brand' || a.slug === 'brand',
+    (a) => a.slug === 'pa_brand' || a.slug === 'brand' || a.slug === 'pa_marca' || a.slug === 'marca',
   )
   return attr?.options[0] ?? '—'
 }
@@ -64,7 +65,7 @@ export default function WordPressProducts() {
   const [formOtherAttrs, setFormOtherAttrs] = useState<WooProductAttribute[]>([])
 
   const [brands, setBrands] = useState<WooBrand[]>([])
-  const [brandAttrId, setBrandAttrId] = useState<number | null>(null)
+  const [brandAttrInfo, setBrandAttrInfo] = useState<WooBrandAttributeInfo | null>(null)
 
   const load = async (newOffset = 0) => {
     setLoading(true)
@@ -88,7 +89,7 @@ export default function WordPressProducts() {
         getWordPressBrandAttribute(),
       ])
       setBrands(brandList)
-      setBrandAttrId(attrInfo.id)
+      setBrandAttrInfo(attrInfo)
     } catch {
       // non-critical — product management still works without brand data
     }
@@ -121,25 +122,33 @@ export default function WordPressProducts() {
     setFormStatus(p.status === 'publish' ? 'publish' : 'draft')
     setFormStock(p.stock_quantity != null ? String(p.stock_quantity) : '')
     setFormDesc(p.description)
-    // Resolve current brand by matching attr options against loaded brands
-    const brandAttr = p.attributes?.find((a) => a.slug === 'pa_brand' || a.slug === 'brand')
-    const brandName = brandAttr?.options[0] ?? ''
-    const matched = brands.find((b) => b.name === brandName)
-    setFormBrandId(matched?.id ?? null)
+    // Resolve current brand: native brands[] first, then attribute terms
+    if (brandAttrInfo?.use_native) {
+      setFormBrandId(p.brands?.[0]?.id ?? null)
+    } else {
+      const brandAttr = p.attributes?.find(
+        (a) => a.slug === 'pa_brand' || a.slug === 'brand' || a.slug === 'pa_marca' || a.slug === 'marca',
+      )
+      const brandName = brandAttr?.options[0] ?? ''
+      const matched = brands.find((b) => b.name === brandName)
+      setFormBrandId(matched?.id ?? null)
+    }
     // Preserve non-brand attributes so they survive the update
+    const brandSlugs = new Set(['pa_brand', 'brand', 'pa_marca', 'marca'])
     setFormOtherAttrs(
-      p.attributes?.filter((a) => a.slug !== 'pa_brand' && a.slug !== 'brand') ?? [],
+      p.attributes?.filter((a) => !brandSlugs.has(a.slug)) ?? [],
     )
     setFormError(null); setShowForm(true)
   }
 
   const buildAttributesPayload = (): WooProductAttribute[] => {
     const attrs: WooProductAttribute[] = [...formOtherAttrs]
-    if (brandAttrId !== null && formBrandId !== null) {
+    const attrId = brandAttrInfo?.id
+    if (attrId && formBrandId !== null) {
       const selectedBrand = brands.find((b) => b.id === formBrandId)
       if (selectedBrand) {
         attrs.push({
-          id: brandAttrId,
+          id: attrId,
           name: 'Marca',
           slug: 'pa_brand',
           position: attrs.length,
@@ -157,6 +166,9 @@ export default function WordPressProducts() {
     if (!formName) { setFormError('El nombre es obligatorio.'); return }
     setSaving(true); setFormError(null)
     try {
+      const brandPayload = brandAttrInfo?.use_native
+        ? { brands: (formBrandId !== null ? [{ id: formBrandId }] : []) as WooProduct['brands'] }
+        : { attributes: buildAttributesPayload() }
       const data: Partial<WooProduct> = {
         name: formName,
         sku: formSku,
@@ -165,7 +177,7 @@ export default function WordPressProducts() {
         description: formDesc,
         manage_stock: formStock !== '',
         stock_quantity: formStock !== '' ? parseInt(formStock, 10) : null,
-        attributes: buildAttributesPayload(),
+        ...brandPayload,
       }
       if (editProduct) {
         const updated = await updateWordPressProduct(editProduct.id, data)
