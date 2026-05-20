@@ -322,6 +322,42 @@ async def _sync_wc_stock_to_dolibarr(
     return {"synced": True, "delta": delta, "new_qty": int(wc_stock), "dolibarr_id": doli_id}
 
 
+async def _get_brand_attr_id_override() -> int | None:
+    """
+    Lee el override de atributo de marca desde Redis, si existe.
+
+    Returns:
+        ID del atributo configurado manualmente, o None si no hay override.
+    """
+    settings = get_settings()
+    redis_client: aioredis.Redis | None = None
+    try:
+        redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
+        stored = await redis_client.get("integration:wordpress:brand_attr_id")
+        if stored:
+            return int(stored)
+    except Exception as exc:
+        logger.debug("No se pudo leer brand_attr_id de Redis", exc_info=exc)
+    finally:
+        if redis_client:
+            await redis_client.aclose()
+    return None
+
+
+async def _get_brand_service(client: WordPressClient) -> WordPressBrandService:
+    """
+    Construye WordPressBrandService respetando el override de atributo en Redis.
+
+    Args:
+        client: WordPressClient ya inicializado.
+
+    Returns:
+        WordPressBrandService con override si fue configurado manualmente.
+    """
+    override = await _get_brand_attr_id_override()
+    return WordPressBrandService(client, attr_id_override=override)
+
+
 async def _get_client() -> WordPressClient:
     """
     Construye WordPressClient con credenciales de Redis o .env.
@@ -803,7 +839,7 @@ async def set_product_brand(product_id: int, body: dict[str, Any] = Body(...)) -
     """
     client = await _get_client()
     try:
-        brand_svc = WordPressBrandService(client)
+        brand_svc = await _get_brand_service(client)
         product_svc = WordPressProductService(client)
 
         product = await product_svc.get(product_id)
@@ -1065,9 +1101,74 @@ async def list_brands(
     """
     client = await _get_client()
     try:
-        svc = WordPressBrandService(client)
+        svc = await _get_brand_service(client)
         items = await svc.list(limit=limit, offset=offset)
         return _ok({"items": items, "total": len(items), "limit": limit, "offset": offset})
+    except IntegrationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    finally:
+        await client.close()
+
+
+@router_brands.get("/all-attributes")
+async def list_all_wc_attributes() -> dict[str, Any]:
+    """
+    Lista todos los atributos de producto globales de WooCommerce.
+
+    Permite al usuario identificar qué atributo contiene sus marcas
+    y configurar el override si la detección automática falla.
+
+    Returns:
+        Lista de atributos con id, name, slug, term_count.
+    """
+    client = await _get_client()
+    try:
+        svc = await _get_brand_service(client)
+        items = await svc.list_all_attributes()
+        return _ok(items)
+    except IntegrationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    finally:
+        await client.close()
+
+
+@router_brands.put("/attribute")
+async def configure_brand_attribute(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """
+    Configura el atributo de WooCommerce que se usará para marcas.
+
+    Guarda el ID del atributo en Redis para que todas las llamadas
+    posteriores usen ese atributo en lugar de la detección automática.
+
+    Args:
+        body: ``{"attr_id": 5}`` con el ID del atributo deseado.
+
+    Returns:
+        Info del atributo configurado.
+    """
+    import redis.asyncio as aioredis
+
+    attr_id = body.get("attr_id")
+    if not attr_id or not isinstance(attr_id, int):
+        raise HTTPException(status_code=422, detail="El campo 'attr_id' es obligatorio y debe ser entero.")
+
+    settings = get_settings()
+    redis_client: aioredis.Redis | None = None
+    try:
+        redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
+        await redis_client.set("integration:wordpress:brand_attr_id", str(attr_id))
+        logger.info("Brand attr ID configurado manualmente", extra={"attr_id": attr_id})
+    except Exception as exc:
+        logger.warning("No se pudo guardar brand_attr_id en Redis", exc_info=exc)
+    finally:
+        if redis_client:
+            await redis_client.aclose()
+
+    client = await _get_client()
+    try:
+        svc = WordPressBrandService(client, attr_id_override=attr_id)
+        attr = await svc.get_attribute_info()
+        return _ok(attr, f"Atributo de marca configurado a ID {attr_id}.")
     except IntegrationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
@@ -1087,7 +1188,7 @@ async def get_brand_attribute() -> dict[str, Any]:
     """
     client = await _get_client()
     try:
-        svc = WordPressBrandService(client)
+        svc = await _get_brand_service(client)
         attr = await svc.get_attribute_info()
         return _ok(attr)
     except IntegrationError as exc:
@@ -1113,7 +1214,7 @@ async def create_brand(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
     description: str = body.get("description", "")
     client = await _get_client()
     try:
-        svc = WordPressBrandService(client)
+        svc = await _get_brand_service(client)
         result = await svc.create(name=name, description=description)
         return _ok(result, "Marca creada.")
     except IntegrationError as exc:
@@ -1136,7 +1237,7 @@ async def update_brand(term_id: int, body: dict[str, Any] = Body(...)) -> dict[s
     """
     client = await _get_client()
     try:
-        svc = WordPressBrandService(client)
+        svc = await _get_brand_service(client)
         result = await svc.update(term_id, body)
         return _ok(result, "Marca actualizada.")
     except IntegrationError as exc:
@@ -1158,7 +1259,7 @@ async def delete_brand(term_id: int) -> dict[str, Any]:
     """
     client = await _get_client()
     try:
-        svc = WordPressBrandService(client)
+        svc = await _get_brand_service(client)
         await svc.delete(term_id)
         return _ok({}, "Marca eliminada.")
     except IntegrationError as exc:
@@ -1186,7 +1287,7 @@ async def get_brand_products(
     """
     client = await _get_client()
     try:
-        svc = WordPressBrandService(client)
+        svc = await _get_brand_service(client)
         items = await svc.get_products(term_id=term_id, limit=limit, offset=offset)
         return _ok(
             {"items": items, "total": len(items), "limit": limit, "offset": offset},

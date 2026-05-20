@@ -1,11 +1,16 @@
 """
-Servicio de gestión de marcas WooCommerce via atributo global pa_brand.
+Servicio de gestión de marcas WooCommerce via atributo global de producto.
 
-Las marcas se modelan como términos del atributo de producto "brand" (pa_brand),
-que es nativo de WooCommerce sin necesidad de plugin adicional.
+Las marcas se modelan como términos de un atributo de producto WooCommerce.
+El atributo se detecta automáticamente buscando por slug conocidos (brand,
+pa_brand, marca, pa_marca, …) o por nombre que contenga "brand"/"marca".
+Si no existe ninguno se crea un atributo "brand" (pa_brand).
+
+El ID del atributo puede fijarse externamente mediante set_attribute_override()
+para sobrescribir la detección automática.
 
 :author: BenjaminDTS
-:version: 1.0.0
+:version: 1.1.0
 """
 
 from __future__ import annotations
@@ -19,31 +24,47 @@ from services.integrations.wordpress.client import WordPressClient
 _BRAND_ATTR_SLUG = "brand"
 _BRAND_ATTR_NAME = "Marca"
 
+# Slugs comunes para el atributo de marca en WooCommerce (con y sin prefijo pa_)
+_BRAND_SLUG_CANDIDATES: frozenset[str] = frozenset({
+    "brand", "pa_brand",
+    "marca", "pa_marca",
+    "brands", "pa_brands",
+    "marcas", "pa_marcas",
+})
+
+# Palabras clave para detección por nombre del atributo (case-insensitive)
+_BRAND_NAME_KEYWORDS: frozenset[str] = frozenset({"brand", "marca"})
+
 
 class WordPressBrandService:
     """
-    Servicio CRUD para marcas WooCommerce (términos del atributo pa_brand).
+    Servicio CRUD para marcas WooCommerce (términos del atributo de marca).
 
-    Gestiona automáticamente la creación del atributo "brand" si no existe.
+    Detecta automáticamente el atributo de marca existente en WooCommerce
+    buscando por slug o por nombre. Soporta override manual del ID de atributo.
 
     :author: BenjaminDTS
     """
 
-    def __init__(self, client: WordPressClient) -> None:
+    def __init__(self, client: WordPressClient, attr_id_override: int | None = None) -> None:
         """
         Args:
-            client: instancia de WordPressClient ya configurada.
+            client:           instancia de WordPressClient ya configurada.
+            attr_id_override: ID de atributo forzado externamente (omite detección automática).
         """
         self._client = client
-        self._attr_id: int | None = None
+        self._attr_id: int | None = attr_id_override
 
     async def _get_attribute_id(self) -> int:
         """
-        Busca o crea el atributo global 'brand' (pa_brand) en WooCommerce.
+        Detecta o crea el atributo de marca en WooCommerce.
 
-        WooCommerce almacena los slugs de atributo con prefijo ``pa_`` en la taxonomía
-        interna, y la REST API devuelve ese slug prefijado. Por tanto se compara tanto
-        ``brand`` como ``pa_brand`` para encontrar un atributo existente.
+        Estrategia de detección (por orden de prioridad):
+          1. Override externo via constructor.
+          2. Slug exacto en ``_BRAND_SLUG_CANDIDATES``.
+          3. Nombre del atributo contiene "brand" o "marca" (case-insensitive);
+             si hay varios candidatos, se elige el que más términos tenga.
+          4. Creación de un nuevo atributo "brand" (pa_brand).
 
         Returns:
             ID del atributo de producto para marcas.
@@ -52,13 +73,32 @@ class WordPressBrandService:
             return self._attr_id
 
         attrs: list[dict[str, Any]] = await self._client.list("products/attributes", limit=100)
+
+        # Paso 1: coincidencia exacta de slug
         for attr in attrs:
-            attr_slug: str = attr.get("slug", "")
-            if attr_slug in (_BRAND_ATTR_SLUG, f"pa_{_BRAND_ATTR_SLUG}"):
+            if attr.get("slug", "").lower() in _BRAND_SLUG_CANDIDATES:
                 self._attr_id = int(attr["id"])
-                logger.debug("Atributo pa_brand encontrado", extra={"attr_id": self._attr_id, "slug": attr_slug})
+                logger.debug(
+                    "Atributo marca detectado por slug",
+                    extra={"attr_id": self._attr_id, "slug": attr.get("slug")},
+                )
                 return self._attr_id
 
+        # Paso 2: nombre contiene keyword "brand"/"marca"; preferir mayor term_count
+        name_candidates = [
+            a for a in attrs
+            if any(kw in a.get("name", "").lower() for kw in _BRAND_NAME_KEYWORDS)
+        ]
+        if name_candidates:
+            best = max(name_candidates, key=lambda a: int(a.get("term_count", 0)))
+            self._attr_id = int(best["id"])
+            logger.debug(
+                "Atributo marca detectado por nombre",
+                extra={"attr_id": self._attr_id, "name": best.get("name")},
+            )
+            return self._attr_id
+
+        # Paso 3: crear atributo nuevo
         created = await self._client.create(
             "products/attributes",
             {
@@ -70,7 +110,7 @@ class WordPressBrandService:
             },
         )
         self._attr_id = int(created["id"])
-        logger.info("Atributo pa_brand creado en WooCommerce", extra={"attr_id": self._attr_id})
+        logger.info("Atributo marca creado en WooCommerce", extra={"attr_id": self._attr_id})
         return self._attr_id
 
     def _terms_resource(self, attr_id: int) -> str:
@@ -155,6 +195,18 @@ class WordPressBrandService:
         result = await self._client.delete(self._terms_resource(attr_id), term_id)
         logger.info("Marca WooCommerce eliminada", extra={"term_id": term_id})
         return result
+
+    async def list_all_attributes(self) -> list[dict[str, Any]]:
+        """
+        Lista todos los atributos de producto globales de WooCommerce.
+
+        Útil para que el usuario identifique cuál de sus atributos corresponde
+        a las marcas y pueda configurar el override.
+
+        Returns:
+            Lista de atributos con id, name, slug, term_count.
+        """
+        return await self._client.list("products/attributes", limit=100)
 
     async def get_attribute_info(self) -> dict[str, Any]:
         """
