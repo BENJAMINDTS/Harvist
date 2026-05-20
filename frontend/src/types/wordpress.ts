@@ -14,6 +14,12 @@ export interface WooProductAttribute {
   options: string[]
 }
 
+export interface WooProductDimensions {
+  length: string
+  width: string
+  height: string
+}
+
 export interface WooProduct {
   id: number
   name: string
@@ -27,6 +33,7 @@ export interface WooProduct {
   description: string
   short_description: string
   weight: string
+  dimensions?: WooProductDimensions
   manage_stock: boolean
   stock_quantity: number | null
   stock_status: 'instock' | 'outofstock' | 'onbackorder'
@@ -221,4 +228,34 @@ export interface WooBrandAttributeInfo {
   slug: string
   name: string
   use_native: boolean
+}
+
+export interface WcImportField {
+  key: string
+  label: string
+}
+
+export interface WpImportRowResult {
+  row: number
+  sku: string
+  action: 'created' | 'updated' | 'skipped' | 'error'
+  wc_id: number | null
+  error: string | null
+}
+
+export interface WpImportResponse {
+  total: number
+  created: number
+  updated: number
+  skipped: number
+  errors: number
+  results: WpImportRowResult[]
+}
+
+export interface WpImportTask {
+  task_id: string
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  progress: { processed: number; total: number }
+  message: string
+  results: WpImportResponse | null
 }
