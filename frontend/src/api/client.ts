@@ -631,7 +631,7 @@ export async function syncDolibarrAllToWordPress(): Promise<{
 }> {
   const r = await apiClient.post<ApiResponse<{
     total: number; created: number; updated: number; skipped: number; errors: number; error_details: string[]
-  }>>('/dolibarr/products/sync-all-to-wordpress')
+  }>>('/dolibarr/products/sync-all-to-wordpress', null, { timeout: 3_600_000 })
   return r.data.data
 }
 
@@ -969,7 +969,7 @@ export async function importDolibarrCsv(
   const response = await apiClient.post<ApiResponse<DolibarrImportTask>>(
     '/dolibarr/products/import',
     form,
-    { timeout: 30_000 },
+    { timeout: 3_600_000 },
   )
   return response.data.data
 }
@@ -2025,7 +2025,7 @@ export async function syncWordPressAllToDolibarr(): Promise<{
 }> {
   const r = await apiClient.post<ApiResponse<{
     total: number; created: number; updated: number; skipped: number; errors: number; error_details: string[]
-  }>>('/wordpress/products/sync-all-to-dolibarr')
+  }>>('/wordpress/products/sync-all-to-dolibarr', null, { timeout: 3_600_000 })
   return r.data.data
 }
 
@@ -2430,7 +2430,7 @@ export async function importWordPressCsv(
   const r = await apiClient.post<ApiResponse<WpImportTask>>(
     '/wordpress/products/csv/import',
     form,
-    { timeout: 30_000 },
+    { timeout: 3_600_000 },
   )
   return r.data.data
 }
