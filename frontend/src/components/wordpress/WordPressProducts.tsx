@@ -1,8 +1,9 @@
 /**
  * Panel de gestión de productos WooCommerce.
- * Lista, crea, edita y elimina productos. Sincroniza desde job Harvist.
+ * Lista, crea, edita y elimina productos. Muestra y permite asignar la marca
+ * (pa_brand) de cada producto directamente desde el formulario de edición.
  *
- * @author Carlos Vico
+ * @author Carlos Vico | BenjaminDTS
  */
 import { useEffect, useState } from 'react'
 import {
@@ -10,8 +11,10 @@ import {
   deleteWordPressProduct,
   createWordPressProduct,
   updateWordPressProduct,
+  listWordPressBrands,
+  getWordPressBrandAttribute,
 } from '@/api/client'
-import type { WooProduct } from '@/types/wordpress'
+import type { WooProduct, WooProductAttribute, WooBrand } from '@/types/wordpress'
 
 const STATUS_COLORS: Record<string, string> = {
   publish: 'bg-green-100 text-green-800',
@@ -28,6 +31,14 @@ const STOCK_COLORS: Record<string, string> = {
 
 const INPUT_CLS =
   'w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm'
+
+/** Extrae el nombre de la marca del array de atributos WooCommerce. */
+function getProductBrandName(product: WooProduct): string {
+  const attr = product.attributes?.find(
+    (a) => a.slug === 'pa_brand' || a.slug === 'brand',
+  )
+  return attr?.options[0] ?? '—'
+}
 
 export default function WordPressProducts() {
   const [products, setProducts] = useState<WooProduct[]>([])
@@ -49,6 +60,11 @@ export default function WordPressProducts() {
   const [formStatus, setFormStatus] = useState<'publish' | 'draft'>('publish')
   const [formStock, setFormStock] = useState('')
   const [formDesc, setFormDesc] = useState('')
+  const [formBrandId, setFormBrandId] = useState<number | null>(null)
+  const [formOtherAttrs, setFormOtherAttrs] = useState<WooProductAttribute[]>([])
+
+  const [brands, setBrands] = useState<WooBrand[]>([])
+  const [brandAttrId, setBrandAttrId] = useState<number | null>(null)
 
   const load = async (newOffset = 0) => {
     setLoading(true)
@@ -65,7 +81,21 @@ export default function WordPressProducts() {
     }
   }
 
+  const loadBrandData = async () => {
+    try {
+      const [brandList, attrInfo] = await Promise.all([
+        listWordPressBrands(),
+        getWordPressBrandAttribute(),
+      ])
+      setBrands(brandList)
+      setBrandAttrId(attrInfo.id)
+    } catch {
+      // non-critical — product management still works without brand data
+    }
+  }
+
   useEffect(() => { load(0) }, [statusFilter])
+  useEffect(() => { loadBrandData() }, [])
 
   const handleDelete = async (p: WooProduct) => {
     if (!confirm(`¿Eliminar "${p.name}" (ID ${p.id})?`)) return
@@ -81,6 +111,7 @@ export default function WordPressProducts() {
     setEditProduct(null)
     setFormName(''); setFormSku(''); setFormPrice('')
     setFormStatus('publish'); setFormStock(''); setFormDesc('')
+    setFormBrandId(null); setFormOtherAttrs([])
     setFormError(null); setShowForm(true)
   }
 
@@ -90,7 +121,35 @@ export default function WordPressProducts() {
     setFormStatus(p.status === 'publish' ? 'publish' : 'draft')
     setFormStock(p.stock_quantity != null ? String(p.stock_quantity) : '')
     setFormDesc(p.description)
+    // Resolve current brand by matching attr options against loaded brands
+    const brandAttr = p.attributes?.find((a) => a.slug === 'pa_brand' || a.slug === 'brand')
+    const brandName = brandAttr?.options[0] ?? ''
+    const matched = brands.find((b) => b.name === brandName)
+    setFormBrandId(matched?.id ?? null)
+    // Preserve non-brand attributes so they survive the update
+    setFormOtherAttrs(
+      p.attributes?.filter((a) => a.slug !== 'pa_brand' && a.slug !== 'brand') ?? [],
+    )
     setFormError(null); setShowForm(true)
+  }
+
+  const buildAttributesPayload = (): WooProductAttribute[] => {
+    const attrs: WooProductAttribute[] = [...formOtherAttrs]
+    if (brandAttrId !== null && formBrandId !== null) {
+      const selectedBrand = brands.find((b) => b.id === formBrandId)
+      if (selectedBrand) {
+        attrs.push({
+          id: brandAttrId,
+          name: 'Marca',
+          slug: 'pa_brand',
+          position: attrs.length,
+          visible: true,
+          variation: false,
+          options: [selectedBrand.name],
+        })
+      }
+    }
+    return attrs
   }
 
   const handleSave = async (e: React.FormEvent) => {
@@ -106,14 +165,16 @@ export default function WordPressProducts() {
         description: formDesc,
         manage_stock: formStock !== '',
         stock_quantity: formStock !== '' ? parseInt(formStock, 10) : null,
+        attributes: buildAttributesPayload(),
       }
       if (editProduct) {
-        await updateWordPressProduct(editProduct.id, data)
+        const updated = await updateWordPressProduct(editProduct.id, data)
+        setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)))
       } else {
-        await createWordPressProduct(data)
+        const created = await createWordPressProduct(data)
+        setProducts((prev) => [created, ...prev])
       }
       setShowForm(false)
-      await load(offset)
     } catch (err: unknown) {
       setFormError((err as { message?: string })?.message ?? 'Error guardando producto.')
     } finally {
@@ -176,7 +237,7 @@ export default function WordPressProducts() {
         <table className="w-full">
           <thead className="bg-gray-50">
             <tr>
-              {['ID', 'Nombre', 'SKU', 'Precio', 'Stock', 'Estado', 'Acciones'].map((h) => (
+              {['ID', 'Nombre', 'SKU', 'Marca', 'Precio', 'Stock', 'Estado', 'Acciones'].map((h) => (
                 <th key={h} className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
                   {h}
                 </th>
@@ -186,13 +247,13 @@ export default function WordPressProducts() {
           <tbody className="divide-y divide-gray-200">
             {loading ? (
               <tr>
-                <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
+                <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
                   Cargando productos...
                 </td>
               </tr>
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
+                <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
                   Sin resultados.
                 </td>
               </tr>
@@ -202,6 +263,7 @@ export default function WordPressProducts() {
                   <td className="px-6 py-4 text-sm text-gray-500">{p.id}</td>
                   <td className="px-6 py-4 text-sm font-medium text-gray-900 max-w-48 truncate">{p.name}</td>
                   <td className="px-6 py-4 text-sm font-mono text-gray-600">{p.sku || '—'}</td>
+                  <td className="px-6 py-4 text-sm text-gray-600">{getProductBrandName(p)}</td>
                   <td className="px-6 py-4 text-sm text-gray-900">
                     {p.regular_price ? `${p.regular_price} €` : '—'}
                   </td>
@@ -297,6 +359,24 @@ export default function WordPressProducts() {
                     <label className="block text-xs font-medium text-gray-700 mb-1">Stock</label>
                     <input type="number" value={formStock} onChange={(e) => setFormStock(e.target.value)} placeholder="Sin gestión" className={INPUT_CLS} />
                   </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Marca</label>
+                  <select
+                    value={formBrandId ?? ''}
+                    onChange={(e) => setFormBrandId(e.target.value ? Number(e.target.value) : null)}
+                    className={INPUT_CLS}
+                  >
+                    <option value="">Sin marca</option>
+                    {brands.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                  {brands.length === 0 && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      Cargando marcas o no hay marcas configuradas en WooCommerce.
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">Descripción</label>
