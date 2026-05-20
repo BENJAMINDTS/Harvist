@@ -863,8 +863,78 @@ async def create_product(data: dict) -> JSONResponse:
                 extra={"product_id": product_id, "brand": brand_name},
             )
 
+    # ── Sync Dolibarr → WordPress (create) ───────────────────────────────────
+    ref: str = (created.get("ref") or "").strip() if isinstance(created, dict) else ""
+    wordpress_sync: dict[str, Any] = {"synced": False, "reason": "WordPress no configurado"}
+
+    if ref and product_id:
+        wp_client = await _get_wordpress_client_for_sync()
+        if wp_client is not None:
+            try:
+                wp_prod_svc = WordPressProductService(wp_client)
+                wp_cat_svc = WordPressCategoryService(wp_client)
+                wp_brand_svc = WordPressBrandService(wp_client)
+
+                wc_payload = _map_dolibarr_to_wc(created)
+                wc_payload["sku"] = ref
+                wc_payload.setdefault("status", "publish")
+                wc_payload.setdefault("type", "simple")
+
+                if category_name:
+                    try:
+                        wc_cat = await wp_cat_svc.find_or_create(category_name)
+                        wc_payload["categories"] = [{"id": wc_cat["id"]}]
+                    except Exception as exc:
+                        logger.warning(
+                            "Sync categoría Dolibarr→WP (create) falló",
+                            exc_info=exc,
+                            extra={"ref": ref, "category": category_name},
+                        )
+
+                wc_existing = await wp_prod_svc.find_by_sku(ref)
+                if wc_existing:
+                    wc_id = int(wc_existing["id"])
+                    await wp_prod_svc.update(wc_id, wc_payload)
+                    wordpress_sync = {"synced": True, "action": "updated", "wc_id": wc_id}
+                    logger.info(
+                        "Producto actualizado en WordPress (sync desde creación Dolibarr)",
+                        extra={"ref": ref, "wc_id": wc_id},
+                    )
+                else:
+                    wc_created = await wp_prod_svc.create(wc_payload)
+                    wc_id = int(wc_created["id"])
+                    wordpress_sync = {"synced": True, "action": "created", "wc_id": wc_id}
+                    logger.info(
+                        "Producto creado en WordPress (sync desde creación Dolibarr)",
+                        extra={"ref": ref, "wc_id": wc_id},
+                    )
+
+                if brand_name:
+                    try:
+                        await _sync_brand_to_wc(wc_id, brand_name, wp_prod_svc, wp_brand_svc)
+                        logger.info(
+                            "Marca sincronizada Dolibarr→WP (create)",
+                            extra={"ref": ref, "brand": brand_name},
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "Sync marca Dolibarr→WP (create) falló",
+                            exc_info=exc,
+                            extra={"ref": ref, "brand": brand_name},
+                        )
+
+            except Exception as exc:
+                wordpress_sync = {"synced": False, "reason": str(exc)}
+                logger.warning(
+                    "Sync Dolibarr→WordPress (create) falló",
+                    exc_info=exc,
+                    extra={"ref": ref},
+                )
+            finally:
+                await wp_client.close()
+
     return JSONResponse(
-        content=_ok(created, "Producto creado."),
+        content=_ok({**created, "wordpress_sync": wordpress_sync}, "Producto creado."),
         status_code=status.HTTP_201_CREATED,
     )
 
