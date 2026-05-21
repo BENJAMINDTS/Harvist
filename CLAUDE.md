@@ -276,7 +276,7 @@ Si la validación de marcas (Fase 7.4) está activa, NO se escribe hasta confirm
 - **Navegación contextual** — `Breadcrumb.tsx` + reorganización `App.tsx` para routing modular
 - Historial de jobs con paginación (sorted set Redis) — accesible desde cualquier módulo
 - Recuperación de jobs perdidos por crash (marcados FALLIDO al arrancar)
-- 130+ tests (unitarios + integración)
+- 130+ tests Python (unitarios + integración) · 29 tests TypeScript (Vitest)
 - `.env.example` completo · `.gitignore` · `LICENSE` · `pyproject.toml`
 
 **Fase 6.4 — Panel de marcas** ✅
@@ -503,6 +503,11 @@ pytest
 pytest tests/unit/
 pytest tests/integration/ -v
 pytest --cov=api --cov=services
+
+# ── Tests TypeScript (Vitest) ─────────────────────────────
+cd frontend && npm test                 # run once
+cd frontend && npm run test:watch       # watch mode
+cd frontend && npm run test:coverage    # con cobertura
 
 # ── Calidad ───────────────────────────────────────────────
 pip-audit
