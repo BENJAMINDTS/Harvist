@@ -873,6 +873,8 @@ def cleanup_stale_candidates() -> dict:
     """
     from pathlib import Path
 
+    from services.storage_service import get_storage_service  # noqa: PLC0415
+
     redis_client = _get_redis_client()
     settings = get_settings()
     storage = get_storage_service()
