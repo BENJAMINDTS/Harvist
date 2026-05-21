@@ -8,12 +8,13 @@ y que devuelve list[ResultadoDescarga] con la estructura esperada.
 :version: 1.0.0
 """
 
-import pytest
 from pathlib import Path
+
+import pytest
 from PIL import Image
 
-from services.scraper.consumer import ResultadoDescarga, descargar_imagenes_producto
 from services.csv_parser import Producto
+from services.scraper.consumer import ResultadoDescarga, descargar_imagenes_producto
 from services.storage_service import LocalStorageService
 
 
