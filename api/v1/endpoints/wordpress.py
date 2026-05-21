@@ -1,51 +1,51 @@
-"""
-Endpoints de la integración WordPress / WooCommerce.
+﻿"""
+Endpoints de la integraciÃ³n WordPress / WooCommerce.
 
 Rutas bajo /api/v1/wordpress:
-  GET  /wordpress/status                     — Estado y configuración
-  GET  /wordpress/config                     — Leer credenciales actuales
-  POST /wordpress/config                     — Guardar credenciales en Redis
-  GET  /wordpress/db/config                  — Leer config BD MySQL
-  POST /wordpress/db/config                  — Guardar config BD MySQL en Redis
+  GET  /wordpress/status                     â€” Estado y configuraciÃ³n
+  GET  /wordpress/config                     â€” Leer credenciales actuales
+  POST /wordpress/config                     â€” Guardar credenciales en Redis
+  GET  /wordpress/db/config                  â€” Leer config BD MySQL
+  POST /wordpress/db/config                  â€” Guardar config BD MySQL en Redis
 
 Rutas bajo /api/v1/wordpress/products:
-  GET    /wordpress/products                 — Listar productos (paginado)
-  GET    /wordpress/products/{id}            — Obtener producto
-  POST   /wordpress/products                 — Crear producto
-  PUT    /wordpress/products/{id}            — Actualizar producto
-  DELETE /wordpress/products/{id}            — Eliminar producto
-  POST   /wordpress/products/sync            — Sincronizar desde job Harvist
+  GET    /wordpress/products                 â€” Listar productos (paginado)
+  GET    /wordpress/products/{id}            â€” Obtener producto
+  POST   /wordpress/products                 â€” Crear producto
+  PUT    /wordpress/products/{id}            â€” Actualizar producto
+  DELETE /wordpress/products/{id}            â€” Eliminar producto
+  POST   /wordpress/products/sync            â€” Sincronizar desde job Harvist
 
 Rutas bajo /api/v1/wordpress/categories:
-  GET    /wordpress/categories               — Listar categorías
-  GET    /wordpress/categories/tree          — Árbol jerárquico
-  GET    /wordpress/categories/{id}          — Obtener categoría
-  POST   /wordpress/categories               — Crear categoría
-  PUT    /wordpress/categories/{id}          — Actualizar categoría
-  DELETE /wordpress/categories/{id}          — Eliminar categoría
+  GET    /wordpress/categories               â€” Listar categorÃ­as
+  GET    /wordpress/categories/tree          â€” Ãrbol jerÃ¡rquico
+  GET    /wordpress/categories/{id}          â€” Obtener categorÃ­a
+  POST   /wordpress/categories               â€” Crear categorÃ­a
+  PUT    /wordpress/categories/{id}          â€” Actualizar categorÃ­a
+  DELETE /wordpress/categories/{id}          â€” Eliminar categorÃ­a
 
 Rutas bajo /api/v1/wordpress/orders:
-  GET    /wordpress/orders                   — Listar pedidos
-  GET    /wordpress/orders/{id}              — Obtener pedido
-  PUT    /wordpress/orders/{id}/status       — Cambiar estado
-  POST   /wordpress/orders/{id}/notes        — Añadir nota
+  GET    /wordpress/orders                   â€” Listar pedidos
+  GET    /wordpress/orders/{id}              â€” Obtener pedido
+  PUT    /wordpress/orders/{id}/status       â€” Cambiar estado
+  POST   /wordpress/orders/{id}/notes        â€” AÃ±adir nota
 
 Rutas bajo /api/v1/wordpress/customers:
-  GET    /wordpress/customers                — Listar clientes
-  GET    /wordpress/customers/{id}           — Obtener cliente
-  POST   /wordpress/customers                — Crear cliente
-  PUT    /wordpress/customers/{id}           — Actualizar cliente
-  DELETE /wordpress/customers/{id}           — Eliminar cliente
+  GET    /wordpress/customers                â€” Listar clientes
+  GET    /wordpress/customers/{id}           â€” Obtener cliente
+  POST   /wordpress/customers                â€” Crear cliente
+  PUT    /wordpress/customers/{id}           â€” Actualizar cliente
+  DELETE /wordpress/customers/{id}           â€” Eliminar cliente
 
 Rutas bajo /api/v1/wordpress/media:
-  GET    /wordpress/media                    — Listar media
-  POST   /wordpress/media                    — Subir archivo
+  GET    /wordpress/media                    â€” Listar media
+  POST   /wordpress/media                    â€” Subir archivo
 
 Rutas bajo /api/v1/wordpress/db:
-  GET    /wordpress/db/tables                — Listar tablas MySQL
-  GET    /wordpress/db/site-info             — Info del sitio WordPress
-  POST   /wordpress/db/query                 — Ejecutar query SELECT
-  GET    /wordpress/db/options/{option_name} — Leer wp_option
+  GET    /wordpress/db/tables                â€” Listar tablas MySQL
+  GET    /wordpress/db/site-info             â€” Info del sitio WordPress
+  POST   /wordpress/db/query                 â€” Ejecutar query SELECT
+  GET    /wordpress/db/options/{option_name} â€” Leer wp_option
 
 :author: Carlitos6712
 :version: 1.0.0
@@ -104,9 +104,9 @@ router_webhooks = APIRouter(prefix="/wordpress/webhooks", tags=["wordpress-webho
 _ALLOWED_MEDIA_TYPES = {"image/jpeg", "image/png", "image/webp"}
 _MAX_MEDIA_BYTES = 5 * 1024 * 1024  # 5 MB
 _NOT_CONFIGURED_MSG = (
-    "WordPress no está configurado. "
+    "WordPress no estÃ¡ configurado. "
     "Define WORDPRESS_URL, WORDPRESS_CONSUMER_KEY y WORDPRESS_CONSUMER_SECRET "
-    "en tu archivo .env o configúralos en la interfaz."
+    "en tu archivo .env o configÃºralos en la interfaz."
 )
 _DB_NOT_CONFIGURED_MSG = (
     "BD MySQL de WordPress no configurada. "
@@ -114,14 +114,14 @@ _DB_NOT_CONFIGURED_MSG = (
 )
 
 
-# ── Helpers de credenciales ─────────────────────────────────────────────────
+# â”€â”€ Helpers de credenciales â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 async def _get_wp_credentials() -> dict[str, str]:
     """
     Obtiene credenciales de WordPress desde Redis, archivo JSON o .env.
 
-    Prioridad: Redis → data/wp_config.json → variables de entorno.
+    Prioridad: Redis â†’ data/wp_config.json â†’ variables de entorno.
 
     Returns:
         Dict con url, consumer_key y consumer_secret.
@@ -157,7 +157,7 @@ async def _get_wp_credentials() -> dict[str, str]:
         }
 
     raise IntegrationNotConfiguredError(
-        "WordPress no configurado: define las variables en .env o en la interfaz gráfica."
+        "WordPress no configurado: define las variables en .env o en la interfaz grÃ¡fica."
     )
 
 
@@ -165,7 +165,7 @@ async def _get_db_credentials() -> dict[str, Any]:
     """
     Obtiene credenciales de BD de WordPress desde Redis, archivo JSON o .env.
 
-    Prioridad: Redis → data/wp_db_config.json → variables de entorno.
+    Prioridad: Redis â†’ data/wp_db_config.json â†’ variables de entorno.
 
     Returns:
         Dict con host, port, db_name, user, password, prefix.
@@ -204,7 +204,7 @@ async def _get_db_credentials() -> dict[str, Any]:
         }
 
     raise IntegrationNotConfiguredError(
-        "BD WordPress no configurada: define WORDPRESS_DB_* en .env o en la interfaz gráfica."
+        "BD WordPress no configurada: define WORDPRESS_DB_* en .env o en la interfaz grÃ¡fica."
     )
 
 
@@ -213,7 +213,7 @@ async def _get_dolibarr_client_for_sync() -> DolibarrClient | None:
     Construye DolibarrClient desde Redis o .env para uso en sync.
 
     Returns:
-        DolibarrClient si Dolibarr está configurado, None si no.
+        DolibarrClient si Dolibarr estÃ¡ configurado, None si no.
     """
     settings = get_settings()
     redis_client: aioredis.Redis | None = None
@@ -247,7 +247,7 @@ async def _get_dolibarr_product_service() -> DolibarrProductService | None:
     Construye DolibarrProductService desde Redis o .env.
 
     Returns:
-        DolibarrProductService si Dolibarr está configurado, None si no.
+        DolibarrProductService si Dolibarr estÃ¡ configurado, None si no.
     """
     doli_client = await _get_dolibarr_client_for_sync()
     if doli_client is None:
@@ -272,13 +272,13 @@ async def _get_dolibarr_services_for_sync() -> (
 
 def _map_wc_to_dolibarr(wc_product: dict[str, Any]) -> dict[str, Any]:
     """
-    Mapea campos WooCommerce → Dolibarr para actualización.
+    Mapea campos WooCommerce â†’ Dolibarr para actualizaciÃ³n.
 
     Mapeo:
-      name             → label
-      description      → description
-      regular_price    → price
-      weight           → weight
+      name             â†’ label
+      description      â†’ description
+      regular_price    â†’ price
+      weight           â†’ weight
 
     Args:
         wc_product: dict del producto WooCommerce actualizado.
@@ -314,7 +314,7 @@ def _extract_wc_brand_name(wc_product: dict[str, Any]) -> str:
         wc_product: dict del producto WooCommerce.
 
     Returns:
-        Nombre de la marca o cadena vacía si no hay marca asignada.
+        Nombre de la marca o cadena vacÃ­a si no hay marca asignada.
     """
     brands = wc_product.get("brands", [])
     if brands:
@@ -336,7 +336,7 @@ async def _sync_wc_stock_to_dolibarr(
     Sincroniza el stock de un producto de WooCommerce a Dolibarr.
 
     Busca el producto en Dolibarr por ref=SKU, calcula el delta respecto al
-    stock actual y crea un movimiento de corrección de inventario (tipo 2).
+    stock actual y crea un movimiento de correcciÃ³n de inventario (tipo 2).
 
     Args:
         sku:       referencia del producto (SKU WC = ref Dolibarr).
@@ -372,7 +372,7 @@ async def _sync_wc_stock_to_dolibarr(
         label=f"Sync WooCommerce (SKU {sku})",
     )
     logger.info(
-        "Stock sincronizado WP→Dolibarr",
+        "Stock sincronizado WPâ†’Dolibarr",
         extra={"sku": sku, "delta": delta, "new_qty": wc_stock, "dolibarr_id": doli_id},
     )
     return {"synced": True, "delta": delta, "new_qty": int(wc_stock), "dolibarr_id": doli_id}
@@ -419,7 +419,7 @@ async def _get_client() -> WordPressClient:
     Construye WordPressClient con credenciales de Redis o .env.
 
     Raises:
-        HTTPException 503: si WordPress no está configurado.
+        HTTPException 503: si WordPress no estÃ¡ configurado.
     """
     settings = get_settings()
     try:
@@ -442,7 +442,7 @@ async def _get_db_service() -> WordPressDBService:
     Construye WordPressDBService con credenciales de Redis o .env.
 
     Raises:
-        HTTPException 503: si la BD no está configurada.
+        HTTPException 503: si la BD no estÃ¡ configurada.
     """
     try:
         creds = await _get_db_credentials()
@@ -462,19 +462,19 @@ async def _get_db_service() -> WordPressDBService:
 
 
 def _ok(data: Any, message: str = "OK") -> dict[str, Any]:
-    """Envuelve data en la respuesta estándar Harvist."""
+    """Envuelve data en la respuesta estÃ¡ndar Harvist."""
     return {"success": True, "data": data, "message": message}
 
 
 def _load_config_file(path: str) -> dict[str, Any]:
     """
-    Lee un archivo JSON de configuración desde disco.
+    Lee un archivo JSON de configuraciÃ³n desde disco.
 
     Args:
         path: ruta relativa o absoluta al archivo JSON.
 
     Returns:
-        Dict con el contenido del archivo, o dict vacío si no existe o hay error.
+        Dict con el contenido del archivo, o dict vacÃ­o si no existe o hay error.
     """
     try:
         p = Path(path)
@@ -487,7 +487,7 @@ def _load_config_file(path: str) -> dict[str, Any]:
 
 def _save_config_file(path: str, data: dict[str, Any]) -> None:
     """
-    Escribe un dict de configuración en disco como JSON.
+    Escribe un dict de configuraciÃ³n en disco como JSON.
 
     Args:
         path: ruta relativa o absoluta al archivo destino.
@@ -502,13 +502,13 @@ def _save_config_file(path: str, data: dict[str, Any]) -> None:
         logger.warning("No se pudo escribir config file", exc_info=exc, extra={"path": path})
 
 
-# ── Status & Config ─────────────────────────────────────────────────────────
+# â”€â”€ Status & Config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 @router_main.get("/status", response_model=IntegrationStatus)
 async def get_status() -> IntegrationStatus:
     """
-    Verifica estado de configuración y salud de la integración WordPress.
+    Verifica estado de configuraciÃ³n y salud de la integraciÃ³n WordPress.
 
     Prioridad: Redis config > variables de entorno.
 
@@ -566,7 +566,7 @@ async def get_status() -> IntegrationStatus:
 @router_main.get("/config", response_model=WordPressConfigResponse)
 async def get_config() -> WordPressConfigResponse:
     """
-    Lee la configuración actual de WordPress.
+    Lee la configuraciÃ³n actual de WordPress.
 
     Returns:
         WordPressConfigResponse con las credenciales actuales (enmascaradas).
@@ -601,13 +601,13 @@ async def get_config() -> WordPressConfigResponse:
 @router_main.post("/config")
 async def save_config(body: WordPressConfigRequest) -> dict[str, Any]:
     """
-    Guarda configuración de WordPress en Redis.
+    Guarda configuraciÃ³n de WordPress en Redis.
 
     Args:
         body: URL, consumer_key, consumer_secret y credenciales opcionales de Application Password.
 
     Returns:
-        Respuesta estándar confirmando el guardado.
+        Respuesta estÃ¡ndar confirmando el guardado.
     """
     settings = get_settings()
     redis_client: aioredis.Redis | None = None
@@ -631,22 +631,22 @@ async def save_config(body: WordPressConfigRequest) -> dict[str, Any]:
         logger.error("Error guardando config WordPress en Redis", exc_info=exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="No se pudo guardar la configuración de WordPress.",
+            detail="No se pudo guardar la configuraciÃ³n de WordPress.",
         ) from exc
     finally:
         if redis_client:
             await redis_client.aclose()
 
-    return _ok({}, "Configuración de WordPress guardada correctamente.")
+    return _ok({}, "ConfiguraciÃ³n de WordPress guardada correctamente.")
 
 
 @router_main.get("/db/config", response_model=WordPressDBConfigResponse)
 async def get_db_config() -> WordPressDBConfigResponse:
     """
-    Lee la configuración de BD MySQL de WordPress.
+    Lee la configuraciÃ³n de BD MySQL de WordPress.
 
     Returns:
-        WordPressDBConfigResponse con las credenciales actuales (contraseña enmascarada).
+        WordPressDBConfigResponse con las credenciales actuales (contraseÃ±a enmascarada).
     """
     settings = get_settings()
     redis_client: aioredis.Redis | None = None
@@ -678,13 +678,13 @@ async def get_db_config() -> WordPressDBConfigResponse:
 @router_main.post("/db/config")
 async def save_db_config(body: WordPressDBConfigRequest) -> dict[str, Any]:
     """
-    Guarda configuración de BD MySQL de WordPress en Redis.
+    Guarda configuraciÃ³n de BD MySQL de WordPress en Redis.
 
     Args:
         body: host, port, db_name, user, password, prefix.
 
     Returns:
-        Respuesta estándar confirmando el guardado.
+        Respuesta estÃ¡ndar confirmando el guardado.
     """
     settings = get_settings()
     redis_client: aioredis.Redis | None = None
@@ -706,35 +706,35 @@ async def save_db_config(body: WordPressDBConfigRequest) -> dict[str, Any]:
         logger.error("Error guardando config BD WordPress en Redis", exc_info=exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="No se pudo guardar la configuración de BD WordPress.",
+            detail="No se pudo guardar la configuraciÃ³n de BD WordPress.",
         ) from exc
     finally:
         if redis_client:
             await redis_client.aclose()
 
-    return _ok({}, "Configuración de BD WordPress guardada correctamente.")
+    return _ok({}, "ConfiguraciÃ³n de BD WordPress guardada correctamente.")
 
 
-# ── Products ────────────────────────────────────────────────────────────────
+# â”€â”€ Products â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 @router_products.get("")
 async def list_products(
-    limit: int = Query(default=50, ge=1, le=100),
+    limit: int = Query(default=50, ge=1),
     offset: int = Query(default=0, ge=0),
     status_filter: str = Query(default="any", alias="status"),
     category: int | None = Query(default=None),
     search: str = Query(default=""),
 ) -> dict[str, Any]:
     """
-    Lista productos WooCommerce con paginación y filtros.
+    Lista productos WooCommerce con paginaciÃ³n y filtros.
 
     Args:
-        limit: elementos por página.
+        limit: elementos por pÃ¡gina.
         offset: desplazamiento.
         status_filter: filtro de estado (any, publish, draft, private).
-        category: ID de categoría.
-        search: búsqueda por nombre/SKU.
+        category: ID de categorÃ­a.
+        search: bÃºsqueda por nombre/SKU.
 
     Returns:
         PaginatedResponse con los productos.
@@ -788,17 +788,17 @@ async def get_product(product_id: int) -> dict[str, Any]:
 @router_products.post("", status_code=status.HTTP_201_CREATED)
 async def create_product(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
     """
-    Crea un producto en WooCommerce y propaga la creación a Dolibarr si está configurado.
+    Crea un producto en WooCommerce y propaga la creaciÃ³n a Dolibarr si estÃ¡ configurado.
 
     El producto se busca en Dolibarr por ref = SKU. Si existe se actualiza;
-    si no existe se crea. La operación WooCommerce se completa igualmente aunque
-    Dolibarr no esté configurado o el sync falle.
+    si no existe se crea. La operaciÃ³n WooCommerce se completa igualmente aunque
+    Dolibarr no estÃ© configurado o el sync falle.
 
     Args:
         body: campos del producto (name, type, regular_price, sku, etc.).
 
     Returns:
-        Dict con el producto creado e información del sync a Dolibarr.
+        Dict con el producto creado e informaciÃ³n del sync a Dolibarr.
     """
     client = await _get_client()
     try:
@@ -829,7 +829,7 @@ async def create_product(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
                     await doli_svc.update_product(doli_id, doli_payload)
                     dolibarr_sync = {"synced": True, "action": "updated", "dolibarr_id": doli_id}
                     logger.info(
-                        "Producto actualizado en Dolibarr (sync desde creación WP)",
+                        "Producto actualizado en Dolibarr (sync desde creaciÃ³n WP)",
                         extra={"wc_id": item.get("id"), "sku": sku, "dolibarr_id": doli_id},
                     )
                 else:
@@ -837,11 +837,11 @@ async def create_product(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
                     doli_id = int(doli_created["id"])
                     dolibarr_sync = {"synced": True, "action": "created", "dolibarr_id": doli_id}
                     logger.info(
-                        "Producto creado en Dolibarr (sync desde creación WP)",
+                        "Producto creado en Dolibarr (sync desde creaciÃ³n WP)",
                         extra={"wc_id": item.get("id"), "sku": sku, "dolibarr_id": doli_id},
                     )
 
-                # ── Categoría WC → Dolibarr ───────────────────────────────────
+                # â”€â”€ CategorÃ­a WC â†’ Dolibarr â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 wc_categories = item.get("categories", [])
                 if wc_categories:
                     cat_name = (wc_categories[0].get("name") or "").strip()
@@ -852,12 +852,12 @@ async def create_product(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
                                 await doli_cat_svc.assign_product(int(doli_cat["id"]), doli_id)
                         except Exception as exc:
                             logger.warning(
-                                "Sync categoría WP→Dolibarr (create) falló",
+                                "Sync categorÃ­a WPâ†’Dolibarr (create) fallÃ³",
                                 exc_info=exc,
                                 extra={"sku": sku},
                             )
 
-                # ── Marca WC → Dolibarr ───────────────────────────────────────
+                # â”€â”€ Marca WC â†’ Dolibarr â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 brand_name = _extract_wc_brand_name(item)
                 if brand_name:
                     try:
@@ -865,14 +865,14 @@ async def create_product(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
                         await doli_cat_svc.assign_product(int(doli_brand["id"]), doli_id)
                     except Exception as exc:
                         logger.warning(
-                            "Sync marca WP→Dolibarr (create) falló",
+                            "Sync marca WPâ†’Dolibarr (create) fallÃ³",
                             exc_info=exc,
                             extra={"sku": sku},
                         )
 
             except Exception as exc:
                 dolibarr_sync = {"synced": False, "reason": str(exc)}
-                logger.warning("Sync WP→Dolibarr (create) falló", exc_info=exc, extra={"sku": sku})
+                logger.warning("Sync WPâ†’Dolibarr (create) fallÃ³", exc_info=exc, extra={"sku": sku})
 
     return _ok({**item, "dolibarr_sync": dolibarr_sync}, "Producto creado en WooCommerce.")
 
@@ -880,10 +880,10 @@ async def create_product(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
 @router_products.put("/{product_id}")
 async def update_product(product_id: int, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
     """
-    Actualiza un producto en WooCommerce y propaga el cambio a Dolibarr si está configurado.
+    Actualiza un producto en WooCommerce y propaga el cambio a Dolibarr si estÃ¡ configurado.
 
     El producto se busca en Dolibarr por ref = SKU del producto WooCommerce.
-    Si Dolibarr no está configurado o el producto no existe allí, la operación
+    Si Dolibarr no estÃ¡ configurado o el producto no existe allÃ­, la operaciÃ³n
     WooCommerce se completa igualmente y se registra un aviso.
 
     Args:
@@ -891,7 +891,7 @@ async def update_product(product_id: int, body: dict[str, Any] = Body(...)) -> d
         body: campos a actualizar.
 
     Returns:
-        Dict con el producto actualizado e información del sync a Dolibarr.
+        Dict con el producto actualizado e informaciÃ³n del sync a Dolibarr.
     """
     client = await _get_client()
     try:
@@ -919,23 +919,23 @@ async def update_product(product_id: int, body: dict[str, Any] = Body(...)) -> d
                     await doli_svc.update_product(doli_id, dolibarr_payload)
                     dolibarr_sync = {"synced": True, "dolibarr_id": existing["id"]}
                     logger.info(
-                        "Producto sincronizado WP→Dolibarr",
+                        "Producto sincronizado WPâ†’Dolibarr",
                         extra={"wc_id": product_id, "sku": sku, "dolibarr_id": doli_id},
                     )
 
-                    # ── Stock WC → Dolibarr ───────────────────────────────────
+                    # â”€â”€ Stock WC â†’ Dolibarr â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                     wc_stock = item.get("stock_quantity")
                     if wc_stock is not None and item.get("manage_stock"):
                         try:
                             await _sync_wc_stock_to_dolibarr(sku, wc_stock, doli_svc)
                         except Exception as exc:
                             logger.warning(
-                                "Sync stock WP→Dolibarr falló",
+                                "Sync stock WPâ†’Dolibarr fallÃ³",
                                 exc_info=exc,
                                 extra={"sku": sku},
                             )
 
-                    # ── Categoría WC → Dolibarr ───────────────────────────────
+                    # â”€â”€ CategorÃ­a WC â†’ Dolibarr â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                     wc_categories = item.get("categories", [])
                     if wc_categories:
                         cat_name = (wc_categories[0].get("name") or "").strip()
@@ -945,38 +945,38 @@ async def update_product(product_id: int, body: dict[str, Any] = Body(...)) -> d
                                 if doli_cat:
                                     await doli_cat_svc.assign_product(int(doli_cat["id"]), doli_id)
                                     logger.info(
-                                        "Categoría sincronizada WP→Dolibarr",
+                                        "CategorÃ­a sincronizada WPâ†’Dolibarr",
                                         extra={"sku": sku, "category": cat_name},
                                     )
                             except Exception as exc:
                                 logger.warning(
-                                    "Sync categoría WP→Dolibarr falló",
+                                    "Sync categorÃ­a WPâ†’Dolibarr fallÃ³",
                                     exc_info=exc,
                                     extra={"sku": sku, "category": cat_name},
                                 )
 
-                    # ── Marca WC → Dolibarr ───────────────────────────────────
+                    # â”€â”€ Marca WC â†’ Dolibarr â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                     brand_name = _extract_wc_brand_name(item)
                     if brand_name:
                         try:
                             doli_brand = await doli_cat_svc.find_or_create_brand(brand_name)
                             await doli_cat_svc.assign_product(int(doli_brand["id"]), doli_id)
                             logger.info(
-                                "Marca sincronizada WP→Dolibarr",
+                                "Marca sincronizada WPâ†’Dolibarr",
                                 extra={"sku": sku, "brand": brand_name},
                             )
                         except Exception as exc:
                             logger.warning(
-                                "Sync marca WP→Dolibarr falló",
+                                "Sync marca WPâ†’Dolibarr fallÃ³",
                                 exc_info=exc,
                                 extra={"sku": sku, "brand": brand_name},
                             )
                 else:
                     dolibarr_sync = {"synced": False, "reason": f"SKU '{sku}' no encontrado en Dolibarr"}
-                    logger.warning("Sync WP→Dolibarr: SKU no encontrado", extra={"sku": sku})
+                    logger.warning("Sync WPâ†’Dolibarr: SKU no encontrado", extra={"sku": sku})
             except Exception as exc:
                 dolibarr_sync = {"synced": False, "reason": str(exc)}
-                logger.warning("Sync WP→Dolibarr falló", exc_info=exc, extra={"sku": sku})
+                logger.warning("Sync WPâ†’Dolibarr fallÃ³", exc_info=exc, extra={"sku": sku})
     else:
         dolibarr_sync = {"synced": False, "reason": "Producto sin SKU, no se puede buscar en Dolibarr"}
 
@@ -987,9 +987,9 @@ async def update_product(product_id: int, body: dict[str, Any] = Body(...)) -> d
 @router_products.put("/{product_id}/brand")
 async def set_product_brand(product_id: int, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
     """
-    Asigna o elimina la marca de un producto WooCommerce de forma atómica.
+    Asigna o elimina la marca de un producto WooCommerce de forma atÃ³mica.
 
-    Detecta automáticamente si el sitio usa el endpoint nativo de marcas
+    Detecta automÃ¡ticamente si el sitio usa el endpoint nativo de marcas
     (WooCommerce Brands / 8.6+) o el modo de atributo global (pa_brand).
 
     Modo nativo:   actualiza el campo ``brands`` del producto.
@@ -1056,7 +1056,7 @@ async def delete_product(product_id: int) -> dict[str, Any]:
         product_id: ID del producto.
 
     Returns:
-        Respuesta estándar de éxito.
+        Respuesta estÃ¡ndar de Ã©xito.
     """
     client = await _get_client()
     try:
@@ -1072,18 +1072,18 @@ async def delete_product(product_id: int) -> dict[str, Any]:
 @router_products.delete("")
 async def bulk_delete_products(ids: list[int] = Body(...)) -> dict[str, Any]:
     """
-    Elimina múltiples productos de WooCommerce en una sola operación batch.
+    Elimina mÃºltiples productos de WooCommerce en una sola operaciÃ³n batch.
 
     Args:
         ids: lista de IDs de productos a eliminar.
 
     Returns:
-        Respuesta estándar con el número de productos eliminados.
+        Respuesta estÃ¡ndar con el nÃºmero de productos eliminados.
     """
     if not ids:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="La lista de IDs no puede estar vacía.",
+            detail="La lista de IDs no puede estar vacÃ­a.",
         )
     client = await _get_client()
     try:
@@ -1106,7 +1106,7 @@ async def sync_all_to_dolibarr() -> dict[str, Any]:
     Sincroniza todos los productos de WooCommerce a Dolibarr.
 
     Para cada producto WooCommerce con SKU: busca en Dolibarr por ref=SKU.
-    Si existe → actualiza; si no → crea. Aplica semáforo de concurrencia 5.
+    Si existe â†’ actualiza; si no â†’ crea. Aplica semÃ¡foro de concurrencia 5.
 
     Returns:
         Resumen con total, created, updated, skipped, errors.
@@ -1115,7 +1115,7 @@ async def sync_all_to_dolibarr() -> dict[str, Any]:
     if doli_services is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Dolibarr no está configurado.",
+            detail="Dolibarr no estÃ¡ configurado.",
         )
 
     doli_svc, _ = doli_services
@@ -1175,7 +1175,7 @@ async def sync_all_to_dolibarr() -> dict[str, Any]:
             offset += limit
 
         logger.info(
-            "Sync masivo WooCommerce→Dolibarr completado",
+            "Sync masivo WooCommerceâ†’Dolibarr completado",
             extra={"total": total, "created": created, "updated": updated, "errors": errors},
         )
     finally:
@@ -1208,7 +1208,7 @@ async def sync_from_job(body: SyncFromJobRequest) -> dict[str, Any]:
         body: job_id, product_codes, overwrite.
 
     Returns:
-        Resumen de la sincronización.
+        Resumen de la sincronizaciÃ³n.
     """
     settings = get_settings()
     client = await _get_client()
@@ -1272,13 +1272,13 @@ async def sync_from_job(body: SyncFromJobRequest) -> dict[str, Any]:
                 "errors": errors,
                 "results": results,
             },
-            f"Sincronización completada: {created} creados, {updated} actualizados.",
+            f"SincronizaciÃ³n completada: {created} creados, {updated} actualizados.",
         )
     finally:
         await client.close()
 
 
-# ── CSV Import ──────────────────────────────────────────────────────────────
+# â”€â”€ CSV Import â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 _MAX_CSV_BYTES = 10 * 1024 * 1024  # 10 MB
 _WP_IMPORT_KEY = "wordpress_import:{task_id}"
@@ -1290,7 +1290,7 @@ async def get_csv_import_fields() -> JSONResponse:
     """
     Devuelve la lista de campos WooCommerce disponibles para el mapeo CSV.
 
-    No requiere conexión a WordPress.
+    No requiere conexiÃ³n a WordPress.
 
     Returns:
         Lista de {key, label} para construir el selector de mapeo en el frontend.
@@ -1305,20 +1305,20 @@ async def csv_preview(file: UploadFile) -> JSONResponse:
     """
     Pre-analiza un CSV y devuelve cabeceras + filas de muestra.
 
-    No requiere conexión a WordPress. Sirve para construir la UI de mapeo
-    antes de lanzar la importación real.
+    No requiere conexiÃ³n a WordPress. Sirve para construir la UI de mapeo
+    antes de lanzar la importaciÃ³n real.
 
     Args:
         file: archivo CSV (multipart).
 
     Returns:
-        CsvImportPreview con headers, preview (≤5 filas) y total_rows.
+        CsvImportPreview con headers, preview (â‰¤5 filas) y total_rows.
     """
     content = await file.read()
     if len(content) > _MAX_CSV_BYTES:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"El CSV supera el límite de 10 MB ({len(content)} bytes).",
+            detail=f"El CSV supera el lÃ­mite de 10 MB ({len(content)} bytes).",
         )
 
     svc = WordPressProductService.__new__(WordPressProductService)
@@ -1345,20 +1345,20 @@ async def import_from_csv(
     subcategory_column: str = Form(default=""),
 ) -> JSONResponse:
     """
-    Inicia la importación masiva de productos desde CSV como tarea Celery asíncrona.
+    Inicia la importaciÃ³n masiva de productos desde CSV como tarea Celery asÃ­ncrona.
 
-    Valida el CSV y el mapeo de forma síncrona. Si todo es correcto,
+    Valida el CSV y el mapeo de forma sÃ­ncrona. Si todo es correcto,
     encola la tarea y devuelve un ``task_id`` inmediatamente (HTTP 202).
     El cliente debe hacer polling a ``GET /csv/import/{task_id}`` para
     consultar el progreso y obtener los resultados.
 
     Args:
         file:                CSV de productos (multipart).
-        mapping:             JSON string con el mapeo columna_csv → campo_woocommerce.
+        mapping:             JSON string con el mapeo columna_csv â†’ campo_woocommerce.
         overwrite:           si True, actualiza productos que ya existen (por SKU).
         brand_column:        nombre de la columna CSV con la marca (opcional).
-        category_column:     nombre de la columna CSV con la categoría raíz (opcional).
-        subcategory_column:  nombre de la columna CSV con la subcategoría (opcional).
+        category_column:     nombre de la columna CSV con la categorÃ­a raÃ­z (opcional).
+        subcategory_column:  nombre de la columna CSV con la subcategorÃ­a (opcional).
 
     Returns:
         HTTP 202 con ``{task_id, status: "pending"}``.
@@ -1369,7 +1369,7 @@ async def import_from_csv(
     if len(content) > _MAX_CSV_BYTES:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"El CSV supera el límite de 10 MB ({len(content)} bytes).",
+            detail=f"El CSV supera el lÃ­mite de 10 MB ({len(content)} bytes).",
         )
 
     try:
@@ -1377,7 +1377,7 @@ async def import_from_csv(
     except (json.JSONDecodeError, ValueError) as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"El campo 'mapping' no es JSON válido: {exc}",
+            detail=f"El campo 'mapping' no es JSON vÃ¡lido: {exc}",
         )
 
     if not any(v == "name" for v in mapping_dict.values()):
@@ -1405,18 +1405,18 @@ async def import_from_csv(
         wp_consumer_secret=creds.get("consumer_secret", ""),
     )
 
-    logger.info("Importación WordPress encolada", extra={"task_id": task_id})
+    logger.info("ImportaciÃ³n WordPress encolada", extra={"task_id": task_id})
 
     return JSONResponse(
         status_code=status.HTTP_202_ACCEPTED,
-        content=_ok({"task_id": task_id, "status": "pending"}, "Importación iniciada."),
+        content=_ok({"task_id": task_id, "status": "pending"}, "ImportaciÃ³n iniciada."),
     )
 
 
 @router_products.get("/csv/import/{task_id}")
 async def get_import_status(task_id: str) -> JSONResponse:
     """
-    Consulta el estado de una tarea de importación CSV de WordPress.
+    Consulta el estado de una tarea de importaciÃ³n CSV de WordPress.
 
     Args:
         task_id: UUID de la tarea devuelto por POST /csv/import.
@@ -1437,26 +1437,26 @@ async def get_import_status(task_id: str) -> JSONResponse:
             detail=f"Tarea {task_id} no encontrada o expirada.",
         )
 
-    return JSONResponse(content=_ok(json.loads(raw), "Estado de importación."))
+    return JSONResponse(content=_ok(json.loads(raw), "Estado de importaciÃ³n."))
 
 
-# ── Categories ──────────────────────────────────────────────────────────────
+# â”€â”€ Categories â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 @router_categories.get("")
 async def list_categories(
-    limit: int = Query(default=100, ge=1, le=100),
+    limit: int = Query(default=100, ge=1),
     offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
     """
-    Lista categorías WooCommerce.
+    Lista categorÃ­as WooCommerce.
 
     Args:
-        limit: elementos por página.
+        limit: elementos por pÃ¡gina.
         offset: desplazamiento.
 
     Returns:
-        Lista de categorías.
+        Lista de categorÃ­as.
     """
     client = await _get_client()
     try:
@@ -1472,10 +1472,10 @@ async def list_categories(
 @router_categories.get("/tree")
 async def get_categories_tree() -> dict[str, Any]:
     """
-    Devuelve las categorías en árbol jerárquico.
+    Devuelve las categorÃ­as en Ã¡rbol jerÃ¡rquico.
 
     Returns:
-        Lista de categorías raíz con campo "children".
+        Lista de categorÃ­as raÃ­z con campo "children".
     """
     client = await _get_client()
     try:
@@ -1490,7 +1490,7 @@ async def get_categories_tree() -> dict[str, Any]:
 
 @router_categories.get("/{category_id}")
 async def get_category(category_id: int) -> dict[str, Any]:
-    """Obtiene una categoría por ID."""
+    """Obtiene una categorÃ­a por ID."""
     client = await _get_client()
     try:
         svc = WordPressCategoryService(client)
@@ -1503,11 +1503,11 @@ async def get_category(category_id: int) -> dict[str, Any]:
 
 @router_categories.post("", status_code=status.HTTP_201_CREATED)
 async def create_category(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    """Crea una categoría en WooCommerce."""
+    """Crea una categorÃ­a en WooCommerce."""
     client = await _get_client()
     try:
         svc = WordPressCategoryService(client)
-        return _ok(await svc.create(body), "Categoría creada.")
+        return _ok(await svc.create(body), "CategorÃ­a creada.")
     except IntegrationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
@@ -1516,11 +1516,11 @@ async def create_category(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
 
 @router_categories.put("/{category_id}")
 async def update_category(category_id: int, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    """Actualiza una categoría en WooCommerce."""
+    """Actualiza una categorÃ­a en WooCommerce."""
     client = await _get_client()
     try:
         svc = WordPressCategoryService(client)
-        return _ok(await svc.update(category_id, body), "Categoría actualizada.")
+        return _ok(await svc.update(category_id, body), "CategorÃ­a actualizada.")
     except IntegrationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
@@ -1529,35 +1529,35 @@ async def update_category(category_id: int, body: dict[str, Any] = Body(...)) ->
 
 @router_categories.delete("/{category_id}")
 async def delete_category(category_id: int) -> dict[str, Any]:
-    """Elimina una categoría de WooCommerce."""
+    """Elimina una categorÃ­a de WooCommerce."""
     client = await _get_client()
     try:
         svc = WordPressCategoryService(client)
         await svc.delete(category_id)
-        return _ok({}, "Categoría eliminada.")
+        return _ok({}, "CategorÃ­a eliminada.")
     except IntegrationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
         await client.close()
 
 
-# ── Brands ──────────────────────────────────────────────────────────────────
+# â”€â”€ Brands â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 @router_brands.get("")
 async def list_brands(
-    limit: int = Query(default=100, ge=1, le=100),
+    limit: int = Query(default=100, ge=1),
     offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
     """
-    Lista los términos de marca del atributo pa_brand de WooCommerce.
+    Lista los tÃ©rminos de marca del atributo pa_brand de WooCommerce.
 
     Args:
-        limit: máximo de marcas a retornar.
-        offset: desplazamiento para paginación.
+        limit: mÃ¡ximo de marcas a retornar.
+        offset: desplazamiento para paginaciÃ³n.
 
     Returns:
-        Lista de términos de marca con id, name, slug, count, description.
+        Lista de tÃ©rminos de marca con id, name, slug, count, description.
     """
     client = await _get_client()
     try:
@@ -1575,8 +1575,8 @@ async def list_all_wc_attributes() -> dict[str, Any]:
     """
     Lista todos los atributos de producto globales de WooCommerce.
 
-    Permite al usuario identificar qué atributo contiene sus marcas
-    y configurar el override si la detección automática falla.
+    Permite al usuario identificar quÃ© atributo contiene sus marcas
+    y configurar el override si la detecciÃ³n automÃ¡tica falla.
 
     Returns:
         Lista de atributos con id, name, slug, term_count.
@@ -1595,10 +1595,10 @@ async def list_all_wc_attributes() -> dict[str, Any]:
 @router_brands.put("/attribute")
 async def configure_brand_attribute(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
     """
-    Configura el atributo de WooCommerce que se usará para marcas.
+    Configura el atributo de WooCommerce que se usarÃ¡ para marcas.
 
     Guarda el ID del atributo en Redis para que todas las llamadas
-    posteriores usen ese atributo en lugar de la detección automática.
+    posteriores usen ese atributo en lugar de la detecciÃ³n automÃ¡tica.
 
     Args:
         body: ``{"attr_id": 5}`` con el ID del atributo deseado.
@@ -1640,7 +1640,7 @@ async def get_brand_attribute() -> dict[str, Any]:
     """
     Devuelve los metadatos del atributo global pa_brand de WooCommerce.
 
-    Crea el atributo si no existe. Útil para que el frontend construya el
+    Crea el atributo si no existe. Ãštil para que el frontend construya el
     payload de ``attributes`` al asignar marcas a productos.
 
     Returns:
@@ -1660,13 +1660,13 @@ async def get_brand_attribute() -> dict[str, Any]:
 @router_brands.post("", status_code=status.HTTP_201_CREATED)
 async def create_brand(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
     """
-    Crea un nuevo término de marca en el atributo pa_brand de WooCommerce.
+    Crea un nuevo tÃ©rmino de marca en el atributo pa_brand de WooCommerce.
 
     Args:
         body: campos de la marca (name requerido, description opcional).
 
     Returns:
-        Término de marca creado.
+        TÃ©rmino de marca creado.
     """
     name: str = body.get("name", "").strip()
     if not name:
@@ -1686,14 +1686,14 @@ async def create_brand(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
 @router_brands.put("/{term_id}")
 async def update_brand(term_id: int, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
     """
-    Actualiza un término de marca en WooCommerce.
+    Actualiza un tÃ©rmino de marca en WooCommerce.
 
     Args:
-        term_id: ID del término a actualizar.
+        term_id: ID del tÃ©rmino a actualizar.
         body: campos a modificar (name, description, slug).
 
     Returns:
-        Término de marca actualizado.
+        TÃ©rmino de marca actualizado.
     """
     client = await _get_client()
     try:
@@ -1709,13 +1709,13 @@ async def update_brand(term_id: int, body: dict[str, Any] = Body(...)) -> dict[s
 @router_brands.delete("/{term_id}")
 async def delete_brand(term_id: int) -> dict[str, Any]:
     """
-    Elimina un término de marca del atributo pa_brand de WooCommerce.
+    Elimina un tÃ©rmino de marca del atributo pa_brand de WooCommerce.
 
     Args:
-        term_id: ID del término a eliminar.
+        term_id: ID del tÃ©rmino a eliminar.
 
     Returns:
-        Confirmación de eliminación.
+        ConfirmaciÃ³n de eliminaciÃ³n.
     """
     client = await _get_client()
     try:
@@ -1731,16 +1731,16 @@ async def delete_brand(term_id: int) -> dict[str, Any]:
 @router_brands.get("/{term_id}/products")
 async def get_brand_products(
     term_id: int,
-    limit: int = Query(default=50, ge=1, le=100),
+    limit: int = Query(default=50, ge=1),
     offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
     """
     Lista los productos que tienen asignada una marca concreta.
 
     Args:
-        term_id: ID del término de marca.
-        limit: máximo de productos a retornar.
-        offset: desplazamiento para paginación.
+        term_id: ID del tÃ©rmino de marca.
+        limit: mÃ¡ximo de productos a retornar.
+        offset: desplazamiento para paginaciÃ³n.
 
     Returns:
         Lista de productos WooCommerce con la marca especificada.
@@ -1758,12 +1758,12 @@ async def get_brand_products(
         await client.close()
 
 
-# ── Orders ──────────────────────────────────────────────────────────────────
+# â”€â”€ Orders â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 @router_orders.get("")
 async def list_orders(
-    limit: int = Query(default=50, ge=1, le=100),
+    limit: int = Query(default=50, ge=1),
     offset: int = Query(default=0, ge=0),
     status_filter: str = Query(default="any", alias="status"),
     customer: int | None = Query(default=None),
@@ -1834,26 +1834,26 @@ async def update_order_status(
 
 @router_orders.post("/{order_id}/notes")
 async def add_order_note(order_id: int, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    """Añade una nota a un pedido."""
+    """AÃ±ade una nota a un pedido."""
     client = await _get_client()
     try:
         svc = WordPressOrderService(client)
         note = body.get("note", "")
         customer_note = bool(body.get("customer_note", False))
         result = await svc.add_note(order_id, note, customer_note)
-        return _ok(result, "Nota añadida al pedido.")
+        return _ok(result, "Nota aÃ±adida al pedido.")
     except IntegrationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
         await client.close()
 
 
-# ── Customers ───────────────────────────────────────────────────────────────
+# â”€â”€ Customers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 @router_customers.get("")
 async def list_customers(
-    limit: int = Query(default=50, ge=1, le=100),
+    limit: int = Query(default=50, ge=1),
     offset: int = Query(default=0, ge=0),
     search: str = Query(default=""),
     role: str = Query(default="customer"),
@@ -1927,12 +1927,12 @@ async def delete_customer(customer_id: int) -> dict[str, Any]:
         await client.close()
 
 
-# ── Media ───────────────────────────────────────────────────────────────────
+# â”€â”€ Media â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 @router_media.get("")
 async def list_media(
-    limit: int = Query(default=50, ge=1, le=100),
+    limit: int = Query(default=50, ge=1),
     offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
     """Lista archivos del Media Library de WordPress."""
@@ -1973,7 +1973,7 @@ async def upload_media(file: UploadFile = File(...)) -> dict[str, Any]:
     if len(data) > _MAX_MEDIA_BYTES:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"Archivo demasiado grande. Máximo: {_MAX_MEDIA_BYTES // 1024 // 1024} MB.",
+            detail=f"Archivo demasiado grande. MÃ¡ximo: {_MAX_MEDIA_BYTES // 1024 // 1024} MB.",
         )
 
     client = await _get_client()
@@ -1988,16 +1988,16 @@ async def upload_media(file: UploadFile = File(...)) -> dict[str, Any]:
         await client.close()
 
 
-# ── Database (phpMyAdmin) ───────────────────────────────────────────────────
+# â”€â”€ Database (phpMyAdmin) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 @router_db.get("/tables")
 async def list_db_tables() -> dict[str, Any]:
     """
-    Lista las tablas de la BD MySQL de WordPress con estadísticas.
+    Lista las tablas de la BD MySQL de WordPress con estadÃ­sticas.
 
     Returns:
-        Lista de tablas con nombre, número de filas, tamaño y motor.
+        Lista de tablas con nombre, nÃºmero de filas, tamaÃ±o y motor.
     """
     db = await _get_db_service()
     try:
@@ -2010,7 +2010,7 @@ async def list_db_tables() -> dict[str, Any]:
 @router_db.get("/site-info")
 async def get_site_info() -> dict[str, Any]:
     """
-    Obtiene información básica del sitio WordPress desde wp_options.
+    Obtiene informaciÃ³n bÃ¡sica del sitio WordPress desde wp_options.
 
     Returns:
         Dict con siteurl, blogname, blogdescription, admin_email, db_version.
@@ -2060,13 +2060,13 @@ async def execute_query(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
 @router_db.get("/options/{option_name}")
 async def get_wp_option(option_name: str) -> dict[str, Any]:
     """
-    Lee el valor de una opción de WordPress desde wp_options.
+    Lee el valor de una opciÃ³n de WordPress desde wp_options.
 
     Args:
-        option_name: nombre de la opción (ej: "siteurl", "blogname").
+        option_name: nombre de la opciÃ³n (ej: "siteurl", "blogname").
 
     Returns:
-        Dict con el valor de la opción.
+        Dict con el valor de la opciÃ³n.
     """
     db = await _get_db_service()
     try:
@@ -2074,14 +2074,14 @@ async def get_wp_option(option_name: str) -> dict[str, Any]:
         if value is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Opción '{option_name}' no encontrada.",
+                detail=f"OpciÃ³n '{option_name}' no encontrada.",
             )
         return _ok({"option_name": option_name, "option_value": value})
     except IntegrationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
-# ── Webhooks ─────────────────────────────────────────────────────────────────
+# â”€â”€ Webhooks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 @router_webhooks.post("/product")
@@ -2092,15 +2092,15 @@ async def webhook_product_updated(request: Request) -> dict[str, Any]:
     WooCommerce dispara ``product.updated`` cuando cambia el stock de un producto,
     incluyendo al procesar un pedido. Este endpoint sincroniza el nuevo stock a Dolibarr.
 
-    Configurar en WooCommerce → Ajustes → Avanzado → Webhooks:
-      Tópico: Producto actualizado
+    Configurar en WooCommerce â†’ Ajustes â†’ Avanzado â†’ Webhooks:
+      TÃ³pico: Producto actualizado
       URL de entrega: POST /api/v1/wordpress/webhooks/product
 
     Args:
-        request: petición HTTP con el payload JSON del producto WooCommerce.
+        request: peticiÃ³n HTTP con el payload JSON del producto WooCommerce.
 
     Returns:
-        200 siempre — WooCommerce requiere 200 para marcar la entrega como exitosa.
+        200 siempre â€” WooCommerce requiere 200 para marcar la entrega como exitosa.
     """
     raw_body = await request.body()
     topic = request.headers.get("X-WC-Webhook-Topic", "unknown")
@@ -2108,8 +2108,8 @@ async def webhook_product_updated(request: Request) -> dict[str, Any]:
     try:
         payload: dict[str, Any] = json.loads(raw_body)
     except (json.JSONDecodeError, ValueError):
-        logger.warning("Webhook WC payload inválido", extra={"topic": topic})
-        return _ok({}, "Payload inválido, ignorado.")
+        logger.warning("Webhook WC payload invÃ¡lido", extra={"topic": topic})
+        return _ok({}, "Payload invÃ¡lido, ignorado.")
 
     wc_product_id = payload.get("id")
     logger.info("Webhook WC recibido", extra={"topic": topic, "wc_product_id": wc_product_id})
@@ -2130,5 +2130,5 @@ async def webhook_product_updated(request: Request) -> dict[str, Any]:
         result = await _sync_wc_stock_to_dolibarr(sku, wc_stock, doli_svc)
         return _ok(result, "Webhook procesado.")
     except Exception as exc:
-        logger.warning("Webhook stock WP→Dolibarr falló", exc_info=exc, extra={"sku": sku})
-        return _ok({"error": str(exc)}, "Webhook recibido (sync falló).")
+        logger.warning("Webhook stock WPâ†’Dolibarr fallÃ³", exc_info=exc, extra={"sku": sku})
+        return _ok({"error": str(exc)}, "Webhook recibido (sync fallÃ³).")
