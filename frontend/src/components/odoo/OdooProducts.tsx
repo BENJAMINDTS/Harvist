@@ -10,6 +10,7 @@ import OdooCsvImport from './OdooCsvImport'
 import OdooProductProperties from './OdooProductProperties'
 
 const getPaginationItems = (currentPage: number, totalPages: number): (number | string)[] => {
+  if (!isFinite(totalPages) || totalPages <= 0) return []
   // currentPage es 1-based. delta define cuántas páginas adyacentes mostrar.
   const delta = 2
   const left = currentPage - delta // Páginas a la izquierda de la actual
@@ -305,8 +306,9 @@ export default function OdooProducts() {
       {(() => {
         if (pagination.total === 0) return null
 
-        const currentPage = Math.floor(pagination.offset / pagination.limit)
-        const totalPages = Math.ceil(pagination.total / pagination.limit)
+        const safeLimit = pagination.limit > 0 ? pagination.limit : 1
+        const currentPage = Math.floor(pagination.offset / safeLimit)
+        const totalPages = Math.ceil(pagination.total / safeLimit)
         const paginationItems = getPaginationItems(currentPage + 1, totalPages)
 
         const PREDEFINED_PAGE_SIZES = [10, 25, 50, 100]

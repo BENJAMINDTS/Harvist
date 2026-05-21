@@ -49,6 +49,7 @@ function flattenCategoryTree(
 }
 
 const getPaginationItems = (currentPage: number, totalPages: number): (number | string)[] => {
+  if (!isFinite(totalPages) || totalPages <= 0) return []
   const delta = 2
   const left = currentPage - delta
   const right = currentPage + delta + 1
@@ -102,7 +103,7 @@ function getProductBrandName(product: WooProduct): string {
   const attr = product.attributes?.find(
     (a) => a.slug === 'pa_brand' || a.slug === 'brand' || a.slug === 'pa_marca' || a.slug === 'marca',
   )
-  return attr?.options[0] ?? '—'
+  return attr?.options?.[0] ?? '—'
 }
 
 export default function WordPressProducts() {
@@ -606,8 +607,9 @@ export default function WordPressProducts() {
       {(() => {
         if (pagination.total === 0) return null
 
-        const currentPage = Math.floor(pagination.offset / pagination.limit)
-        const totalPages = Math.ceil(pagination.total / pagination.limit)
+        const safeLimit = pagination.limit > 0 ? pagination.limit : 1
+        const currentPage = Math.floor(pagination.offset / safeLimit)
+        const totalPages = Math.ceil(pagination.total / safeLimit)
         const paginationItems = getPaginationItems(currentPage + 1, totalPages)
 
         const PREDEFINED_PAGE_SIZES = [10, 25, 50, 100]
