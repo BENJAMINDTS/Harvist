@@ -71,7 +71,7 @@ class DolibarrExtraFieldService:
     def __init__(
         self,
         client: DolibarrClient,
-        db_fallback: "DolibarrExtraFieldDB | None" = None,
+        db_fallback: DolibarrExtraFieldDB | None = None,
     ) -> None:
         """
         Args:
