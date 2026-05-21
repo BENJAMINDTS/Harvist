@@ -1,0 +1,159 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancela runs anteriores del mismo PR para no desperdiciar minutos
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ────────────────────────────────────────────────────────────────
+  # Backend — lint (ruff) + tests (pytest)
+  # ────────────────────────────────────────────────────────────────
+  backend:
+    name: Backend — lint & test
+    runs-on: ubuntu-latest
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      # Crea un .env.development mínimo con valores dummy para CI.
+      # Las claves de servicios externos (Dolibarr, Odoo, WP) son ficticias
+      # porque los tests de integración mockean las llamadas HTTP.
+      - name: Create .env.development
+        run: |
+          mkdir -p data logs /tmp/harvist_test
+          cat > .env.development << 'EOF'
+          APP_ENV=development
+          APP_DEBUG=false
+          SECRET_KEY=ci-test-secret-key-not-real
+          API_HOST=0.0.0.0
+          API_PORT=8000
+          API_PREFIX=/api/v1
+          ALLOWED_ORIGINS=["http://localhost:5173"]
+          REDIS_URL=redis://localhost:6379/0
+          CELERY_BROKER_URL=redis://localhost:6379/0
+          CELERY_RESULT_BACKEND=redis://localhost:6379/1
+          BROWSER_TYPE=chrome
+          BROWSER_HEADLESS=true
+          BROWSER_TIMEOUT=15
+          SEARCH_ENGINE=bing
+          EAN_ENRICHMENT_ENABLED=false
+          IMAGES_PER_PRODUCT=5
+          IMAGE_MIN_WIDTH=200
+          IMAGE_MIN_HEIGHT=200
+          IMAGE_RESIZE_WIDTH=800
+          IMAGE_RESIZE_HEIGHT=800
+          DOWNLOAD_WORKERS=4
+          DOWNLOAD_TIMEOUT=10
+          STORAGE_BACKEND=local
+          OUTPUT_DIR=/tmp/harvist_test
+          FILE_TTL_SECONDS=604800
+          LOG_LEVEL=ERROR
+          LOG_DIR=/tmp/harvist_logs
+          AI_PROVIDER=groq
+          ENABLE_AI_DESCRIPTIONS=false
+          GROQ_API_KEY=gsk_dummy_ci
+          GROQ_MODEL=llama-3.3-70b-versatile
+          ANTHROPIC_API_KEY=sk-ant-dummy-ci
+          DOLIBARR_URL=http://localhost:18069
+          DOLIBARR_API_KEY=dummy_dolibarr_key
+          ODOO_URL=http://localhost:18070
+          ODOO_DB=dummy_db
+          ODOO_USER=ci@test.com
+          ODOO_PASSWORD=dummy_odoo_pass
+          WP_URL=http://localhost:18080
+          WP_CONSUMER_KEY=ck_dummy_ci
+          WP_CONSUMER_SECRET=cs_dummy_ci
+          WP_APP_PASSWORD=dummy_wp_pass
+          BRAND_CACHE_PATH=data/brand_cache.json
+          GS1_DB_PATH=data/gs1_prefixes.db
+          CANDIDATES_TTL_HOURS=24
+          OFF_USER_AGENT=HarvistBot/1.0
+          EOF
+
+      - name: Lint — ruff
+        run: ruff check .
+
+      - name: Test — pytest
+        run: |
+          pytest tests/ \
+            -v \
+            --tb=short \
+            --cov=api \
+            --cov=services \
+            --cov=workers \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            -x
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: python-coverage
+          path: coverage.xml
+          retention-days: 7
+
+  # ────────────────────────────────────────────────────────────────
+  # Frontend — type-check + lint (eslint) + tests (vitest) + build
+  # ────────────────────────────────────────────────────────────────
+  frontend:
+    name: Frontend — lint, test & build
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check — tsc
+        run: npm run type-check
+
+      - name: Lint — eslint
+        run: npm run lint
+
+      - name: Test — vitest
+        run: npm test
+
+      - name: Build — vite
+        run: npm run build
