@@ -1251,6 +1251,7 @@ async def sync_all_to_wordpress() -> JSONResponse:
                         doli_id = int(product.get("id") or 0)
                         cat_info = _cat_map.get(doli_id, {})
                         category_name: str = cat_info.get("category") or ""
+                        parent_category: str = cat_info.get("parent_category") or ""
                         brand_name: str = cat_info.get("brand") or ""
 
                         wc_payload = _map_dolibarr_to_wc(product)
@@ -1260,8 +1261,18 @@ async def sync_all_to_wordpress() -> JSONResponse:
 
                         if category_name:
                             try:
-                                wc_cat = await _wp_cat.find_or_create(category_name)
-                                wc_payload["categories"] = [{"id": wc_cat["id"]}]
+                                if parent_category:
+                                    wc_parent = await _wp_cat.find_or_create(parent_category)
+                                    wc_child = await _wp_cat.find_or_create(
+                                        category_name, parent_id=wc_parent["id"]
+                                    )
+                                    wc_payload["categories"] = [
+                                        {"id": wc_parent["id"]},
+                                        {"id": wc_child["id"]},
+                                    ]
+                                else:
+                                    wc_cat = await _wp_cat.find_or_create(category_name)
+                                    wc_payload["categories"] = [{"id": wc_cat["id"]}]
                             except Exception as exc_cat:
                                 logger.warning(
                                     "Sync categoría Dolibarr→WP (sync-all) falló",
