@@ -33,6 +33,7 @@ os.environ.setdefault("CELERY_BROKER_URL", "redis://localhost:6379/0")
 os.environ.setdefault("CELERY_RESULT_BACKEND", "redis://localhost:6379/1")
 
 from api.core.config import get_settings  # noqa: E402
+
 get_settings.cache_clear()
 
 from api.main import app  # noqa: E402
@@ -146,7 +147,7 @@ class TestDescargarTraducciones:
         idiomas_traducibles = [l for l in SUPPORTED_LANGUAGES if l != "es"]
         for lang in idiomas_traducibles:
             (job_dir / f"traducciones_{lang}.csv").write_bytes(
-                f"codigo,idioma\nPROD001,{lang}\n".encode("utf-8")
+                f"codigo,idioma\nPROD001,{lang}\n".encode()
             )
 
         storage = MagicMock()
