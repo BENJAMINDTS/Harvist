@@ -9,9 +9,9 @@ Importar como: uvicorn api.main:app
 :version: 1.1.0
 """
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import AsyncGenerator
 
 import redis.asyncio as aioredis
 from fastapi import FastAPI
