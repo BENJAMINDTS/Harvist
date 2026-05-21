@@ -16,7 +16,6 @@ import pytest
 
 from services.scraper.brand_validator import longest_prefix_match, validate_ean_checksum
 
-
 # ── Helper de generación de EANs válidos ──────────────────────────────────────
 
 
