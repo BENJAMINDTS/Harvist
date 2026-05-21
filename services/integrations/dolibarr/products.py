@@ -338,7 +338,7 @@ class DolibarrProductService:
         product_id: int | None = None
         if isinstance(raw, dict):
             product_id = int(raw.get("id", 0)) or None
-        elif isinstance(raw, (int, str)):
+        elif isinstance(raw, int | str):
             try:
                 product_id = int(raw)
             except (ValueError, TypeError):
@@ -470,7 +470,7 @@ class DolibarrProductService:
         job_id: str,
         product_codes: list[str],
         overwrite: bool = False,
-        storage: "StorageService | None" = None,
+        storage: StorageService | None = None,
     ) -> list[dict[str, Any]]:
         """
         Sincroniza productos de un job Harvist completado con Dolibarr.
@@ -606,7 +606,7 @@ class DolibarrProductService:
         mapping: dict[str, str],
         overwrite: bool = False,
         category_col: str | None = None,
-        category_svc: "DolibarrCategoryService | None" = None,
+        category_svc: DolibarrCategoryService | None = None,
         category_name_to_id: dict[str, int] | None = None,
         subcategory_col: str | None = None,
         subcateg_pair_to_id: dict[str, int] | None = None,
