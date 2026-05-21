@@ -575,6 +575,11 @@ class DolibarrCategoryService:
             if is_brand_container:
                 continue
 
+            # Nombre del padre para categorías normales con padre (excluye contenedor de marcas)
+            parent_cat_name: str | None = None
+            if not is_brand and parent_id > 0 and parent_id != marcas_id:
+                parent_cat_name = cat_id_to_name.get(parent_id)
+
             try:
                 products = await self.list_products_in_category(cat_id, limit=500)
             except Exception as exc:
@@ -590,11 +595,12 @@ class DolibarrCategoryService:
                 pid = int(p.get("id") or p.get("rowid") or 0)
                 if not pid:
                     continue
-                result.setdefault(pid, {"category": None, "brand": None})
+                result.setdefault(pid, {"category": None, "parent_category": None, "brand": None})
                 if is_brand and result[pid]["brand"] is None:
                     result[pid]["brand"] = cat_name
                 elif not is_brand and result[pid]["category"] is None:
                     result[pid]["category"] = cat_name
+                    result[pid]["parent_category"] = parent_cat_name
 
         logger.info(
             "Mapa product→categoría construido desde Dolibarr",
