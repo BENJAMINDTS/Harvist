@@ -284,22 +284,24 @@ class WordPressClient(IntegrationClient):
         """
         Lista recursos con paginación y devuelve el total real desde la cabecera X-WP-Total.
 
+        WooCommerce limita per_page a 100. Cuando limit > 100 se realizan
+        peticiones paralelas de 100 en 100 y se concatenan los resultados.
+
         Args:
             resource: nombre del recurso (ej: "products").
-            limit:    elementos por página.
+            limit:    elementos por página (puede superar 100).
             offset:   desplazamiento absoluto.
             filters:  filtros adicionales como query params.
 
         Returns:
             Tupla (items, total) donde total proviene de X-WP-Total.
         """
-        page = (offset // limit) + 1
-        params: dict[str, Any] = {"per_page": limit, "page": page}
-        if filters:
-            params.update(filters)
+        _WC_MAX = 100  # límite máximo de WooCommerce por petición
+        extra: dict[str, Any] = dict(filters) if filters else {}
 
-        response = await self._wc_request("GET", resource, params=params)
-        if response.status_code >= 400:
+        def _raise_if_error(response: httpx.Response) -> None:
+            if response.status_code < 400:
+                return
             hint = ""
             if response.status_code == 404:
                 hint = " — Verifica que la URL sea correcta y que WooCommerce REST API esté habilitada."
@@ -312,38 +314,87 @@ class WordPressClient(IntegrationClient):
                 platform="wordpress",
                 status_code=response.status_code,
             )
-        items: list[dict[str, Any]] = response.json() if response.content else []
-        total = int(response.headers.get("X-WP-Total", len(items)))
-        return items, total
+
+        if limit <= _WC_MAX:
+            # Petición única (comportamiento original)
+            page = (offset // limit) + 1
+            params: dict[str, Any] = {"per_page": limit, "page": page, **extra}
+            response = await self._wc_request("GET", resource, params=params)
+            _raise_if_error(response)
+            items: list[dict[str, Any]] = response.json() if response.content else []
+            total = int(response.headers.get("X-WP-Total", len(items)))
+            return items, total
+
+        # Peticiones paralelas: calculamos qué páginas WC cubre nuestro rango
+        # offset absoluto → página WC 1-indexed con per_page=_WC_MAX
+        first_wc_page = offset // _WC_MAX + 1
+        last_wc_page = (offset + limit - 1) // _WC_MAX + 1
+
+        async def _fetch_page(wc_page: int) -> tuple[list[dict[str, Any]], int]:
+            r = await self._wc_request(
+                "GET", resource,
+                params={"per_page": _WC_MAX, "page": wc_page, **extra},
+            )
+            _raise_if_error(r)
+            page_items: list[dict[str, Any]] = r.json() if r.content else []
+            wc_total = int(r.headers.get("X-WP-Total", 0))
+            return page_items, wc_total
+
+        results = await asyncio.gather(
+            *[_fetch_page(p) for p in range(first_wc_page, last_wc_page + 1)]
+        )
+
+        total = results[0][1] if results else 0
+        all_items: list[dict[str, Any]] = []
+        for page_items, _ in results:
+            all_items.extend(page_items)
+
+        # all_items cubre desde (first_wc_page-1)*_WC_MAX en adelante
+        skip = offset - (first_wc_page - 1) * _WC_MAX
+        return all_items[skip: skip + limit], total
 
     async def batch_delete(self, resource: str, ids: list[int]) -> dict[str, Any]:
         """
-        Elimina múltiples recursos en una sola petición usando el endpoint batch de WooCommerce.
+        Elimina múltiples recursos usando el endpoint batch de WooCommerce.
+
+        Trocea los IDs en chunks de 100 para evitar HTTP 413 (payload demasiado
+        grande) y lanza los chunks en paralelo con asyncio.gather.
 
         Args:
             resource: nombre del recurso (ej: "products").
             ids:      lista de IDs a eliminar.
 
         Returns:
-            Dict con el resultado del batch (campo "delete" con los recursos eliminados).
+            Dict acumulado con el campo "delete" de todos los chunks.
         """
-        response = await self._wc_request(
-            "POST",
-            f"{resource}/batch",
-            json={"delete": ids},
-        )
-        if response.status_code >= 400:
-            raise IntegrationError(
-                f"Error en batch delete de '{resource}': HTTP {response.status_code}",
-                platform="wordpress",
-                status_code=response.status_code,
+        _CHUNK = 100
+
+        async def _delete_chunk(chunk: list[int]) -> dict[str, Any]:
+            r = await self._wc_request(
+                "POST",
+                f"{resource}/batch",
+                json={"delete": chunk},
             )
-        result: dict[str, Any] = response.json() if response.content else {}
+            if r.status_code >= 400:
+                raise IntegrationError(
+                    f"Error en batch delete de '{resource}': HTTP {r.status_code}",
+                    platform="wordpress",
+                    status_code=r.status_code,
+                )
+            return r.json() if r.content else {}
+
+        chunks = [ids[i: i + _CHUNK] for i in range(0, len(ids), _CHUNK)]
+        results = await asyncio.gather(*[_delete_chunk(c) for c in chunks])
+
+        merged: dict[str, Any] = {"delete": []}
+        for r in results:
+            merged["delete"].extend(r.get("delete", []))
+
         logger.info(
             "Batch delete WooCommerce completado",
-            extra={"resource": resource, "count": len(ids)},
+            extra={"resource": resource, "count": len(ids), "chunks": len(chunks)},
         )
-        return result
+        return merged
 
     async def get(self, resource: str, resource_id: int | str) -> dict[str, Any]:
         """
