@@ -379,7 +379,7 @@ class AmazonBrandClient:
                 if attempt < self._max_retries - 1:
                     time.sleep(2 ** attempt)
 
-            except Exception as exc:
+            except Exception:
                 logger.debug(
                     "AmazonBrandClient: error de red en listado",
                     extra={"ean": ean, "attempt": attempt + 1},
@@ -458,7 +458,7 @@ class AmazonBrandClient:
                 if attempt < self._max_retries - 1:
                     time.sleep(2 ** attempt)
 
-            except Exception as exc:
+            except Exception:
                 logger.debug(
                     "AmazonBrandClient: error de red en ficha de producto",
                     extra={"ean": ean, "asin": asin, "attempt": attempt + 1},
