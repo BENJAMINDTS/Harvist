@@ -327,7 +327,10 @@ class WordPressBrandService:
 
     async def find_or_create_by_name(self, name: str) -> dict[str, Any]:
         """
-        Busca una marca por nombre exacto (case-insensitive). Si no existe, la crea.
+        Busca una marca por nombre exacto (case-insensitive) via API search. Si no existe, la crea.
+
+        Usa el parámetro ``search`` de la API para evitar cargar todas las marcas
+        y prevenir duplicados cuando hay más de 100 marcas registradas.
 
         Args:
             name: nombre de la marca a buscar o crear.
@@ -335,8 +338,18 @@ class WordPressBrandService:
         Returns:
             Dict con los datos de la marca (id, name, slug).
         """
-        brands = await self.list(limit=200)
-        for brand in brands:
+        if await self._native_available():
+            candidates = await self._client.list(
+                _NATIVE_RESOURCE, limit=10, filters={"search": name}
+            )
+        else:
+            attr_id = await self._get_attribute_id()
+            candidates = await self._client.list(
+                self._terms_resource(attr_id), limit=10, filters={"search": name}
+            )
+
+        for brand in candidates:
             if brand.get("name", "").lower() == name.lower():
                 return brand
+
         return await self.create(name)
