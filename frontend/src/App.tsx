@@ -10,6 +10,7 @@
  * @author BenjaminDTS | Carlos Vico
  */
 import React, { useCallback, useEffect, useState, Suspense } from 'react'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { CsvUploader } from '@/components/CsvUploader'
 import { SearchConfig } from '@/components/SearchConfig'
 import { JobProgress } from '@/components/JobProgress'
@@ -674,39 +675,45 @@ const App: React.FC = () => {
 
         {/* Módulo Dolibarr */}
         {currentModule === 'dolibarr' && (
-          <Suspense
-            fallback={
-              <div className="flex items-center justify-center h-64">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
-              </div>
-            }
-          >
-            <DolibarrPanel />
-          </Suspense>
+          <ErrorBoundary module="Dolibarr">
+            <Suspense
+              fallback={
+                <div className="flex items-center justify-center h-64">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+                </div>
+              }
+            >
+              <DolibarrPanel />
+            </Suspense>
+          </ErrorBoundary>
         )}
 
         {/* Módulo Odoo */}
         {currentModule === 'odoo' && (
-          <Suspense
-            fallback={
-              <div className="flex items-center justify-center h-64">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500" />
-              </div>
-            }
-          >
-            <OdooPanel />
-          </Suspense>
+          <ErrorBoundary module="Odoo">
+            <Suspense
+              fallback={
+                <div className="flex items-center justify-center h-64">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500" />
+                </div>
+              }
+            >
+              <OdooPanel />
+            </Suspense>
+          </ErrorBoundary>
         )}
 
         {/* Módulo WordPress */}
         {currentModule === 'wordpress' && (
-          <Suspense fallback={
-            <div className="flex items-center justify-center h-64">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500" />
-            </div>
-          }>
-            <WordPressPanel className="h-full" />
-          </Suspense>
+          <ErrorBoundary module="WordPress">
+            <Suspense fallback={
+              <div className="flex items-center justify-center h-64">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500" />
+              </div>
+            }>
+              <WordPressPanel className="h-full" />
+            </Suspense>
+          </ErrorBoundary>
         )}
       </main>
       </div>
