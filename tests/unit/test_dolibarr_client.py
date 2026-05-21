@@ -32,7 +32,6 @@ get_settings.cache_clear()
 from services.integrations.base import IntegrationError, IntegrationNotConfiguredError
 from services.integrations.dolibarr.client import DolibarrClient
 
-
 # ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
