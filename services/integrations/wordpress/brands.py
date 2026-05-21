@@ -314,7 +314,7 @@ class WordPressBrandService:
                 offset=offset,
                 filters={"brand": brand_id},
             )
-        attr_id = await self._get_attribute_id()
+        await self._get_attribute_id()
         return await self._client.list(
             "products",
             limit=limit,
