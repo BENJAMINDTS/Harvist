@@ -132,7 +132,7 @@ class WordPressCategoryService:
             Dict de la categoría encontrada o creada.
         """
         candidates = await self._client.list(
-            self._RESOURCE, limit=10, filters={"search": name, "parent": parent_id}
+            self._RESOURCE, limit=50, filters={"search": name}
         )
         for cat in candidates:
             if cat["name"].lower() == name.lower() and cat.get("parent", 0) == parent_id:
