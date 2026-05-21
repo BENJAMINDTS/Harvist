@@ -156,7 +156,7 @@ class DolibarrCategoryService:
         raw = await self._client.create(_DOLIBARR_CATEGORIES_RESOURCE, data)
         # Dolibarr returns the new category ID as a plain integer — normalize to dict
         # so callers can always do result["id"] safely.
-        if isinstance(raw, (int, str)):
+        if isinstance(raw, int | str):
             return {"id": int(raw), "label": label, "fk_parent": parent_id, "type": type}
         return raw
 

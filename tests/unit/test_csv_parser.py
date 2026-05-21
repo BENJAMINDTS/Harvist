@@ -18,7 +18,6 @@ from services.csv_parser import (
     ResultadoParseo,
 )
 
-
 # ── Fixtures ───────────────────────────────────────────────────────────────────
 
 def _config(modo: ModosBusqueda, query_personalizada: str | None = None) -> SearchConfig:

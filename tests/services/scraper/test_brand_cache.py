@@ -22,7 +22,6 @@ import pytest
 from services.scraper.brand_cache import GS1PrefixCache
 from services.scraper.brand_validator import BrandResult
 
-
 # ── Helper de generación de EANs válidos ──────────────────────────────────────
 
 

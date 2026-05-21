@@ -14,39 +14,79 @@ from fastapi import APIRouter
 
 from api.v1.endpoints.dolibarr import (
     brands_router as dolibarr_brands_router,
+)
+from api.v1.endpoints.dolibarr import (
     categories_router,
     extrafields_router,
     invoices_router,
     orders_router,
-    router_main as dolibarr_router_main,
-    router_products as dolibarr_router_products,
     stocks_router,
     thirdparties_router,
+)
+from api.v1.endpoints.dolibarr import (
+    router_main as dolibarr_router_main,
+)
+from api.v1.endpoints.dolibarr import (
+    router_products as dolibarr_router_products,
 )
 from api.v1.endpoints.files import router as files_router
 from api.v1.endpoints.history import router as history_router
 from api.v1.endpoints.jobs import router as jobs_router
 from api.v1.endpoints.odoo import (
     router_brands as odoo_router_brands,
+)
+from api.v1.endpoints.odoo import (
     router_categories as odoo_router_categories,
+)
+from api.v1.endpoints.odoo import (
     router_ecommerce_categories as odoo_router_ecommerce_categories,
+)
+from api.v1.endpoints.odoo import (
     router_inventory as odoo_router_inventory,
+)
+from api.v1.endpoints.odoo import (
     router_invoices as odoo_router_invoices,
+)
+from api.v1.endpoints.odoo import (
     router_main as odoo_router_main,
+)
+from api.v1.endpoints.odoo import (
     router_partners as odoo_router_partners,
+)
+from api.v1.endpoints.odoo import (
     router_products as odoo_router_products,
+)
+from api.v1.endpoints.odoo import (
     router_properties as odoo_router_properties,
+)
+from api.v1.endpoints.odoo import (
     router_purchases as odoo_router_purchases,
+)
+from api.v1.endpoints.odoo import (
     router_sales as odoo_router_sales,
 )
 from api.v1.endpoints.wordpress import (
-    router_main as wordpress_router_main,
-    router_products as wordpress_router_products,
-    router_categories as wordpress_router_categories,
     router_brands as wordpress_router_brands,
-    router_orders as wordpress_router_orders,
+)
+from api.v1.endpoints.wordpress import (
+    router_categories as wordpress_router_categories,
+)
+from api.v1.endpoints.wordpress import (
     router_customers as wordpress_router_customers,
+)
+from api.v1.endpoints.wordpress import (
+    router_main as wordpress_router_main,
+)
+from api.v1.endpoints.wordpress import (
     router_media as wordpress_router_media,
+)
+from api.v1.endpoints.wordpress import (
+    router_orders as wordpress_router_orders,
+)
+from api.v1.endpoints.wordpress import (
+    router_products as wordpress_router_products,
+)
+from api.v1.endpoints.wordpress import (
     router_webhooks as wordpress_router_webhooks,
 )
 

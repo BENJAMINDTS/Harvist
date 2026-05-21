@@ -8,8 +8,9 @@ confirmación de selección y limpieza de directorios temporales.
 :version: 1.0.0
 """
 
-import pytest
 from pathlib import Path
+
+import pytest
 from PIL import Image
 
 from services.storage_service import LocalStorageService

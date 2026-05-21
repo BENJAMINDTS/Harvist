@@ -69,13 +69,10 @@ from loguru import logger
 from api.core.config import get_settings
 from api.v1.schemas.integrations import (
     CsvImportPreview,
-    CsvImportResponse,
-    CsvImportRowResult,
     DolibarrConfigRequest,
     DolibarrConfigResponse,
     DolibarrDBConfigRequest,
     DolibarrDBConfigResponse,
-    DolibarrExtraField,
     DolibarrExtraFieldCreate,
     IntegrationStatus,
     PaginatedResponse,
@@ -3330,7 +3327,7 @@ async def list_extrafields(
     return JSONResponse(content=_ok(fields, f"{len(fields)} campos extra encontrados."))
 
 
-async def _get_extrafield_db() -> "DolibarrExtraFieldDB":
+async def _get_extrafield_db() -> "DolibarrExtraFieldDB":  # noqa: F821,UP037 — importado en el cuerpo
     """
     Construye DolibarrExtraFieldDB con credenciales desde Redis o .env.
 

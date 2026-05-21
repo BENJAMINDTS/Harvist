@@ -11,9 +11,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from services.utils.amazon_brand_client import AmazonBrandClient, _clean_brand
 from services.scraper.brand_validator import BrandResult
-
+from services.utils.amazon_brand_client import AmazonBrandClient, _clean_brand
 
 # ── Fixture ───────────────────────────────────────────────────────────────────
 

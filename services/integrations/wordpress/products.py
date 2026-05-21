@@ -17,7 +17,6 @@ from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
-from services.integrations.base import IntegrationError
 from services.integrations.wordpress.client import WordPressClient
 
 if TYPE_CHECKING:
@@ -304,10 +303,10 @@ class WordPressProductService:
         mapping: dict[str, str],
         overwrite: bool = False,
         brand_col: str | None = None,
-        brand_svc: "WordPressBrandService | None" = None,
+        brand_svc: WordPressBrandService | None = None,
         category_col: str | None = None,
         subcategory_col: str | None = None,
-        category_svc: "WordPressCategoryService | None" = None,
+        category_svc: WordPressCategoryService | None = None,
         progress_callback: Callable[[int, int], None] | None = None,
     ) -> list[dict[str, Any]]:
         """

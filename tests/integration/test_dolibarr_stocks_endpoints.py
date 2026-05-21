@@ -169,7 +169,7 @@ class TestListWarehouses:
         ):
             resp = await http_client.get(f"{_BASE}/warehouses")
             assert resp.status_code == 200
-            data = resp.json()
+            data = resp.json()["data"]
             assert len(data["items"]) == 1
             assert data["limit"] == 50
 
@@ -249,7 +249,7 @@ class TestListMovements:
         ):
             resp = await http_client.get(f"{_BASE}/movements")
             assert resp.status_code == 200
-            assert len(resp.json()["items"]) == 1
+            assert len(resp.json()["data"]["items"]) == 1
 
     @pytest.mark.asyncio
     async def test_list_movements_with_filters(self, http_client: AsyncClient):
@@ -445,5 +445,5 @@ class TestRedisConfigPath:
                     response = await http_client.get(f"{_BASE}/warehouses")
 
         assert response.status_code == 200
-        assert response.json()["items"] == []
+        assert response.json()["data"]["items"] == []
         mock_svc.list_warehouses.assert_called_once()

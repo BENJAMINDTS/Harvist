@@ -608,7 +608,7 @@ class WordPressClient(IntegrationClient):
         await self._wc_client.aclose()
         await self._wp_client.aclose()
 
-    async def __aenter__(self) -> "WordPressClient":
+    async def __aenter__(self) -> WordPressClient:
         """Soporte para uso como context manager async."""
         return self
 

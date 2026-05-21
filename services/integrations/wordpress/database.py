@@ -60,7 +60,7 @@ class WordPressDBService:
         self._prefix = prefix
 
     @classmethod
-    def from_settings(cls, settings: Settings) -> "WordPressDBService":
+    def from_settings(cls, settings: Settings) -> WordPressDBService:
         """
         Crea instancia desde Settings de la aplicación.
 

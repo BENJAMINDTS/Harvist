@@ -89,7 +89,7 @@ class OdooProductPropertiesService:
                 status_code=404,
             )
         raw = result[0].get("product_properties_definition") or []
-        return list(raw) if isinstance(raw, (list, tuple)) else []
+        return list(raw) if isinstance(raw, list | tuple) else []
 
     async def _write_category_definitions(
         self, category_id: int, definitions: list[dict[str, Any]]
@@ -134,7 +134,7 @@ class OdooProductPropertiesService:
                 status_code=404,
             )
         raw = result[0].get("product_properties") or []
-        return list(raw) if isinstance(raw, (list, tuple)) else []
+        return list(raw) if isinstance(raw, list | tuple) else []
 
     async def _write_product_properties(
         self, product_id: int, properties: list[dict[str, Any]]

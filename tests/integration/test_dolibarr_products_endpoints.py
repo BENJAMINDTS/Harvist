@@ -64,7 +64,9 @@ def _mock_svc(
 ) -> MagicMock:
     """Construye un mock completo de DolibarrProductService."""
     svc = MagicMock()
-    svc.list_products = AsyncMock(return_value=list_return or [])
+    _items = list_return or []
+    svc.list_products = AsyncMock(return_value=_items)
+    svc.count_products = AsyncMock(return_value=len(_items))
     svc.get_product = AsyncMock(return_value=get_return or {"id": 1})
     svc.create_product = AsyncMock(return_value=create_return or {"id": 1})
     svc.update_product = AsyncMock(return_value=update_return or {"id": 1})
@@ -201,7 +203,7 @@ class TestListProducts:
             response = await http_client.get(_BASE)
 
         assert response.status_code == 200
-        body = response.json()
+        body = response.json()["data"]
         assert "items" in body
         assert len(body["items"]) == 2
         assert body["limit"] == 50
@@ -257,6 +259,9 @@ class TestCreateProduct:
         """POST /dolibarr/products retorna 201 con los datos del producto creado."""
         created = {"id": 42, "ref": "PROD-NEW"}
         svc = _mock_svc(create_return=created)
+        cat_svc = MagicMock()
+        cat_svc.find_category_by_name = AsyncMock(return_value=None)
+        cat_svc.find_or_create_brand = AsyncMock(return_value=None)
 
         with (
             patch(
@@ -264,8 +269,8 @@ class TestCreateProduct:
                 return_value=_mock_settings(),
             ),
             patch(
-                "api.v1.endpoints.dolibarr._get_service_async",
-                return_value=svc,
+                "api.v1.endpoints.dolibarr._get_services_async",
+                new=AsyncMock(return_value=(svc, cat_svc)),
             ),
         ):
             response = await http_client.post(
@@ -293,6 +298,9 @@ class TestUpdateProduct:
         """PUT /dolibarr/products/{id} devuelve el producto actualizado."""
         updated = {"id": 5, "ref": "PROD-5", "label": "Actualizado"}
         svc = _mock_svc(update_return=updated)
+        cat_svc = MagicMock()
+        cat_svc.find_category_by_name = AsyncMock(return_value=None)
+        cat_svc.find_or_create_brand = AsyncMock(return_value=None)
 
         with (
             patch(
@@ -300,8 +308,8 @@ class TestUpdateProduct:
                 return_value=_mock_settings(),
             ),
             patch(
-                "api.v1.endpoints.dolibarr._get_service_async",
-                return_value=svc,
+                "api.v1.endpoints.dolibarr._get_services_async",
+                new=AsyncMock(return_value=(svc, cat_svc)),
             ),
         ):
             response = await http_client.put(

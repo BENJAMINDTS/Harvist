@@ -5,9 +5,10 @@ Tests de integración para el status endpoint de Dolibarr y montaje de routers.
 :version: 1.0.0
 """
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from api.main import app
 from api.v1.schemas.integrations import IntegrationStatus

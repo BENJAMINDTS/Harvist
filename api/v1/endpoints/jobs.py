@@ -49,7 +49,6 @@ from loguru import logger
 
 from api.core.config import get_settings
 from api.core.security import limiter
-from services.storage_service import get_storage_service
 from api.v1.schemas.job import (
     BrandValidationAction,
     BrandValidationRequest,
@@ -59,12 +58,10 @@ from api.v1.schemas.job import (
     DescriptionReviewRequest,
     DescriptionReviewState,
     EstadoJob,
-    JobCreate,
     JobProgressEvent,
     JobResponse,
     JobStatus,
     ModosBusqueda,
-    PhotoSelectionItem,
     PhotoSelectionRequest,
     ProductPhotos,
     ReviewAction,
@@ -72,6 +69,7 @@ from api.v1.schemas.job import (
     SearchConfig,
     TipoJob,
 )
+from services.storage_service import get_storage_service
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
 settings = get_settings()
@@ -596,7 +594,7 @@ async def validar_marcas(
 
         # Leer las marcas pendientes de Redis
         pending_raw = await redis.get(_BRANDS_PENDING_KEY.format(job_id=job_id))
-        pending: dict[str, str] = json.loads(pending_raw) if pending_raw else {}
+        json.loads(pending_raw) if pending_raw else {}
 
         # Procesar las decisiones del usuario
         accepted = 0

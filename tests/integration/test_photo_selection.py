@@ -10,16 +10,15 @@ relacionadas con candidatas de fotos, sin necesidad de levantar servidor HTTP.
 
 from __future__ import annotations
 
+from io import BytesIO
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
 from PIL import Image
-from io import BytesIO
 
 from api.v1.schemas.job import PhotoSelectionItem, PhotoSelectionRequest
 from services.storage_service import LocalStorageService
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

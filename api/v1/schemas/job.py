@@ -17,7 +17,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-
 SUPPORTED_LANGUAGES = ("es", "en", "fr", "de", "it", "pt")
 
 # ── Enums ─────────────────────────────────────────────────────────────────────

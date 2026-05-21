@@ -114,7 +114,7 @@ class TestListOrders:
             response = client.get("/api/v1/dolibarr/orders?type=customer")
 
             assert response.status_code == 200
-            data = response.json()
+            data = response.json()["data"]
             assert "items" in data
             assert "total" in data
             assert "limit" in data
@@ -366,5 +366,5 @@ class TestRedisConfigPath:
                     response = client.get("/api/v1/dolibarr/orders")
 
         assert response.status_code == 200
-        assert response.json()["items"] == []
+        assert response.json()["data"]["items"] == []
         mock_svc.list_orders.assert_called_once()

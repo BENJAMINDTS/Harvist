@@ -33,11 +33,10 @@ import re
 import subprocess
 from abc import ABC, abstractmethod
 from collections import Counter
-from typing import Callable
+from collections.abc import Callable
 from urllib.parse import quote_plus
 
 import requests as _requests
-
 from loguru import logger
 from selenium.common.exceptions import TimeoutException, WebDriverException
 from selenium.webdriver.common.by import By
@@ -48,7 +47,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 from api.core.config import get_settings
 from services.csv_parser import Producto
-
 
 # ---------------------------------------------------------------------------
 # Utilidades de módulo

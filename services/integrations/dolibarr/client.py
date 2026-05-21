@@ -348,7 +348,7 @@ class DolibarrClient(IntegrationClient):
         """Cierra el cliente HTTP liberando las conexiones del pool."""
         await self._client.aclose()
 
-    async def __aenter__(self) -> "DolibarrClient":
+    async def __aenter__(self) -> DolibarrClient:
         """Soporte para uso como context manager async."""
         return self
 

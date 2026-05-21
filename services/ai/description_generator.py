@@ -22,7 +22,6 @@ from loguru import logger
 from services.ai.claude_client import ClaudeClient
 from services.csv_parser import Producto
 
-
 # ---------------------------------------------------------------------------
 # Prompt por defecto (configurable vía CLAUDE_STORE_TYPE o CLAUDE_PROMPT_FILE)
 # ---------------------------------------------------------------------------

@@ -18,7 +18,6 @@ from services.scraper.brand_cache import GS1PrefixCache
 from services.scraper.brand_scraper import EanBrandResolver
 from services.scraper.brand_validator import BrandResult
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
