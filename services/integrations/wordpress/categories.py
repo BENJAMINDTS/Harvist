@@ -121,7 +121,8 @@ class WordPressCategoryService:
 
     async def find_or_create(self, name: str, parent_id: int = 0) -> dict[str, Any]:
         """
-        Busca una categoría por nombre o la crea si no existe.
+        Busca una categoría por nombre exacto (case-insensitive) y parent via API search.
+        Si no existe, la crea. Usa ``search`` para evitar cargar todas las categorías.
 
         Args:
             name: nombre de la categoría.
@@ -130,8 +131,10 @@ class WordPressCategoryService:
         Returns:
             Dict de la categoría encontrada o creada.
         """
-        all_cats = await self.list(limit=100)
-        for cat in all_cats:
+        candidates = await self._client.list(
+            self._RESOURCE, limit=10, filters={"search": name, "parent": parent_id}
+        )
+        for cat in candidates:
             if cat["name"].lower() == name.lower() and cat.get("parent", 0) == parent_id:
                 return cat
         return await self.create({"name": name, "parent": parent_id})
