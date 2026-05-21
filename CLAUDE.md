@@ -251,6 +251,7 @@ Si la validación de marcas (Fase 7.4) está activa, NO se escribe hasta confirm
 
 ### ✅ Completado
 
+**Core Harvist**
 - Core scraping imágenes (Productor/Consumidor, Selenium, ThreadPool, Pillow)
 - Fábrica de navegadores configurable (5 tipos)
 - API REST completa + WebSocket progreso en tiempo real
@@ -266,7 +267,7 @@ Si la validación de marcas (Fase 7.4) está activa, NO se escribe hasta confirm
 - `services/scraper/consumer.py` — ThreadPoolExecutor + validación Pillow
 - `services/scraper/brand_scraper.py` — Cascada 8 niveles EAN → marca (httpx, sin Selenium)
 - `services/ai/groq_client.py` — Cliente Groq con reintentos + backoff exponencial
-- `services/ai/description_generator.py` — Descripciones SEO batch (corta + larga + keywords + meta)
+- `services/ai/description_generator.py` + `description_pipeline.py` — Descripciones SEO batch
 - `workers/celery_app.py` + `workers/tasks.py` — Celery + Redis persistencia
 - Frontend: CsvUploader · SearchConfig · JobProgress · JobHistory · App state machine
 - `frontend/src/api/client.ts` — Axios + WebSocket builder
@@ -278,307 +279,64 @@ Si la validación de marcas (Fase 7.4) está activa, NO se escribe hasta confirm
 - 130+ tests (unitarios + integración)
 - `.env.example` completo · `.gitignore` · `LICENSE` · `pyproject.toml`
 
-### 🔒 Pendiente
-
-#### Fase 6.4 — Frontend panel de marcas
-
-- `frontend/src/components/BrandsPanel.tsx`
-- Tabla: código · ean · brand_name · manufacturer · source · confidence
-- Filtros por `source` y `confidence` con badges de color
-  (high=green-500, medium=yellow-500, low=red-500)
+**Fase 6.4 — Panel de marcas** ✅
+- `BrandsPanel.tsx` — tabla código · ean · brand_name · manufacturer · source · confidence
+- Filtros por source y confidence con badges de color (high/medium/low)
 - Botón "Descargar marcas.csv" → `GET /api/v1/files/{job_id}/brands`
 
-#### Fase 7.1 — Textos SEO (Groq)
-
-- `TipoJob.SEO` en schema o flag en job existente
-- Prompt SEO → `meta_title` (≤60 chars) + `meta_description` (≤160 chars) por producto
+**Fase 7.1 — Textos SEO (Groq)** ✅
+- `TipoJob.SEO` en schema
+- `services/ai/seo_pipeline.py` — meta_title (≤60) + meta_description (≤160) por producto
 - Endpoint `GET /api/v1/files/{job_id}/seo` → `seo.csv`
 
-#### Fase 7.2 — Traducción automática (Groq)
-
-- Idiomas soportados: ES · EN · FR · DE · IT · PT
+**Fase 7.2 — Traducción automática (Groq)** ✅
+- `services/ai/translation_pipeline.py` — ES · EN · FR · DE · IT · PT
 - Selector multi-idioma en `SearchConfig.tsx`
-- Output: `descripciones_en.csv`, `descripciones_fr.csv`…
 - Endpoint `GET /api/v1/files/{job_id}/translations/{lang}`
 
-#### Fase 7.3 — Panel de revisión manual de descripciones
-
-- Tabla editable: aprobar / rechazar / editar por producto
+**Fase 7.3 — Panel de revisión manual de descripciones** ✅
+- `ReviewPanel.tsx` — tabla editable: aprobar / rechazar / editar por producto
 - Estado persistente en Redis: `job:{job_id}:review:{codigo}`
-- Solo exporta descripciones aprobadas
 - Endpoint `PATCH /api/v1/jobs/{job_id}/descriptions/{codigo}`
 
----
+**Fase 7.4 — Validación de marcas** ✅
+- `brand_scraper.py` separación resolución/escritura caché con `write_cache: bool`
+- Estado `EstadoJob.PENDIENTE_VALIDACION_MARCAS`
+- Endpoint `POST /api/v1/jobs/{job_id}/brands/validate`
+- `BrandValidationPanel.tsx` — revisión fila a fila, confirmación → escribe en brand_cache.json
 
-#### Fase 7.4 — Validación de marcas antes de añadir a batería local ⭐
->
-> Esta fase se implementa ANTES de las integraciones ERP/CMS.
+**Fase 7.5 — Selección visual de fotos** ✅
+- `consumer.py` descarga todas las candidatas en modo validación (`{codigo}_candidate_{n}.jpg`)
+- Estado `EstadoJob.PENDIENTE_SELECCION_FOTOS`
+- Endpoints `GET /jobs/{job_id}/photos` · `POST /jobs/{job_id}/photos/confirm`
+- `PhotoSelectionPanel.tsx` — grid thumbnails por producto, confirmación genera ZIP
+- Celery beat limpia candidates/ huérfanos cada hora
 
-**Por qué es necesaria:** el `brand_scraper.py` aprende automáticamente — cuando
-resuelve un EAN nuevo, registra su prefijo (7 dígitos) en `brand_cache.json` para
-acelerar jobs futuros. Sin validación, una marca mal identificada contamina la batería
-para siempre. Esta fase añade una pantalla de revisión **opcional** antes de esa escritura.
+**Fase 8 — Integración Dolibarr** ✅
+- `services/integrations/dolibarr/` — client · products · categories · thirdparties · orders · invoices · stocks · extrafields · extrafields_db · brands
+- Endpoints `/api/v1/dolibarr/` completos
+- Frontend: `DolibarrPanel` · `DolibarrProducts` · `DolibarrCategories` · `DolibarrBrands` · `DolibarrThirdparties` · `DolibarrOrders` · `DolibarrInvoices` · `DolibarrStocks` · `DolibarrExtraFields` · `DolibarrConfig`
+- Sincronización bidireccional WP ↔ Dolibarr (por producto y catálogo completo)
 
-**Comportamiento según modo:**
+**Fase 9 — Integración Odoo** ✅
+- `services/integrations/odoo/` — client · products · categories · partners · purchases · sales · inventory · invoices · product_properties · brands + categorías eCommerce (`product.public.category`)
+- Endpoints `/api/v1/odoo/` completos
+- Frontend: `OdooPanel` · `OdooProducts` · `OdooCategories` · `OdooBrands` · `OdooEcommerceCategories` · `OdooPartners` · `OdooPurchases` · `OdooSales` · `OdooInventory` · `OdooInvoices` · `OdooCamposExtra` · `OdooProductProperties` · `OdooCsvImport` · `OdooConfig`
 
-```
-VALIDACIÓN ACTIVADA (toggle en SearchConfig al crear el job)
-  Scraping de marcas completa
-    ↓
-  Estado job: PENDIENTE_VALIDACION_MARCAS
-    ↓
-  Usuario abre BrandValidationPanel (aparece automáticamente)
-    ↓
-  Revisa cada marca nueva: ean · brand_name editable · source · confidence
-    ↓
-  Acepta / Rechaza / Edita nombre de marca por fila
-    ↓
-  Pulsa "Confirmar selección"
-    ↓
-  Solo las ACEPTADAS se escriben en brand_cache.json
-  Job pasa a COMPLETADO
+**Fase 10 — Integración WordPress / WooCommerce** ✅
+- `services/integrations/wordpress/` — client · products · categories · brands (dual-backend: nativo + atributo pa_) · orders · customers · media · database
+- Endpoints `/api/v1/wordpress/` completos
+- Frontend: `WordPressPanel` · `WordPressProducts` · `WordPressCategories` · `WordPressBrands` · `WordPressOrders` · `WordPressCustomers` · `WordPressMedia` · `WordPressDatabase` · `WordPressConfig`
+- Sincronización bidireccional WP ↔ Dolibarr (por producto y catálogo completo)
 
-VALIDACIÓN DESACTIVADA (comportamiento por defecto)
-  Scraping de marcas completa
-    ↓
-  Todas las marcas nuevas se añaden automáticamente a brand_cache.json
-  Job pasa a COMPLETADO directamente
-```
+### 🔒 Pendiente
 
-**Implementación requerida:**
-
-- `services/scraper/brand_scraper.py` → separar resolución de escritura en caché.
-  Añadir parámetro `write_cache: bool = True`. Si `False`, devuelve las marcas nuevas
-  sin escribirlas — el endpoint de validación se encarga de la escritura posterior.
-- `api/v1/schemas/job.py` → nuevo estado `EstadoJob.PENDIENTE_VALIDACION_MARCAS`
-- `api/v1/endpoints/jobs.py` → nuevo endpoint:
-
-  ```
-  POST /api/v1/jobs/{job_id}/brands/validate
-  Body: [{ "ean": str, "brand_name": str, "action": "accept" | "reject" | "edit" }]
-  Efecto: escribe en brand_cache.json solo los items con action != "reject"
-          cambia estado del job a COMPLETADO
-  ```
-
-- `frontend/src/components/BrandValidationPanel.tsx`
-  — Lista de marcas nuevas pendientes
-  — Por fila: EAN · brand_name editable inline · source · badge confidence · toggle Aceptar/Rechazar
-  — Contador "X marcas aceptadas / Y totales"
-  — Botón "Confirmar" → `POST /api/v1/jobs/{job_id}/brands/validate`
-  — Si job en `PENDIENTE_VALIDACION_MARCAS` → panel aparece automáticamente
-
-**Reglas críticas de brand_cache.json:**
-
-- Es la fuente de verdad local. **NUNCA** modificar sin loguear la operación.
-- Estructura: `{ "prefijo_7_digitos": "nombre_marca", ... }`
-- Ruta configurable via `BRAND_CACHE_PATH` en `.env`.
-- Incluir en `.gitignore` bajo `data/`.
-
-**Variables de entorno:**
-
-```bash
-BRAND_CACHE_PATH=data/brand_cache.json
-```
+No hay fases pendientes en la hoja de ruta original. El proyecto está feature-complete.
+Próximas mejoras serán definidas por el equipo según necesidades de producto.
 
 ---
 
-#### Fase 7.5 — Selección visual de fotos antes de descarga ⭐
->
-> Esta fase se implementa ANTES de las integraciones ERP/CMS.
-
-**Por qué es necesaria:** el scraper descarga múltiples candidatas por producto
-(hasta `MAX_INTENTOS_URL`) y actualmente conserva solo la primera válida.
-Esta fase permite al usuario ver todas las candidatas y elegir la mejor
-**antes** de generar el ZIP, eliminando el resto del disco.
-
-**Comportamiento según modo:**
-
-```
-VALIDACIÓN ACTIVADA (toggle en SearchConfig al crear el job)
-  Descarga de imágenes completa (TODAS las candidatas válidas por producto)
-    ↓
-  Guardadas como {codigo}_candidate_0.jpg, {codigo}_candidate_1.jpg…
-  en job_{job_id}/candidates/ (directorio temporal)
-    ↓
-  Estado job: PENDIENTE_SELECCION_FOTOS
-    ↓
-  Usuario abre PhotoSelectionPanel (aparece automáticamente)
-    ↓
-  Por producto: ve thumbnails de todas las candidatas en fila horizontal
-    ↓
-  Click en thumbnail → selecciona esa como definitiva
-    ↓
-  Pulsa "Confirmar selección" (habilitado cuando todos los productos tienen selección)
-    ↓
-  Seleccionada → renombrada a {codigo}.jpg
-  Resto        → eliminadas del disco
-  ZIP generado con solo las fotos seleccionadas
-  Job pasa a siguiente estado (PENDIENTE_VALIDACION_MARCAS o COMPLETADO)
-
-VALIDACIÓN DESACTIVADA (comportamiento por defecto)
-  Descarga completa → conserva primera imagen válida por producto
-  ZIP generado directamente (comportamiento actual)
-```
-
-**Implementación requerida:**
-
-- `services/scraper/consumer.py` → en modo validación, descargar **todas** las candidatas
-  válidas. Nombrarlas `{codigo}_candidate_{n}.jpg` en subdirectorio temporal
-  `job_{job_id}/candidates/`. En modo normal, comportamiento actual sin cambios.
-- `services/storage_service.py` → nuevos métodos:
-  - `list_candidates(job_id, codigo) → list[int]` — índices disponibles
-  - `get_candidate_path(job_id, codigo, n) → Path`
-  - `confirm_selection(job_id, selections: dict[str, int]) → None`
-    — renombra seleccionadas, elimina el resto, borra directorio candidates/
-  - `cleanup_candidates(job_id) → None` — limpieza por TTL
-- `api/v1/schemas/job.py` → nuevo estado `EstadoJob.PENDIENTE_SELECCION_FOTOS`
-- `api/v1/endpoints/jobs.py` → nuevos endpoints:
-
-  ```
-  GET  /api/v1/jobs/{job_id}/photos
-       → lista productos con número de candidatas disponibles
-  POST /api/v1/jobs/{job_id}/photos/confirm
-       Body: [{ "codigo": str, "selected_index": int }]
-       Efecto: confirma selecciones, genera ZIP, avanza estado del job
-  ```
-
-- `api/v1/endpoints/files.py` → nuevo endpoint:
-
-  ```
-  GET /api/v1/jobs/{job_id}/photos/{codigo}/candidates/{n}
-      → sirve imagen candidata como image/jpeg para previsualización
-  ```
-
-- `frontend/src/components/PhotoSelectionPanel.tsx`
-  — Grid de productos (scroll vertical)
-  — Por producto: nombre + fila horizontal de thumbnails (máx 5 visibles)
-  — Thumbnail seleccionado: `ring-2 ring-blue-500 scale-105`
-  — Thumbnail no seleccionado: opacidad reducida al pasar el ratón
-  — Contador "X / Y productos con foto seleccionada"
-  — Botón "Confirmar selección" deshabilitado hasta X === Y
-  — Si job en `PENDIENTE_SELECCION_FOTOS` → panel aparece automáticamente
-
-**Orden de estados cuando AMBAS validaciones están activas:**
-
-```
-COMPLETADO_DESCARGA
-  ↓
-PENDIENTE_SELECCION_FOTOS   (usuario elige foto por producto)
-  ↓
-PENDIENTE_VALIDACION_MARCAS (usuario valida marcas nuevas)
-  ↓
-COMPLETADO
-```
-
-**Reglas de limpieza:**
-
-- El directorio `candidates/` se elimina automáticamente al confirmar o al expirar el TTL.
-- **NUNCA** dejar candidatas en disco de forma indefinida.
-- Un job worker periódico (Celery beat) limpia candidates/ huérfanos cada hora.
-
-**Variables de entorno:**
-
-```bash
-CANDIDATES_TTL_HOURS=24   # Horas antes de limpiar candidatas sin confirmar
-```
-
----
-
-### 🔭 Hoja de ruta — Integraciones ERP / CMS
-
-> **Decisión arquitectónica clave:**
-> Las integraciones viven en `services/integrations/` como servicios independientes.
-> Cada plataforma tiene su propio cliente HTTP, sus propios schemas y sus propios
-> endpoints bajo `/api/v1/{plataforma}/`. Comparten una interfaz base abstracta
-> `IntegrationClient`. Ninguna integración importa de otra. El frontend tiene un
-> tab dedicado por plataforma.
-
-```
-services/integrations/
-├── base.py
-├── dolibarr/   client · products · categories · thirdparties · orders · invoices · stocks
-├── odoo/       client · products · categories · partners · purchase · sales · inventory · attachments
-└── wordpress/  client · products · variations · categories · attributes · orders · customers · media · settings
-```
-
----
-
-#### Fase 8 — Integración Dolibarr
->
-> API REST `/api/index.php/`. Auth: cabecera `DOLAPIKEY`. Versión mínima: Dolibarr 17+.
-
-```bash
-DOLIBARR_URL=https://mi-dolibarr.com
-DOLIBARR_API_KEY=
-```
-
-- **8.1** `client.py` — httpx async, auth header, retry exponencial, paginación (limit/page)
-- **8.2** Productos — CRUD + imagen + sincronización desde job Harvist
-- **8.3** Categorías — árbol + creación + asignación
-- **8.4** Terceros — clientes (`client=1`) + proveedores (`supplier=1`) · nombre, CIF, dirección
-- **8.5** Pedidos — cliente (`orders`) + proveedor (`supplierorders`) · cambios de estado
-- **8.6** Facturas — cliente + proveedor · líneas · estados · envío email
-- **8.7** Stock — almacenes · movimientos · inventario actual
-- **8.8** Endpoints `/api/v1/dolibarr/` — `/products`, `/categories`, `/thirdparties`,
-  `/orders`, `/invoices`, `/stocks`
-- **8.9** Frontend — Tab Dolibarr · panel por módulo · acción "Enviar a Dolibarr"
-
----
-
-#### Fase 9 — Integración Odoo
->
-> XML-RPC via `odoorpc`. Compatible Odoo 14–17.
-
-```bash
-ODOO_URL=https://mi-odoo.com
-ODOO_DB=nombre_base_datos
-ODOO_USER=admin@empresa.com
-ODOO_PASSWORD=              # o ODOO_API_KEY (v14+)
-```
-
-- **9.1** `client.py` — odoorpc wrapper · `search_read`, `create`, `write`, `unlink` genérico
-- **9.2** Productos — `product.template` + variantes · imagen via `ir.attachment`
-- **9.3** Categorías — `product.category` · árbol recursivo
-- **9.4** Partners — `res.partner` · `customer_rank` vs `supplier_rank`
-  · **mismo modelo para clientes y proveedores** · UI con toggle
-- **9.5** Compras — `purchase.order` · confirmar · recepción
-- **9.6** Ventas — `sale.order` · confirmar · facturar
-- **9.7** Inventario — `stock.quant` + `stock.picking`
-- **9.8** Facturas — `account.move` (`out_invoice` / `in_invoice`)
-- **9.9** Endpoints `/api/v1/odoo/` — `/products`, `/categories`, `/partners`,
-  `/purchases`, `/sales`, `/inventory`, `/invoices`
-- **9.10** Frontend — Tab Odoo · acción "Enviar a Odoo"
-
----
-
-#### Fase 10 — Integración WordPress / WooCommerce
->
-> REST API v3 + wp/v2. Auth: OAuth 1.0 (WC) + Application Password (WP core).
-
-```bash
-WP_URL=https://mi-tienda.com
-WP_CONSUMER_KEY=ck_...
-WP_CONSUMER_SECRET=cs_...
-WP_APP_PASSWORD=
-```
-
-- **10.1** `client.py` — httpx async · OAuth1 WC · AppPassword WP · paginación X-WP-TotalPages
-- **10.2** Productos — CRUD · simple/variable/agrupado · sincronización desde job
-- **10.3** Variantes — `products/{id}/variations` · precio/stock por variante
-- **10.4** Categorías y Tags — CRUD · árbol · slug automático
-- **10.5** Atributos — globales + términos · locales por producto
-- **10.6** Pedidos — listar · cambiar estado · notas
-- **10.7** Clientes — CRUD · historial
-- **10.8** Media _(crítico)_ — multipart a `/wp-json/wp/v2/media`
-  · flujo: imagen Harvist → Media Library → `featured_image` del producto
-- **10.9** Configuración — settings WC (moneda, impuestos, envíos, pasarelas)
-- **10.10** Endpoints `/api/v1/wordpress/` — `/products`, `/variations`, `/categories`,
-  `/tags`, `/attributes`, `/orders`, `/customers`, `/media`, `/settings`
-- **10.11** Frontend — Tab WordPress · flujo "Publicar en WordPress"
-
----
-
-### 🔗 Flujo integrado completo (visión final)
+### 🔗 Flujo integrado completo
 
 ```
 CSV de inventario
@@ -587,32 +345,35 @@ CSV de inventario
       ↓
   Imágenes descargadas (todas las candidatas si validación ON)
     ↓ ── si foto-validación ON ──────────────────────────────
-  [PhotoSelectionPanel]
+  [PhotoSelectionPanel]   ← IMPLEMENTADO ✅
     usuario elige foto definitiva por producto
     resto eliminadas del disco
     ↓ ─────────────────────────────────────────────────────
   Descripciones SEO generadas (Groq)
     ↓ ── si revisión ON ─────────────────────────────────────
-  [ReviewPanel]  usuario aprueba/edita descripciones
+  [ReviewPanel]  usuario aprueba/edita descripciones   ← IMPLEMENTADO ✅
     ↓ ─────────────────────────────────────────────────────
   Marcas resueltas (cascada 8 niveles)
     ↓ ── si marca-validación ON ─────────────────────────────
-  [BrandValidationPanel]
+  [BrandValidationPanel]   ← IMPLEMENTADO ✅
     usuario acepta marcas → se escriben en brand_cache.json
     ↓ ─────────────────────────────────────────────────────
 [ZIP final + CSVs listos para descarga]
       ↓
 [Acción "Exportar a plataforma"]
       ↓
-  ┌─────────────┐   ┌─────────────┐   ┌──────────────────┐
-  │  Dolibarr   │   │    Odoo     │   │ WordPress/WooComm│
-  │  Productos  │   │  Productos  │   │  Productos       │
-  │  Categorías │   │  Variantes  │   │  + Imágenes      │
-  │  Proveedores│   │  Partners   │   │  + Descripciones │
-  │  Pedidos    │   │  Compras    │   │  Pedidos         │
-  │  Facturas   │   │  Ventas     │   │  Clientes        │
-  │  Stock      │   │  Inventario │   │  Configuración   │
-  └─────────────┘   └─────────────┘   └──────────────────┘
+  ┌───────────────────┐   ┌──────────────────────┐   ┌──────────────────────┐
+  │  Dolibarr  ✅     │   │    Odoo  ✅           │   │ WordPress/WooComm ✅ │
+  │  Productos        │   │  Productos            │   │  Productos           │
+  │  Categorías       │   │  Categorías           │   │  + Imágenes          │
+  │  Marcas           │   │  Categorías eComm     │   │  + Descripciones     │
+  │  Proveedores      │   │  Marcas               │   │  Marcas (dual-back)  │
+  │  Pedidos          │   │  Partners             │   │  Pedidos             │
+  │  Facturas         │   │  Compras / Ventas     │   │  Clientes            │
+  │  Stock            │   │  Inventario           │   │  Base de datos       │
+  │  ExtraFields      │   │  Facturas             │   │  Config WC           │
+  │  ↔ sync WP       │   │  CamposExtra          │   │  ↔ sync Dolibarr    │
+  └───────────────────┘   └──────────────────────┘   └──────────────────────┘
 ```
 
 ---
@@ -642,6 +403,7 @@ harvist/
 │       └── endpoints/
 │           ├── jobs.py
 │           ├── files.py
+│           ├── history.py
 │           ├── dolibarr.py
 │           ├── odoo.py
 │           └── wordpress.py
@@ -656,16 +418,25 @@ harvist/
 │   │   └── brand_scraper.py
 │   ├── ai/
 │   │   ├── groq_client.py
-│   │   └── description_generator.py
+│   │   ├── claude_client.py
+│   │   ├── description_generator.py
+│   │   ├── description_pipeline.py
+│   │   ├── seo_pipeline.py         # Fase 7.1
+│   │   └── translation_pipeline.py # Fase 7.2
 │   └── integrations/
 │       ├── base.py
-│       ├── dolibarr/
-│       ├── odoo/
-│       └── wordpress/
+│       ├── dolibarr/               # client · products · categories · thirdparties
+│       │                           # orders · invoices · stocks · extrafields · brands
+│       ├── odoo/                   # client · products · categories · partners
+│       │                           # purchases · sales · inventory · invoices
+│       │                           # product_properties · brands
+│       └── wordpress/              # client · products · categories · brands
+│                                   # orders · customers · media · database
 │
 ├── workers/
 │   ├── celery_app.py
-│   └── tasks.py
+│   └── tasks.py                    # ejecutar_scraping · importar_productos_dolibarr
+│                                   # importar_productos_wordpress · cleanup_stale_candidates
 │
 ├── tests/
 │   ├── unit/
@@ -685,7 +456,7 @@ harvist/
     ├── package-lock.json
     ├── tsconfig.json
     └── src/
-        ├── App.tsx                 # 5 tabs: Harvist / Dolibarr / Odoo / WordPress / Historial
+        ├── App.tsx
         ├── api/client.ts
         ├── components/
         │   ├── CsvUploader.tsx
@@ -696,9 +467,18 @@ harvist/
         │   ├── BrandValidationPanel.tsx   # Fase 7.4
         │   ├── PhotoSelectionPanel.tsx    # Fase 7.5
         │   ├── ReviewPanel.tsx
-        │   ├── dolibarr/
-        │   ├── odoo/
-        │   └── wordpress/
+        │   ├── DashboardHome.tsx
+        │   ├── HomeScreen.tsx
+        │   ├── navigation/Breadcrumb.tsx
+        │   ├── dolibarr/                  # DolibarrPanel · Products · Categories · Brands
+        │   │                              # Thirdparties · Orders · Invoices · Stocks
+        │   │                              # ExtraFields · Config
+        │   ├── odoo/                      # OdooPanel · Products · Categories · Brands
+        │   │                              # EcommerceCategories · Partners · Purchases
+        │   │                              # Sales · Inventory · Invoices · CamposExtra
+        │   │                              # ProductProperties · CsvImport · Config
+        │   └── wordpress/                 # WordPressPanel · Products · Categories · Brands
+        │                                  # Orders · Customers · Media · Database · Config
         └── hooks/
             └── useJobWebSocket.ts
 ```
@@ -713,8 +493,8 @@ pip install -e ".[dev]"
 cd frontend && npm install
 
 # ── Arrancar servicios (orden importante) ────────────────
-docker run -d -p 6379:6379 redis:7-alpine
-celery -A workers.celery_app worker --loglevel=info
+docker compose up -d                                          # Redis
+celery -A workers.celery_app worker --loglevel=info --pool=solo   # Windows: --pool=solo
 uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
 cd frontend && npm run dev
 
