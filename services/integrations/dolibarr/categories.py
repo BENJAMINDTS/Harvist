@@ -530,3 +530,74 @@ class DolibarrCategoryService:
         resource = f"{_DOLIBARR_CATEGORIES_RESOURCE}/{category_id}/{_DOLIBARR_CATEGORY_OBJECTS_RESOURCE}"
         filters = {"type": "product"}
         return await self._client.list(resource, limit=limit, offset=offset, filters=filters)
+
+    async def build_product_category_map(
+        self,
+        brands_parent: str = "Marcas",
+    ) -> dict[int, dict[str, str | None]]:
+        """
+        Construye un mapa product_id → {category, brand} consultando Dolibarr.
+
+        Recorre todas las categorías de producto una sola vez. Las marcas se
+        reconocen como subcategorías bajo ``brands_parent``. El resto son
+        categorías normales.
+
+        Args:
+            brands_parent: nombre exacto de la categoría padre de marcas.
+
+        Returns:
+            Dict con product_id (int) → {"category": str | None, "brand": str | None}.
+        """
+        all_cats = await self.list_categories(type="product", limit=500, offset=0)
+
+        marcas_id: int | None = None
+        for cat in all_cats:
+            if (
+                cat.get("label", "").lower() == brands_parent.lower()
+                and int(cat.get("fk_parent") or 0) == 0
+            ):
+                marcas_id = int(cat["id"])
+                break
+
+        cat_id_to_name: dict[int, str] = {
+            int(c["id"]): (c.get("label") or "") for c in all_cats
+        }
+
+        result: dict[int, dict[str, str | None]] = {}
+
+        for cat in all_cats:
+            cat_id = int(cat["id"])
+            parent_id = int(cat.get("fk_parent") or 0)
+
+            is_brand_container = marcas_id is not None and cat_id == marcas_id
+            is_brand = marcas_id is not None and parent_id == marcas_id
+
+            if is_brand_container:
+                continue
+
+            try:
+                products = await self.list_products_in_category(cat_id, limit=500)
+            except Exception as exc:
+                logger.warning(
+                    "No se pudieron leer productos de categoría Dolibarr",
+                    exc_info=exc,
+                    extra={"cat_id": cat_id},
+                )
+                continue
+
+            cat_name = cat_id_to_name.get(cat_id)
+            for p in products:
+                pid = int(p.get("id") or p.get("rowid") or 0)
+                if not pid:
+                    continue
+                result.setdefault(pid, {"category": None, "brand": None})
+                if is_brand and result[pid]["brand"] is None:
+                    result[pid]["brand"] = cat_name
+                elif not is_brand and result[pid]["category"] is None:
+                    result[pid]["category"] = cat_name
+
+        logger.info(
+            "Mapa product→categoría construido desde Dolibarr",
+            extra={"products_mapped": len(result), "categories_scanned": len(all_cats)},
+        )
+        return result
