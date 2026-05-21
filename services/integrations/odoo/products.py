@@ -478,7 +478,7 @@ class OdooProductService:
         for i in range(0, len(to_create), batch_size):
             batch = to_create[i : i + batch_size]
             batch_data = [data for _, data in batch]
-            batch_indices = [idx for idx, _ in batch]
+            [idx for idx, _ in batch]
             try:
                 from services.integrations.odoo.client import OdooClient
                 if isinstance(self._client, OdooClient):
