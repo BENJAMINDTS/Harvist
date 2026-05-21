@@ -834,6 +834,7 @@ function CreateProductModal({ onClose, onSuccess }: CreateProductModalProps): Re
       }
       if (selectedSubcategory) {
         payload.category_name = selectedSubcategory
+        payload.parent_category_name = selectedCategory
       } else if (selectedCategory) {
         payload.category_name = selectedCategory
       }
@@ -998,6 +999,7 @@ function EditProductModal({ product, onClose, onSuccess }: EditProductModalProps
       }
       if (selectedSubcategory) {
         payload.category_name = selectedSubcategory
+        payload.parent_category_name = selectedCategory
       } else if (selectedCategory) {
         payload.category_name = selectedCategory
       }

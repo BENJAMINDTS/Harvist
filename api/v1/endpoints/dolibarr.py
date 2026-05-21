@@ -779,6 +779,7 @@ async def create_product(data: dict) -> JSONResponse:
     """
     array_options: dict = data.pop("array_options", None) or {}
     category_name: str = (data.pop("category_name", None) or "").strip()
+    parent_category_name: str = (data.pop("parent_category_name", None) or "").strip()
     brand_name: str = (data.pop("brand_name", None) or "").strip()
 
     svc, cat_svc = await _get_services_async()
@@ -882,8 +883,18 @@ async def create_product(data: dict) -> JSONResponse:
 
                 if category_name:
                     try:
-                        wc_cat = await wp_cat_svc.find_or_create(category_name)
-                        wc_payload["categories"] = [{"id": wc_cat["id"]}]
+                        if parent_category_name:
+                            wc_parent = await wp_cat_svc.find_or_create(parent_category_name)
+                            wc_child = await wp_cat_svc.find_or_create(
+                                category_name, parent_id=wc_parent["id"]
+                            )
+                            wc_payload["categories"] = [
+                                {"id": wc_parent["id"]},
+                                {"id": wc_child["id"]},
+                            ]
+                        else:
+                            wc_cat = await wp_cat_svc.find_or_create(category_name)
+                            wc_payload["categories"] = [{"id": wc_cat["id"]}]
                     except Exception as exc:
                         logger.warning(
                             "Sync categoría Dolibarr→WP (create) falló",
@@ -961,6 +972,7 @@ async def update_product(product_id: int, data: dict) -> JSONResponse:
     """
     array_options: dict = data.pop("array_options", None) or {}
     category_name: str = (data.pop("category_name", None) or "").strip()
+    parent_category_name: str = (data.pop("parent_category_name", None) or "").strip()
     brand_name: str = (data.pop("brand_name", None) or "").strip()
 
     svc, cat_svc = await _get_services_async()
@@ -1080,8 +1092,18 @@ async def update_product(product_id: int, data: dict) -> JSONResponse:
                     # ── Categoría Dolibarr → WC ───────────────────────────────
                     if category_name:
                         try:
-                            wc_cat = await wp_cat_svc.find_or_create(category_name)
-                            wc_payload["categories"] = [{"id": wc_cat["id"]}]
+                            if parent_category_name:
+                                wc_parent = await wp_cat_svc.find_or_create(parent_category_name)
+                                wc_child = await wp_cat_svc.find_or_create(
+                                    category_name, parent_id=wc_parent["id"]
+                                )
+                                wc_payload["categories"] = [
+                                    {"id": wc_parent["id"]},
+                                    {"id": wc_child["id"]},
+                                ]
+                            else:
+                                wc_cat = await wp_cat_svc.find_or_create(category_name)
+                                wc_payload["categories"] = [{"id": wc_cat["id"]}]
                         except Exception as exc:
                             logger.warning(
                                 "Sync categoría Dolibarr→WP falló",
