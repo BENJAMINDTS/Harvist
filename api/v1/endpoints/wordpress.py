@@ -1126,7 +1126,7 @@ async def sync_all_to_dolibarr() -> dict[str, Any]:
     semaphore = asyncio.Semaphore(5)
 
     try:
-        wp_svc = WordPressProductService(client)
+        WordPressProductService(client)
 
         offset = 0
         limit = 100
@@ -1386,7 +1386,7 @@ async def import_from_csv(
             detail="El mapeo debe incluir al menos una columna asignada al campo 'name' (Nombre).",
         )
 
-    settings = get_settings()
+    get_settings()
     task_id = str(uuid.uuid4())
     csv_b64 = base64.b64encode(content).decode()
 

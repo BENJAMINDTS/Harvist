@@ -113,7 +113,7 @@ class DolibarrExtraFieldDB:
             charset="utf8mb4",
         )
 
-    async def _repair_null_defaults(self, conn: "aiomysql.Connection", data_table: str) -> None:
+    async def _repair_null_defaults(self, conn: aiomysql.Connection, data_table: str) -> None:
         """
         Hace nullable todas las columnas NOT NULL sin default en la tabla de datos.
 

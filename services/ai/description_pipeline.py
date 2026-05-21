@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import csv
 import io
-from typing import Callable
+from collections.abc import Callable
 
 from loguru import logger
 

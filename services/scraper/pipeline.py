@@ -17,7 +17,7 @@ nada de api/ ni de workers/ — es lógica de negocio pura.
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 from loguru import logger
 

@@ -16,8 +16,8 @@ Este módulo no importa nada de api/ — es lógica de negocio pura.
 import csv
 import io
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Iterator
 
 from loguru import logger
 

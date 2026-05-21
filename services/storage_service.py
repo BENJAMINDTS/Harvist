@@ -22,13 +22,12 @@ import io
 import shutil
 import zipfile
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 from loguru import logger
 
 from api.core.config import get_settings
-
 
 # ---------------------------------------------------------------------------
 # Interfaz abstracta
