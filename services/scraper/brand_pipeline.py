@@ -25,8 +25,8 @@ import csv
 import io
 import json
 import threading
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from loguru import logger
 
