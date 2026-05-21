@@ -27,11 +27,11 @@ os.environ.setdefault("SECRET_KEY", "clave-de-prueba-super-segura-32c")
 os.environ.setdefault("BROWSER_BINARY_PATH", "/usr/bin/google-chrome")
 
 from api.core.config import get_settings  # noqa: E402
+
 get_settings.cache_clear()
 
+from api.v1.schemas.job import ModosBusqueda, SearchConfig, TipoJob  # noqa: E402
 from services.ai.seo_pipeline import SeoPipeline  # noqa: E402
-from api.v1.schemas.job import SearchConfig, TipoJob, ModosBusqueda  # noqa: E402
-
 
 # ── Test helpers ──────────────────────────────────────────────────────────────
 
