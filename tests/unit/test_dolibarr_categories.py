@@ -207,14 +207,16 @@ class TestAssignProduct:
 
     @pytest.mark.asyncio
     async def test_calls_correct_endpoint(self, category_service, mock_client):
-        """Verifica que llama endpoint correcto."""
-        mock_client.create.return_value = {"success": True}
+        """Verifica que llama endpoint correcto via _request POST."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_client._request = AsyncMock(return_value=mock_response)
 
         await category_service.assign_product(category_id=1, product_id=10)
 
-        call_args = mock_client.create.call_args
-        assert call_args.args[0] == "categories/1/objects"
-        assert call_args.args[1] == {"type": "product", "id": 10}
+        call_args = mock_client._request.call_args
+        assert call_args.args[0] == "POST"
+        assert "categories/1/objects/10" in call_args.args[1]
 
     @pytest.mark.asyncio
     async def test_returns_true_on_success(self, category_service, mock_client):
@@ -231,13 +233,16 @@ class TestRemoveProduct:
 
     @pytest.mark.asyncio
     async def test_calls_correct_endpoint_with_product_type(self, category_service, mock_client):
-        """Verifica que llama endpoint correcto con type=product."""
-        mock_client.delete.return_value = True
+        """Verifica que llama endpoint correcto con type=product via _request DELETE."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_client._request = AsyncMock(return_value=mock_response)
 
         await category_service.remove_product(category_id=1, product_id=10)
 
-        call_args = mock_client.delete.call_args
-        assert call_args.args[0] == "categories/1/objects/10"
+        call_args = mock_client._request.call_args
+        assert call_args.args[0] == "DELETE"
+        assert "categories/1/objects/10" in call_args.args[1]
 
 
 class TestListProductsInCategory:
