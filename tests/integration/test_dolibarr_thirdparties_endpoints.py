@@ -162,7 +162,7 @@ class TestListThirdparties:
                 response = await http_client.get(f"{_BASE}?mode=all")
 
         assert response.status_code == 200
-        data = response.json()
+        data = response.json()["data"]
         assert "items" in data
 
     async def test_list_customers_filters_correctly(self, http_client):
