@@ -275,22 +275,31 @@ class DolibarrProductService:
     async def count_products(self, search: str | None = None) -> int:
         """
         Cuenta el número total de productos, aplicando el filtro de búsqueda.
+
+        Dolibarr no expone un endpoint de conteo nativo. Se pagina en batches
+        de 500 hasta obtener el total real, evitando cargar todo el catálogo
+        en una sola petición.
         """
         current_filters: dict[str, Any] = {}
         if search:
             escaped_search = search.replace("'", "''")
             current_filters["sqlfilters"] = f"(t.ref:like:'%{escaped_search}%') OR (t.label:like:'%{escaped_search}%')"
 
-        # To get the total count, we need to fetch all items (or use a very large limit)
-        # as Dolibarr's list API doesn't return a 'total' field directly.
-        # This is inefficient for very large datasets but necessary with current client.
-        all_items = await self._client.list(
-            _DOLIBARR_PRODUCTS_RESOURCE,
-            limit=999999, # A very large number to fetch all
-            offset=0,
-            filters=current_filters,
-        )
-        return len(all_items)
+        _BATCH = 500
+        total = 0
+        page = 0
+        while True:
+            batch = await self._client.list(
+                _DOLIBARR_PRODUCTS_RESOURCE,
+                limit=_BATCH,
+                offset=page * _BATCH,
+                filters=current_filters,
+            )
+            total += len(batch)
+            if len(batch) < _BATCH:
+                break
+            page += 1
+        return total
 
     async def get_product(self, product_id: int) -> dict[str, Any]:
         """
