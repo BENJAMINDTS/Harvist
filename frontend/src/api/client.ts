@@ -77,7 +77,7 @@ const BASE_URL = '/api/v1'
  */
 export const apiClient: AxiosInstance = axios.create({
   baseURL: BASE_URL,
-  timeout: 30_000,
+  timeout: 120_000,
   headers: {
     Accept: 'application/json',
   },
@@ -89,11 +89,17 @@ export const apiClient: AxiosInstance = axios.create({
  */
 apiClient.interceptors.response.use(
   (response) => response,
-  (error: AxiosError<{ detail?: string; message?: string }>) => {
+  (error: AxiosError<{ detail?: unknown; message?: string }>) => {
+    const rawDetail = error.response?.data?.detail
+    const detailMsg = Array.isArray(rawDetail)
+      ? (rawDetail[0] as { msg?: string })?.msg ?? `Error de validación (HTTP ${error.response?.status})`
+      : typeof rawDetail === 'string'
+        ? rawDetail
+        : undefined
     const apiError: ApiError = {
       status: error.response?.status ?? 0,
       message:
-        error.response?.data?.detail ??
+        detailMsg ??
         error.response?.data?.message ??
         error.message ??
         'Error desconocido.',
