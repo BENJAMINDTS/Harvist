@@ -89,6 +89,7 @@ from services.integrations.odoo.products import OdooProductService
 from services.integrations.odoo.purchases import OooPurchaseService
 from services.integrations.odoo.sales import OdooSaleService
 
+
 def _detect_csv_delimiter(text: str) -> str:
     """Detecta el delimitador CSV.
 
