@@ -220,7 +220,9 @@ export default function WordPressProducts() {
 
   const handleApplyCustomPageSize = (): void => {
     const size = parseInt(customPageSize, 10)
-    if (size > 0) { setShowCustomPageSizeInput(false); loadProducts(size, 0, searchQuery) }
+    if (!size || size <= 0) return
+    setShowCustomPageSizeInput(false)
+    loadProducts(size, 0, searchQuery)
   }
 
   const handlePageChange = useCallback((pageNumber: number): void => {
@@ -612,7 +614,7 @@ export default function WordPressProducts() {
         const totalPages = Math.ceil(pagination.total / safeLimit)
         const paginationItems = getPaginationItems(currentPage + 1, totalPages)
 
-        const PREDEFINED_PAGE_SIZES = [10, 25, 50, 100]
+        const PREDEFINED_PAGE_SIZES = [10, 25, 50, 100, 250, 500]
         const isCustomPageSizeActive = !PREDEFINED_PAGE_SIZES.includes(pagination.limit)
 
         return (
