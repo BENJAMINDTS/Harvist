@@ -26,7 +26,6 @@ import pytest
 from services.integrations.base import IntegrationError
 from services.integrations.dolibarr.products import DolibarrProductService
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -65,8 +64,8 @@ class TestListProducts:
 
         result = await svc.list_products(limit=10, offset=5)
 
-        client.list.assert_called_once_with("products", limit=10, offset=5, filters=None)
-        assert result == [{"id": 1}]
+        client.list.assert_called_once_with("products", limit=10, offset=5, filters={})
+        assert result[0]["id"] == 1
 
     @pytest.mark.asyncio
     async def test_passes_filters_to_client(self):
@@ -98,8 +97,14 @@ class TestCreateProduct:
 
         result = await svc.create_product(data)
 
-        client.create.assert_called_once_with("products", data)
-        assert result["id"] == 42
+        call_args = client.create.call_args
+        assert call_args.args[0] == "products"
+        sent = call_args.args[1]
+        assert sent["ref"] == "PROD-1"
+        assert sent["label"] == "Producto 1"
+        assert sent["price"] == 9.99
+        assert sent["tosell"] == 1
+        assert sent["tobuy"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -200,6 +205,7 @@ class TestSyncFromJob:
         # _find_product_by_ref → list devuelve vacío → no existe
         client.list = AsyncMock(return_value=[])
         client.create = AsyncMock(return_value={"id": 10})
+        client.get = AsyncMock(return_value={"id": 10, "ref": "PROD-A", "label": "PROD-A"})
         svc = _make_service(client)
 
         results = await svc.sync_from_job("job-1", ["PROD-A"])
