@@ -36,11 +36,11 @@ os.environ.setdefault("CELERY_RESULT_BACKEND", "redis://localhost:6379/1")
 
 # Limpiar la caché de settings para que tome las vars de entorno de test
 from api.core.config import get_settings  # noqa: E402
+
 get_settings.cache_clear()
 
 from api.main import app  # noqa: E402
 from api.v1.schemas.job import EstadoJob, JobStatus  # noqa: E402
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
