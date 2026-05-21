@@ -9,10 +9,12 @@ Cubre árbol jerárquico, CRUD y asignación a productos.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from loguru import logger
 
+from services.integrations.base import IntegrationError
 from services.integrations.wordpress.client import WordPressClient
 
 
@@ -31,6 +33,9 @@ class WordPressCategoryService:
             client: instancia de WordPressClient ya configurada.
         """
         self._client = client
+        # Cache (name.lower(), parent_id) → category dict para evitar duplicados en sync concurrente.
+        self._cache: dict[tuple[str, int], dict[str, Any]] = {}
+        self._locks: dict[tuple[str, int], asyncio.Lock] = {}
 
     async def list(self, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
         """
@@ -121,8 +126,11 @@ class WordPressCategoryService:
 
     async def find_or_create(self, name: str, parent_id: int = 0) -> dict[str, Any]:
         """
-        Busca una categoría por nombre exacto (case-insensitive) y parent via API search.
-        Si no existe, la crea. Usa ``search`` para evitar cargar todas las categorías.
+        Busca una categoría por nombre exacto (case-insensitive). Si no existe, la crea.
+
+        Thread-safe frente a sync concurrente: usa lock por clave para evitar que
+        múltiples corutinas creen la misma categoría simultáneamente. Reintenta búsqueda
+        si WooCommerce devuelve "term_exists" (duplicado por carrera).
 
         Args:
             name: nombre de la categoría.
@@ -131,13 +139,40 @@ class WordPressCategoryService:
         Returns:
             Dict de la categoría encontrada o creada.
         """
-        candidates = await self._client.list(
-            self._RESOURCE, limit=50, filters={"search": name}
-        )
-        for cat in candidates:
-            if cat["name"].lower() == name.lower() and cat.get("parent", 0) == parent_id:
-                return cat
-        return await self.create({"name": name, "parent": parent_id})
+        key = (name.lower(), parent_id)
+
+        if key in self._cache:
+            return self._cache[key]
+
+        if key not in self._locks:
+            self._locks[key] = asyncio.Lock()
+
+        async with self._locks[key]:
+            if key in self._cache:
+                return self._cache[key]
+
+            candidates = await self._client.list(
+                self._RESOURCE, limit=50, filters={"search": name}
+            )
+            for cat in candidates:
+                if cat["name"].lower() == name.lower() and cat.get("parent", 0) == parent_id:
+                    self._cache[key] = cat
+                    return cat
+
+            try:
+                created = await self.create({"name": name, "parent": parent_id})
+                self._cache[key] = created
+                return created
+            except IntegrationError:
+                # Posible carrera: otro proceso la creó entre el search y el create.
+                candidates2 = await self._client.list(
+                    self._RESOURCE, limit=50, filters={"search": name}
+                )
+                for cat in candidates2:
+                    if cat["name"].lower() == name.lower() and cat.get("parent", 0) == parent_id:
+                        self._cache[key] = cat
+                        return cat
+                raise
 
     async def find_or_create_subcategory(self, parent_name: str, sub_name: str) -> dict[str, Any]:
         """

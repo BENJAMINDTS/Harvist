@@ -24,6 +24,7 @@ por instancia.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from loguru import logger
@@ -71,6 +72,8 @@ class WordPressBrandService:
         self._client = client
         self._attr_id: int | None = attr_id_override
         self._use_native: bool | None = use_native_override
+        self._cache: dict[str, dict[str, Any]] = {}
+        self._locks: dict[str, asyncio.Lock] = {}
 
     # ── Detección de backend ─────────────────────────────────────────────────
 
@@ -329,8 +332,7 @@ class WordPressBrandService:
         """
         Busca una marca por nombre exacto (case-insensitive) via API search. Si no existe, la crea.
 
-        Usa el parámetro ``search`` de la API para evitar cargar todas las marcas
-        y prevenir duplicados cuando hay más de 100 marcas registradas.
+        Thread-safe: usa lock por nombre para evitar duplicados en sync concurrente.
 
         Args:
             name: nombre de la marca a buscar o crear.
@@ -338,18 +340,50 @@ class WordPressBrandService:
         Returns:
             Dict con los datos de la marca (id, name, slug).
         """
-        if await self._native_available():
-            candidates = await self._client.list(
-                _NATIVE_RESOURCE, limit=10, filters={"search": name}
-            )
-        else:
-            attr_id = await self._get_attribute_id()
-            candidates = await self._client.list(
-                self._terms_resource(attr_id), limit=10, filters={"search": name}
-            )
+        key = name.lower()
 
-        for brand in candidates:
-            if brand.get("name", "").lower() == name.lower():
-                return brand
+        if key in self._cache:
+            return self._cache[key]
 
-        return await self.create(name)
+        if key not in self._locks:
+            self._locks[key] = asyncio.Lock()
+
+        async with self._locks[key]:
+            if key in self._cache:
+                return self._cache[key]
+
+            if await self._native_available():
+                candidates = await self._client.list(
+                    _NATIVE_RESOURCE, limit=10, filters={"search": name}
+                )
+            else:
+                attr_id = await self._get_attribute_id()
+                candidates = await self._client.list(
+                    self._terms_resource(attr_id), limit=10, filters={"search": name}
+                )
+
+            for brand in candidates:
+                if brand.get("name", "").lower() == key:
+                    self._cache[key] = brand
+                    return brand
+
+            try:
+                created = await self.create(name)
+                self._cache[key] = created
+                return created
+            except IntegrationError:
+                # Reintento si otra corutina la creó entre el search y el create.
+                if await self._native_available():
+                    candidates2 = await self._client.list(
+                        _NATIVE_RESOURCE, limit=10, filters={"search": name}
+                    )
+                else:
+                    attr_id = await self._get_attribute_id()
+                    candidates2 = await self._client.list(
+                        self._terms_resource(attr_id), limit=10, filters={"search": name}
+                    )
+                for brand in candidates2:
+                    if brand.get("name", "").lower() == key:
+                        self._cache[key] = brand
+                        return brand
+                raise
