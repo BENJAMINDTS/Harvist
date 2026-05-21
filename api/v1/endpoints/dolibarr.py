@@ -1194,8 +1194,8 @@ async def sync_all_to_wordpress() -> JSONResponse:
     Sincroniza todos los productos de Dolibarr a WooCommerce.
 
     Para cada producto de Dolibarr: busca en WooCommerce por SKU=ref.
-    Si existe → actualiza; si no → crea. Aplica semáforo de concurrencia 5
-    para no sobrecargar la API de WooCommerce.
+    Si existe → actualiza; si no → crea. Crea en WooCommerce las categorías
+    y marcas que no existan (find-or-create). Aplica semáforo de concurrencia 5.
 
     Returns:
         Resumen con total, created, updated, skipped, errors.
@@ -1214,6 +1214,19 @@ async def sync_all_to_wordpress() -> JSONResponse:
 
     try:
         wp_prod_svc = WordPressProductService(wp_client)
+        wp_cat_svc = WordPressCategoryService(wp_client)
+        wp_brand_svc = WordPressBrandService(wp_client)
+        doli_cat_svc = DolibarrCategoryService(doli_svc._client)
+
+        # Build product→category/brand map once to avoid N+1 Dolibarr queries
+        product_cat_map: dict[int, dict[str, str | None]] = {}
+        try:
+            product_cat_map = await doli_cat_svc.build_product_category_map()
+        except Exception as exc:
+            logger.warning(
+                "No se pudo construir mapa de categorías Dolibarr; sync sin categorías",
+                exc_info=exc,
+            )
 
         offset = 0
         limit = 100
@@ -1223,23 +1236,60 @@ async def sync_all_to_wordpress() -> JSONResponse:
                 break
             total += len(batch)
 
-            async def _sync_one(product: dict[str, Any]) -> tuple[str, str | None]:
+            async def _sync_one(
+                product: dict[str, Any],
+                _cat_map: dict[int, dict[str, str | None]] = product_cat_map,
+                _wp_prod: WordPressProductService = wp_prod_svc,
+                _wp_cat: WordPressCategoryService = wp_cat_svc,
+                _wp_brand: WordPressBrandService = wp_brand_svc,
+            ) -> tuple[str, str | None]:
                 ref = (product.get("ref") or "").strip()
                 if not ref:
                     return "skipped", None
                 async with semaphore:
                     try:
+                        doli_id = int(product.get("id") or 0)
+                        cat_info = _cat_map.get(doli_id, {})
+                        category_name: str = cat_info.get("category") or ""
+                        brand_name: str = cat_info.get("brand") or ""
+
                         wc_payload = _map_dolibarr_to_wc(product)
                         wc_payload["sku"] = ref
                         wc_payload.setdefault("status", "publish")
                         wc_payload.setdefault("type", "simple")
-                        existing = await wp_prod_svc.find_by_sku(ref)
+
+                        if category_name:
+                            try:
+                                wc_cat = await _wp_cat.find_or_create(category_name)
+                                wc_payload["categories"] = [{"id": wc_cat["id"]}]
+                            except Exception as exc_cat:
+                                logger.warning(
+                                    "Sync categoría Dolibarr→WP (sync-all) falló",
+                                    exc_info=exc_cat,
+                                    extra={"ref": ref, "category": category_name},
+                                )
+
+                        existing = await _wp_prod.find_by_sku(ref)
                         if existing:
-                            await wp_prod_svc.update(int(existing["id"]), wc_payload)
-                            return "updated", None
+                            wc_id = int(existing["id"])
+                            await _wp_prod.update(wc_id, wc_payload)
+                            action = "updated"
                         else:
-                            await wp_prod_svc.create(wc_payload)
-                            return "created", None
+                            wc_created = await _wp_prod.create(wc_payload)
+                            wc_id = int(wc_created["id"])
+                            action = "created"
+
+                        if brand_name:
+                            try:
+                                await _sync_brand_to_wc(wc_id, brand_name, _wp_prod, _wp_brand)
+                            except Exception as exc_brand:
+                                logger.warning(
+                                    "Sync marca Dolibarr→WP (sync-all) falló",
+                                    exc_info=exc_brand,
+                                    extra={"ref": ref, "brand": brand_name},
+                                )
+
+                        return action, None
                     except Exception as exc:
                         return "error", f"{ref}: {exc}"
 
