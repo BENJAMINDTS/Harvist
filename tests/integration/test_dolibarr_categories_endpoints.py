@@ -102,7 +102,7 @@ class TestListCategories:
                     response = client.get("/api/v1/dolibarr/categories?type=product&limit=50")
 
             assert response.status_code == 200
-            data = response.json()
+            data = response.json()["data"]
             assert "items" in data
             assert len(data["items"]) == 2
 
@@ -299,7 +299,7 @@ class TestListProductsInCategory:
                     response = client.get("/api/v1/dolibarr/categories/1/products")
 
             assert response.status_code == 200
-            data = response.json()
+            data = response.json()["data"]
             assert "items" in data
 
 
@@ -326,7 +326,7 @@ class TestRedisConfigPath:
                     response = client.get("/api/v1/dolibarr/categories")
 
         assert response.status_code == 200
-        data = response.json()
+        data = response.json()["data"]
         assert data["items"] == []
         assert data["total"] == 0
         mock_svc.list_categories.assert_called_once()

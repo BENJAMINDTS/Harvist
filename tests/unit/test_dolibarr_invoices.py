@@ -35,11 +35,11 @@ class TestListInvoices:
         self, service: DolibarrInvoiceService, mock_client: AsyncMock
     ) -> None:
         """Verifica que customer usa endpoint /invoices."""
-        mock_client.get.return_value = [{"id": 1, "ref": "INV001"}]
+        mock_client.list.return_value = [{"id": 1, "ref": "INV001"}]
 
         result = await service.list_invoices(type="customer")
 
-        mock_client.get.assert_called_once()
+        mock_client.list.assert_called_once()
         assert result == [{"id": 1, "ref": "INV001"}]
 
     @pytest.mark.asyncio
@@ -47,11 +47,11 @@ class TestListInvoices:
         self, service: DolibarrInvoiceService, mock_client: AsyncMock
     ) -> None:
         """Verifica que supplier usa endpoint /supplierinvoices."""
-        mock_client.get.return_value = [{"id": 2, "ref": "SINV001"}]
+        mock_client.list.return_value = [{"id": 2, "ref": "SINV001"}]
 
         result = await service.list_invoices(type="supplier")
 
-        mock_client.get.assert_called_once()
+        mock_client.list.assert_called_once()
         assert result == [{"id": 2, "ref": "SINV001"}]
 
 
@@ -278,7 +278,7 @@ class TestErrorHandling:
         """Verifica que list_invoices levanta IntegrationError en fallo."""
         from services.integrations.base import IntegrationError
 
-        mock_client.get.side_effect = Exception("Network error")
+        mock_client.list.side_effect = Exception("Network error")
 
         with pytest.raises(IntegrationError):
             await service.list_invoices(type="customer")

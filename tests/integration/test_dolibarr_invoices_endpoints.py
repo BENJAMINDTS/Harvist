@@ -156,7 +156,7 @@ class TestListInvoices:
             )
 
             assert response.status_code == 200
-            data = response.json()
+            data = response.json()["data"]
             assert "items" in data
 
     @pytest.mark.asyncio
@@ -453,5 +453,5 @@ class TestRedisConfigPath:
                     response = client.get("/api/v1/dolibarr/invoices")
 
         assert response.status_code == 200
-        assert response.json()["items"] == []
+        assert response.json()["data"]["items"] == []
         mock_svc.list_invoices.assert_called_once()

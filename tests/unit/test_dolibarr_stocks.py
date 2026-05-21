@@ -78,16 +78,16 @@ class TestGetProductStock:
 
     @pytest.mark.asyncio
     async def test_returns_stock_total_and_warehouse_breakdown(self):
-        """get_product_stock retorna stock_total y desglose."""
+        """get_product_stock retorna stock_total y desglose por almacén."""
         client = _make_client()
         client.get = AsyncMock(
             return_value={
                 "id": 10,
-                "stock": 100.0,
-                "warehouses": [
-                    {"id": 1, "label": "Main", "qty": 60.0},
-                    {"id": 2, "label": "Secondary", "qty": 40.0},
-                ],
+                "stock_reel": 100.0,
+                "stock_warehouse": {
+                    "1": {"real": 60.0, "id": 1},
+                    "2": {"real": 40.0, "id": 2},
+                },
             }
         )
         svc = _make_service(client)
@@ -96,7 +96,7 @@ class TestGetProductStock:
 
         assert result["stock_total"] == 100.0
         assert len(result["warehouses"]) == 2
-        assert result["warehouses"][0]["warehouse_label"] == "Main"
+        assert result["warehouses"][0]["qty"] == 60.0
 
 
 class TestGetStockForProducts:

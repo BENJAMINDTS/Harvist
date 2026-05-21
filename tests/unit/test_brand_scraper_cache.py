@@ -24,10 +24,10 @@ os.environ.setdefault("SECRET_KEY", "clave-de-prueba-super-segura-32c")
 os.environ.setdefault("BROWSER_BINARY_PATH", "/usr/bin/google-chrome")
 
 from api.core.config import get_settings  # noqa: E402
+
 get_settings.cache_clear()
 
 from services.scraper.brand_cache import GS1PrefixCache  # noqa: E402
-
 
 # ── Tests GS1PrefixCache ──────────────────────────────────────────────────────
 

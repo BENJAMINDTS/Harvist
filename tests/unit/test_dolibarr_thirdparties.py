@@ -5,8 +5,9 @@ Tests unitarios para DolibarrThirdpartyService.
 :version: 1.0.0
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from services.integrations.base import IntegrationError
 from services.integrations.dolibarr.thirdparties import DolibarrThirdpartyService
