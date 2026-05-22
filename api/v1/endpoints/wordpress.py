@@ -1129,6 +1129,20 @@ async def sync_all_to_dolibarr() -> dict[str, Any]:
     try:
         WordPressProductService(client)
 
+        # Fetch todas las categorías WC una vez → mapa {cat_id: parent_id}
+        # Permite detectar categorías hoja sin llamadas extra por producto.
+        wc_parent_map: dict[int, int] = {}
+        cat_offset = 0
+        while True:
+            cat_batch, _ = await client.list_paged("products/categories", limit=100, offset=cat_offset)
+            if not cat_batch:
+                break
+            for cat in cat_batch:
+                wc_parent_map[int(cat["id"])] = int(cat.get("parent", 0))
+            if len(cat_batch) < 100:
+                break
+            cat_offset += 100
+
         offset = 0
         limit = 100
         while True:
@@ -1159,10 +1173,19 @@ async def sync_all_to_dolibarr() -> dict[str, Any]:
                             doli_id = int(created_product.get("id", 0))
                             action = "created"
 
-                        # ── Categorías WC → Dolibarr (todas: padre + subcategorías) ──
+                        # ── Categoría WC → Dolibarr (solo hoja, no ancestros) ────────
                         wc_categories = product.get("categories", [])
                         if wc_categories and doli_id:
-                            for wc_cat in wc_categories:
+                            # Filtrar: hoja = categoría cuyo id no es padre de ninguna
+                            # otra en la lista del producto (usando mapa global).
+                            parent_ids_in_product = {
+                                wc_parent_map.get(c["id"], 0) for c in wc_categories
+                            }
+                            leaf_cats = [
+                                c for c in wc_categories
+                                if c["id"] not in parent_ids_in_product
+                            ]
+                            for wc_cat in leaf_cats:
                                 cat_name = (wc_cat.get("name") or "").strip()
                                 if not cat_name:
                                     continue
