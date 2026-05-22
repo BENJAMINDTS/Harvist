@@ -1129,6 +1129,9 @@ async def sync_all_to_dolibarr() -> dict[str, Any]:
     error_details: list[str] = []
     assign_warnings: list[str] = []
     semaphore = asyncio.Semaphore(5)
+    # Serializa operaciones de creación de categorías para evitar race conditions
+    # cuando varios coroutines concurrentes intentan crear la misma jerarquía tpv.
+    cat_lock = asyncio.Lock()
 
     try:
         WordPressProductService(client)
@@ -1194,11 +1197,11 @@ async def sync_all_to_dolibarr() -> dict[str, Any]:
                                 if not cat_name:
                                     continue
                                 try:
-                                    doli_cat = await doli_cat_svc.find_category_by_name(cat_name)
-                                    if doli_cat:
-                                        await doli_cat_svc.assign_product(int(doli_cat["id"]), doli_id)
-                                    else:
-                                        warns.append(f"{sku}: categoría '{cat_name}' no encontrada en Dolibarr")
+                                    # Serializar para evitar race condition al crear
+                                    # la jerarquía tpv con concurrencia alta.
+                                    async with cat_lock:
+                                        doli_cat = await doli_cat_svc.find_or_create_under_tpv(cat_name)
+                                    await doli_cat_svc.assign_product(int(doli_cat["id"]), doli_id)
                                 except Exception as exc:
                                     msg = f"{sku}: assign categoría '{cat_name}' → {exc}"
                                     logger.warning("Sync categoría WP→Dolibarr (bulk) falló", exc_info=exc, extra={"sku": sku})
