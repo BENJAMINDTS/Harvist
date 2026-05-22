@@ -241,6 +241,8 @@ export interface WpImportRowResult {
   action: 'created' | 'updated' | 'skipped' | 'error'
   wc_id: number | null
   error: string | null
+  category_error: string | null
+  categories_in_payload: boolean
 }
 
 export interface WpImportResponse {

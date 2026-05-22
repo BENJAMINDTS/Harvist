@@ -6,8 +6,7 @@
  * @author BenjaminDTS | Carlitos6712
  */
 import { useEffect, useState } from 'react'
-import { apiClient } from '@/api/client'
-import { getDolibarrDBConfig, saveDolibarrDBConfig } from '@/api/client'
+import { apiClient, getDolibarrDBConfig, saveDolibarrDBConfig } from '@/api/client'
 import type { DolibarrDBConfig, DolibarrDBConfigCreate } from '@/types/dolibarr'
 
 interface DolibarrConfigData {
@@ -48,7 +47,7 @@ export default function DolibarrConfig({ className = '', onSaved }: Props) {
   const [showDbSection, setShowDbSection] = useState(false)
 
   useEffect(() => {
-    ;(async () => {
+    (async () => {
       try {
         setLoading(true)
         const [apiRes, dbRes] = await Promise.allSettled([

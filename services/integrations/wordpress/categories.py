@@ -163,8 +163,18 @@ class WordPressCategoryService:
                 created = await self.create({"name": name, "parent": parent_id})
                 self._cache[key] = created
                 return created
-            except IntegrationError:
-                # Posible carrera: otro proceso la creó entre el search y el create.
+            except IntegrationError as exc:
+                # WC devuelve term_exists (HTTP 400) si la categoría existe pero el
+                # search no la devolvió (p.ej. acentos, collation del servidor).
+                # En ese caso hacemos una búsqueda amplia sin filtro de texto.
+                err_str = str(exc).lower()
+                if exc.status_code == 400 or "term_exists" in err_str:
+                    all_cats = await self._client.list(self._RESOURCE, limit=100)
+                    for cat in all_cats:
+                        if cat["name"].lower() == name.lower() and cat.get("parent", 0) == parent_id:
+                            self._cache[key] = cat
+                            return cat
+                # Fallback: reintento con search por si fue carrera entre corutinas.
                 candidates2 = await self._client.list(
                     self._RESOURCE, limit=50, filters={"search": name}
                 )

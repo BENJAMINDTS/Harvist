@@ -30,18 +30,6 @@ import {
   type ApiError,
 } from '@/api/client'
 
-class TestError {
-  /**
-   * Helper para construir un error Axios mínimo que el interceptor pueda normalizar.
-   *
-   * @param status  - Código HTTP de la respuesta.
-   * @param detail  - Mensaje de detalle del backend.
-   * @returns Objeto que simula AxiosError con response.
-   */
-  static withDetail(status: number, detail: string) {
-    return { response: { status, data: { detail } } }
-  }
-}
 
 describe('buildWsUrl', () => {
   /**
@@ -97,7 +85,7 @@ describe('Interceptor de error Axios', () => {
   it('normaliza un 404 con detail a ApiError', async () => {
     mock.onGet('/test-404').reply(404, { detail: 'No encontrado.' })
 
-    await expect(apiClient.get('/test-404')).rejects.toMatchObject<Partial<ApiError>>({
+    await expect(apiClient.get('/test-404')).rejects.toMatchObject({
       status: 404,
       message: 'No encontrado.',
     })
@@ -106,7 +94,7 @@ describe('Interceptor de error Axios', () => {
   it('normaliza un 500 sin detail usando message del cuerpo', async () => {
     mock.onGet('/test-500').reply(500, { message: 'Error interno.' })
 
-    await expect(apiClient.get('/test-500')).rejects.toMatchObject<Partial<ApiError>>({
+    await expect(apiClient.get('/test-500')).rejects.toMatchObject({
       status: 500,
       message: 'Error interno.',
     })
@@ -115,7 +103,8 @@ describe('Interceptor de error Axios', () => {
   it('usa el mensaje de Axios como fallback cuando el body está vacío', async () => {
     mock.onGet('/test-empty').reply(502, {})
 
-    const err = await apiClient.get('/test-empty').catch((e: ApiError) => e)
+    let err!: ApiError
+    await apiClient.get('/test-empty').catch((e: unknown) => { err = e as ApiError })
     expect(err.status).toBe(502)
     // Cuando body no tiene detail ni message, el interceptor cae en error.message
     // que Axios rellena con "Request failed with status code 502"
@@ -126,7 +115,7 @@ describe('Interceptor de error Axios', () => {
   it('status 0 cuando no hay respuesta (timeout / red)', async () => {
     mock.onGet('/test-timeout').networkError()
 
-    await expect(apiClient.get('/test-timeout')).rejects.toMatchObject<Partial<ApiError>>({
+    await expect(apiClient.get('/test-timeout')).rejects.toMatchObject({
       status: 0,
     })
   })

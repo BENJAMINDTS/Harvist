@@ -185,20 +185,17 @@ export default function WordPressProducts() {
   }, [statusFilter])
 
   const loadAuxData = async () => {
-    try {
-      const [brandList, attrInfo, catList, catTree] = await Promise.all([
-        listWordPressBrands(),
-        getWordPressBrandAttribute(),
-        listWordPressCategories(),
-        getWordPressCategoryTree(),
-      ])
-      setBrands(brandList)
-      setBrandAttrInfo(attrInfo)
-      setCategories(catList)
-      setCategoryTree(flattenCategoryTree(catTree))
-    } catch {
-      // non-critical
-    }
+    // Promise.allSettled so a failure in one call doesn't silently block the others.
+    const [brandResult, attrResult, catResult, treeResult] = await Promise.allSettled([
+      listWordPressBrands(),
+      getWordPressBrandAttribute(),
+      listWordPressCategories(),
+      getWordPressCategoryTree(),
+    ])
+    if (brandResult.status === 'fulfilled') setBrands(brandResult.value)
+    if (attrResult.status === 'fulfilled') setBrandAttrInfo(attrResult.value)
+    if (catResult.status === 'fulfilled') setCategories(catResult.value)
+    if (treeResult.status === 'fulfilled') setCategoryTree(flattenCategoryTree(treeResult.value))
   }
 
   useEffect(() => { loadProducts(pagination.limit, 0, searchQuery, statusFilter) }, [statusFilter])
@@ -1336,6 +1333,32 @@ function WpCsvImportModal({ onClose, onSuccess }: WpCsvImportModalProps): React.
                   </div>
                 </div>
               )}
+              {(() => {
+                const withCatError = result.results.filter((r) => r.category_error)
+                const withCat = result.results.filter((r) => r.categories_in_payload && !r.category_error)
+                const noCat = result.results.filter((r) => !r.categories_in_payload && !r.category_error)
+                return (
+                  <div className="border border-gray-200 rounded-lg p-3 space-y-2 text-xs">
+                    <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Diagnóstico de categorías</p>
+                    <div className="flex gap-4">
+                      <span className="text-green-700">✓ Con categoría: {withCat.length}</span>
+                      <span className="text-orange-700">⚠ Error categoría: {withCatError.length}</span>
+                      <span className="text-gray-500">– Sin col. categoría: {noCat.length}</span>
+                    </div>
+                    {withCatError.length > 0 && (
+                      <div className="overflow-y-auto max-h-32 rounded border border-orange-200 divide-y divide-orange-100">
+                        {withCatError.map((r) => (
+                          <div key={r.row} className="px-3 py-1.5 text-orange-700">
+                            <span className="font-mono font-medium">Fila {r.row}</span>
+                            {r.sku && <span className="ml-2 text-orange-500">({r.sku})</span>}
+                            <span className="ml-2">— {r.category_error}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
             </div>
           )}
         </div>

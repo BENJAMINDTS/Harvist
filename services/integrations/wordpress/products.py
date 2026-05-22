@@ -337,6 +337,17 @@ class WordPressProductService:
         Returns:
             Lista de dicts con row, sku, action, wc_id, error.
         """
+        logger.info(
+            "import_from_csv WP iniciado",
+            extra={
+                "category_col": category_col,
+                "subcategory_col": subcategory_col,
+                "brand_col": brand_col,
+                "has_category_svc": category_svc is not None,
+                "has_brand_svc": brand_svc is not None,
+            },
+        )
+
         text = _decode_csv(content)
         delimiter = _detect_delimiter(text)
 
@@ -386,6 +397,8 @@ class WordPressProductService:
                 "action": None,
                 "wc_id": None,
                 "error": None,
+                "category_error": None,
+                "categories_in_payload": False,
             }
 
             if not name:
@@ -415,16 +428,36 @@ class WordPressProductService:
                     if cat_name:
                         try:
                             if subcat_name:
-                                cat = await category_svc.find_or_create_subcategory(cat_name, subcat_name)
+                                # Incluir padre + hijo para que WC muestre jerarquía completa.
+                                parent_cat = await category_svc.find_or_create(cat_name, parent_id=0)
+                                child_cat = await category_svc.find_or_create(
+                                    subcat_name, parent_id=parent_cat["id"]
+                                )
+                                payload["categories"] = [
+                                    {"id": parent_cat["id"]},
+                                    {"id": child_cat["id"]},
+                                ]
                             else:
                                 cat = await category_svc.find_or_create(cat_name)
-                            payload["categories"] = [{"id": cat["id"]}]
+                                payload["categories"] = [{"id": cat["id"]}]
+                            result["categories_in_payload"] = True
                         except Exception as exc:
                             logger.warning(
                                 "Error resolviendo categoría WP",
                                 exc_info=exc,
                                 extra={"cat": cat_name, "subcat": subcat_name},
                             )
+                            result["category_error"] = str(exc)
+
+                logger.debug(
+                    "Payload WP antes de upsert",
+                    extra={
+                        "row": row_num,
+                        "sku": sku,
+                        "categories": payload.get("categories"),
+                        "brands": payload.get("brands"),
+                    },
+                )
 
                 if sku:
                     existing = await self.find_by_sku(sku)
@@ -434,6 +467,15 @@ class WordPressProductService:
                             result["action"] = "updated"
                             result["wc_id"] = updated.get("id")
                         else:
+                            # Aunque no sobreescribamos datos del producto, sí aplicamos
+                            # categorías/marcas resueltas si el producto no las tiene aún.
+                            patch: dict[str, Any] = {}
+                            if "categories" in payload and not existing.get("categories"):
+                                patch["categories"] = payload["categories"]
+                            if "brands" in payload and not existing.get("brands"):
+                                patch["brands"] = payload["brands"]
+                            if patch:
+                                await self.update(existing["id"], patch)
                             result["action"] = "skipped"
                             result["wc_id"] = existing.get("id")
                     else:
