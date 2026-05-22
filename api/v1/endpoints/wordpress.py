@@ -1118,7 +1118,7 @@ async def sync_all_to_dolibarr() -> dict[str, Any]:
             detail="Dolibarr no estÃ¡ configurado.",
         )
 
-    doli_svc, _ = doli_services
+    doli_svc, doli_cat_svc = doli_services
     client = await _get_client()
 
     total = created = updated = skipped = errors = 0
@@ -1149,11 +1149,44 @@ async def sync_all_to_dolibarr() -> dict[str, Any]:
                         doli_payload.setdefault("tobuy", 1)
                         existing = await doli_svc._find_product_by_ref(sku)
                         if existing:
-                            await doli_svc.update_product(int(existing["id"]), doli_payload)
-                            return "updated", None
+                            doli_id = int(existing["id"])
+                            await doli_svc.update_product(doli_id, doli_payload)
+                            action = "updated"
                         else:
-                            await doli_svc.create_product(doli_payload)
-                            return "created", None
+                            created_product = await doli_svc.create_product(doli_payload)
+                            doli_id = int(created_product.get("id", 0))
+                            action = "created"
+
+                        # ── Categoría WC → Dolibarr ───────────────────────────────────
+                        wc_categories = product.get("categories", [])
+                        if wc_categories and doli_id:
+                            cat_name = (wc_categories[0].get("name") or "").strip()
+                            if cat_name:
+                                try:
+                                    doli_cat = await doli_cat_svc.find_category_by_name(cat_name)
+                                    if doli_cat:
+                                        await doli_cat_svc.assign_product(int(doli_cat["id"]), doli_id)
+                                except Exception as exc:
+                                    logger.warning(
+                                        "Sync categoría WP→Dolibarr (bulk) falló",
+                                        exc_info=exc,
+                                        extra={"sku": sku},
+                                    )
+
+                        # ── Marca WC → Dolibarr ───────────────────────────────────────
+                        brand_name = _extract_wc_brand_name(product)
+                        if brand_name and doli_id:
+                            try:
+                                doli_brand = await doli_cat_svc.find_or_create_brand(brand_name)
+                                await doli_cat_svc.assign_product(int(doli_brand["id"]), doli_id)
+                            except Exception as exc:
+                                logger.warning(
+                                    "Sync marca WP→Dolibarr (bulk) falló",
+                                    exc_info=exc,
+                                    extra={"sku": sku},
+                                )
+
+                        return action, None
                     except Exception as exc:
                         return "error", f"{sku}: {exc}"
 
