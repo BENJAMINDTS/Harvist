@@ -20,7 +20,7 @@ import hmac
 import time
 import uuid
 from typing import Any
-from urllib.parse import quote, urlencode, urlparse
+from urllib.parse import quote, urlparse
 
 import httpx
 from loguru import logger
