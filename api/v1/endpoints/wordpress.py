@@ -1159,11 +1159,13 @@ async def sync_all_to_dolibarr() -> dict[str, Any]:
                             doli_id = int(created_product.get("id", 0))
                             action = "created"
 
-                        # ── Categoría WC → Dolibarr ───────────────────────────────────
+                        # ── Categorías WC → Dolibarr (todas: padre + subcategorías) ──
                         wc_categories = product.get("categories", [])
                         if wc_categories and doli_id:
-                            cat_name = (wc_categories[0].get("name") or "").strip()
-                            if cat_name:
+                            for wc_cat in wc_categories:
+                                cat_name = (wc_cat.get("name") or "").strip()
+                                if not cat_name:
+                                    continue
                                 try:
                                     doli_cat = await doli_cat_svc.find_category_by_name(cat_name)
                                     if doli_cat:
