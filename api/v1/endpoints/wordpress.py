@@ -1118,15 +1118,30 @@ async def sync_all_to_dolibarr() -> dict[str, Any]:
             detail="Dolibarr no estÃ¡ configurado.",
         )
 
-    doli_svc, _ = doli_services
+    doli_svc, doli_cat_svc = doli_services
     client = await _get_client()
 
     total = created = updated = skipped = errors = 0
     error_details: list[str] = []
+    assign_warnings: list[str] = []
     semaphore = asyncio.Semaphore(5)
 
     try:
         WordPressProductService(client)
+
+        # Fetch todas las categorías WC una vez → mapa {cat_id: parent_id}
+        # Permite detectar categorías hoja sin llamadas extra por producto.
+        wc_parent_map: dict[int, int] = {}
+        cat_offset = 0
+        while True:
+            cat_batch, _ = await client.list_paged("products/categories", limit=100, offset=cat_offset)
+            if not cat_batch:
+                break
+            for cat in cat_batch:
+                wc_parent_map[int(cat["id"])] = int(cat.get("parent", 0))
+            if len(cat_batch) < 100:
+                break
+            cat_offset += 100
 
         offset = 0
         limit = 100
@@ -1136,11 +1151,12 @@ async def sync_all_to_dolibarr() -> dict[str, Any]:
                 break
             total += len(batch)
 
-            async def _sync_one(product: dict[str, Any]) -> tuple[str, str | None]:
+            async def _sync_one(product: dict[str, Any]) -> tuple[str, str | None, list[str]]:
                 sku = (product.get("sku") or "").strip()
                 if not sku:
-                    return "skipped", None
+                    return "skipped", None, []
                 async with semaphore:
+                    warns: list[str] = []
                     try:
                         doli_payload = _map_wc_to_dolibarr(product)
                         doli_payload["ref"] = sku
@@ -1149,16 +1165,58 @@ async def sync_all_to_dolibarr() -> dict[str, Any]:
                         doli_payload.setdefault("tobuy", 1)
                         existing = await doli_svc._find_product_by_ref(sku)
                         if existing:
-                            await doli_svc.update_product(int(existing["id"]), doli_payload)
-                            return "updated", None
+                            doli_id = int(existing["id"])
+                            await doli_svc.update_product(doli_id, doli_payload)
+                            action = "updated"
                         else:
-                            await doli_svc.create_product(doli_payload)
-                            return "created", None
+                            created_product = await doli_svc.create_product(doli_payload)
+                            doli_id = int(created_product.get("id", 0))
+                            action = "created"
+
+                        # ── Categoría WC → Dolibarr (solo hoja, no ancestros) ────────
+                        wc_categories = product.get("categories", [])
+                        if wc_categories and doli_id:
+                            # Filtrar: hoja = categoría cuyo id no es padre de ninguna
+                            # otra en la lista del producto (usando mapa global).
+                            parent_ids_in_product = {
+                                wc_parent_map.get(c["id"], 0) for c in wc_categories
+                            }
+                            leaf_cats = [
+                                c for c in wc_categories
+                                if c["id"] not in parent_ids_in_product
+                            ]
+                            for wc_cat in leaf_cats:
+                                cat_name = (wc_cat.get("name") or "").strip()
+                                if not cat_name:
+                                    continue
+                                try:
+                                    doli_cat = await doli_cat_svc.find_category_by_name(cat_name)
+                                    if doli_cat:
+                                        await doli_cat_svc.assign_product(int(doli_cat["id"]), doli_id)
+                                    else:
+                                        warns.append(f"{sku}: categoría '{cat_name}' no encontrada en Dolibarr")
+                                except Exception as exc:
+                                    msg = f"{sku}: assign categoría '{cat_name}' → {exc}"
+                                    logger.warning("Sync categoría WP→Dolibarr (bulk) falló", exc_info=exc, extra={"sku": sku})
+                                    warns.append(msg)
+
+                        # ── Marca WC → Dolibarr ───────────────────────────────────────
+                        brand_name = _extract_wc_brand_name(product)
+                        if brand_name and doli_id:
+                            try:
+                                doli_brand = await doli_cat_svc.find_or_create_brand(brand_name)
+                                await doli_cat_svc.assign_product(int(doli_brand["id"]), doli_id)
+                            except Exception as exc:
+                                msg = f"{sku}: assign marca '{brand_name}' → {exc}"
+                                logger.warning("Sync marca WP→Dolibarr (bulk) falló", exc_info=exc, extra={"sku": sku})
+                                warns.append(msg)
+
+                        return action, None, warns
                     except Exception as exc:
-                        return "error", f"{sku}: {exc}"
+                        return "error", f"{sku}: {exc}", warns
 
             results = await asyncio.gather(*[_sync_one(p) for p in batch])
-            for action, err in results:
+            for action, err, warns in results:
                 if action == "created":
                     created += 1
                 elif action == "updated":
@@ -1169,6 +1227,7 @@ async def sync_all_to_dolibarr() -> dict[str, Any]:
                     errors += 1
                     if err:
                         error_details.append(err)
+                assign_warnings.extend(warns)
 
             if len(batch) < limit:
                 break
@@ -1189,6 +1248,7 @@ async def sync_all_to_dolibarr() -> dict[str, Any]:
             "skipped": skipped,
             "errors": errors,
             "error_details": error_details[:20],
+            "assign_warnings": assign_warnings[:40],
         },
         f"Sync completado: {created} creados, {updated} actualizados, {errors} errores.",
     )
