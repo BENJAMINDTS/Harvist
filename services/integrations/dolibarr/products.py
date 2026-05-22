@@ -363,6 +363,8 @@ class DolibarrProductService:
                 "ref": data.get("ref", ""),
                 "label": data.get("label", data.get("ref", "")),
             }
+            if data.get("barcode"):
+                update_payload["barcode"] = data["barcode"]
             if array_options:
                 update_payload["array_options"] = array_options
             try:
