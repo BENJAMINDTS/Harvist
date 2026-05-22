@@ -135,7 +135,12 @@ class WordPressClient(IntegrationClient):
             "oauth_version": "1.0",
         }
         all_params = {**(extra_params or {}), **oauth_params}
-        sorted_params = urlencode(sorted(all_params.items()))
+        # WooCommerce usa rawurlencode (RFC 3986): espacios → %20, no +.
+        # urlencode estándar produce + para espacios, lo que invalida la firma HMAC.
+        sorted_params = "&".join(
+            f"{quote(str(k), safe='')}={quote(str(v), safe='')}"
+            for k, v in sorted(all_params.items())
+        )
 
         parsed = urlparse(url)
         base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
