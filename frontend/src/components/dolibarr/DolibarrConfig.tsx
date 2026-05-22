@@ -48,7 +48,7 @@ export default function DolibarrConfig({ className = '', onSaved }: Props) {
   const [showDbSection, setShowDbSection] = useState(false)
 
   useEffect(() => {
-    ;(async () => {
+    (async () => {
       try {
         setLoading(true)
         const [apiRes, dbRes] = await Promise.allSettled([

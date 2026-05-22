@@ -106,7 +106,8 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ jobId, onComplete }) =
       let offset = 0
       const limit = 100
 
-      while (true) {
+      let hasMore = true
+      while (hasMore) {
         const response = await apiClient.get<ApiReviewResponse>(
           `/jobs/${jobId}/descriptions/review`,
           { params: { limit, offset } }
@@ -114,7 +115,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ jobId, onComplete }) =
         const { items, total } = response.data.data
         allItems.push(...items)
         offset += items.length
-        if (allItems.length >= total || items.length === 0) break
+        hasMore = allItems.length < total && items.length > 0
       }
 
       setEntries(allItems)

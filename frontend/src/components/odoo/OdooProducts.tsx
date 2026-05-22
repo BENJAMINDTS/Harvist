@@ -605,7 +605,7 @@ function ProductModal({ product, onClose, onSuccess }: ProductModalProps) {
         publicIds.push(parseInt(publicCategId, 10))
       }
       if (publicIds.length > 0) {
-        ;(payload as Record<string, unknown>).public_categ_ids = publicIds.map((id) => [4, id])
+        (payload as Record<string, unknown>).public_categ_ids = publicIds.map((id) => [4, id])
       }
       if (isCreate) {
         const created = await createOdooProduct(payload)

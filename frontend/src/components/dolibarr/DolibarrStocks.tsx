@@ -26,7 +26,7 @@ export default function DolibarrStocks() {
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<number | null>(null)
 
   useEffect(() => {
-    ;(async () => {
+    (async () => {
       try {
         setLoading(true)
 
