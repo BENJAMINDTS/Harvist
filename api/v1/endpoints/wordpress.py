@@ -1123,6 +1123,7 @@ async def sync_all_to_dolibarr() -> dict[str, Any]:
 
     total = created = updated = skipped = errors = 0
     error_details: list[str] = []
+    assign_warnings: list[str] = []
     semaphore = asyncio.Semaphore(5)
 
     try:
@@ -1136,11 +1137,12 @@ async def sync_all_to_dolibarr() -> dict[str, Any]:
                 break
             total += len(batch)
 
-            async def _sync_one(product: dict[str, Any]) -> tuple[str, str | None]:
+            async def _sync_one(product: dict[str, Any]) -> tuple[str, str | None, list[str]]:
                 sku = (product.get("sku") or "").strip()
                 if not sku:
-                    return "skipped", None
+                    return "skipped", None, []
                 async with semaphore:
+                    warns: list[str] = []
                     try:
                         doli_payload = _map_wc_to_dolibarr(product)
                         doli_payload["ref"] = sku
@@ -1166,12 +1168,12 @@ async def sync_all_to_dolibarr() -> dict[str, Any]:
                                     doli_cat = await doli_cat_svc.find_category_by_name(cat_name)
                                     if doli_cat:
                                         await doli_cat_svc.assign_product(int(doli_cat["id"]), doli_id)
+                                    else:
+                                        warns.append(f"{sku}: categoría '{cat_name}' no encontrada en Dolibarr")
                                 except Exception as exc:
-                                    logger.warning(
-                                        "Sync categoría WP→Dolibarr (bulk) falló",
-                                        exc_info=exc,
-                                        extra={"sku": sku},
-                                    )
+                                    msg = f"{sku}: assign categoría '{cat_name}' → {exc}"
+                                    logger.warning("Sync categoría WP→Dolibarr (bulk) falló", exc_info=exc, extra={"sku": sku})
+                                    warns.append(msg)
 
                         # ── Marca WC → Dolibarr ───────────────────────────────────────
                         brand_name = _extract_wc_brand_name(product)
@@ -1180,18 +1182,16 @@ async def sync_all_to_dolibarr() -> dict[str, Any]:
                                 doli_brand = await doli_cat_svc.find_or_create_brand(brand_name)
                                 await doli_cat_svc.assign_product(int(doli_brand["id"]), doli_id)
                             except Exception as exc:
-                                logger.warning(
-                                    "Sync marca WP→Dolibarr (bulk) falló",
-                                    exc_info=exc,
-                                    extra={"sku": sku},
-                                )
+                                msg = f"{sku}: assign marca '{brand_name}' → {exc}"
+                                logger.warning("Sync marca WP→Dolibarr (bulk) falló", exc_info=exc, extra={"sku": sku})
+                                warns.append(msg)
 
-                        return action, None
+                        return action, None, warns
                     except Exception as exc:
-                        return "error", f"{sku}: {exc}"
+                        return "error", f"{sku}: {exc}", warns
 
             results = await asyncio.gather(*[_sync_one(p) for p in batch])
-            for action, err in results:
+            for action, err, warns in results:
                 if action == "created":
                     created += 1
                 elif action == "updated":
@@ -1202,6 +1202,7 @@ async def sync_all_to_dolibarr() -> dict[str, Any]:
                     errors += 1
                     if err:
                         error_details.append(err)
+                assign_warnings.extend(warns)
 
             if len(batch) < limit:
                 break
@@ -1222,6 +1223,7 @@ async def sync_all_to_dolibarr() -> dict[str, Any]:
             "skipped": skipped,
             "errors": errors,
             "error_details": error_details[:20],
+            "assign_warnings": assign_warnings[:40],
         },
         f"Sync completado: {created} creados, {updated} actualizados, {errors} errores.",
     )
