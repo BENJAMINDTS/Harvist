@@ -221,7 +221,9 @@ class TestAssignProduct:
     @pytest.mark.asyncio
     async def test_returns_true_on_success(self, category_service, mock_client):
         """Verifica que retorna True en éxito."""
-        mock_client.create.return_value = {"success": True}
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_client._request = AsyncMock(return_value=mock_response)
 
         result = await category_service.assign_product(1, 10)
 
