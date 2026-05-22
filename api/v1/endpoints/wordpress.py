@@ -279,6 +279,7 @@ def _map_wc_to_dolibarr(wc_product: dict[str, Any]) -> dict[str, Any]:
       description      â†’ description
       regular_price    â†’ price
       weight           â†’ weight
+      sku              â†’ ref + barcode
 
     Args:
         wc_product: dict del producto WooCommerce actualizado.
@@ -301,6 +302,9 @@ def _map_wc_to_dolibarr(wc_product: dict[str, Any]) -> dict[str, Any]:
             mapping["weight"] = float(wc_product["weight"])
         except (ValueError, TypeError):
             pass
+    if "sku" in wc_product and wc_product["sku"] not in (None, ""):
+        mapping["ref"] = wc_product["sku"]
+        mapping["barcode"] = wc_product["sku"]
     return mapping
 
 
