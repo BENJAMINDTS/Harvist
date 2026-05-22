@@ -2425,6 +2425,7 @@ export async function importWordPressCsv(
   brandColumn?: string,
   categoryColumn?: string,
   subcategoryColumn?: string,
+  customFieldColumns?: string[],
 ): Promise<WpImportTask> {
   const form = new FormData()
   form.append('file', file)
@@ -2433,6 +2434,9 @@ export async function importWordPressCsv(
   if (brandColumn) form.append('brand_column', brandColumn)
   if (categoryColumn) form.append('category_column', categoryColumn)
   if (subcategoryColumn) form.append('subcategory_column', subcategoryColumn)
+  if (customFieldColumns && customFieldColumns.length > 0) {
+    form.append('custom_field_columns', JSON.stringify(customFieldColumns))
+  }
   const r = await apiClient.post<ApiResponse<WpImportTask>>(
     '/wordpress/products/csv/import',
     form,
