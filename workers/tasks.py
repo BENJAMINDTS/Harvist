@@ -723,6 +723,7 @@ def importar_productos_wordpress(
     brand_column: str = "",
     category_column: str = "",
     subcategory_column: str = "",
+    custom_field_columns: list | None = None,
     wp_url: str = "",
     wp_consumer_key: str = "",
     wp_consumer_secret: str = "",
@@ -740,9 +741,10 @@ def importar_productos_wordpress(
         mapping:             dict columna_csv → campo_woocommerce.
         overwrite:           si True, actualiza productos con SKU existente.
         brand_column:        nombre de la columna CSV con la marca (opcional).
-        category_column:     nombre de la columna CSV con la categoría raíz (opcional).
-        subcategory_column:  nombre de la columna CSV con la subcategoría (opcional).
-        wp_url:              URL base de WordPress.
+        category_column:      nombre de la columna CSV con la categoría raíz (opcional).
+        subcategory_column:   nombre de la columna CSV con la subcategoría (opcional).
+        custom_field_columns: lista de columnas CSV a crear como atributos WC (opcional).
+        wp_url:               URL base de WordPress.
         wp_consumer_key:     Consumer Key WooCommerce.
         wp_consumer_secret:  Consumer Secret WooCommerce.
 
@@ -807,6 +809,7 @@ def importar_productos_wordpress(
             category_col=category_column or None,
             subcategory_col=subcategory_column or None,
             category_svc=cat_svc,
+            custom_field_cols=custom_field_columns or None,
             progress_callback=_progress,
         )
 
