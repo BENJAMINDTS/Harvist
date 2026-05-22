@@ -807,6 +807,10 @@ async def create_product(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
     client = await _get_client()
     try:
         svc = WordPressProductService(client)
+        custom_fields: dict[str, str] = body.pop("custom_fields", None) or {}
+        if custom_fields:
+            custom_attrs = await svc.resolve_custom_attributes(custom_fields)
+            body["attributes"] = (body.get("attributes") or []) + custom_attrs
         item = await svc.create(body)
     except IntegrationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -900,6 +904,10 @@ async def update_product(product_id: int, body: dict[str, Any] = Body(...)) -> d
     client = await _get_client()
     try:
         svc = WordPressProductService(client)
+        custom_fields: dict[str, str] = body.pop("custom_fields", None) or {}
+        if custom_fields:
+            custom_attrs = await svc.resolve_custom_attributes(custom_fields)
+            body["attributes"] = (body.get("attributes") or []) + custom_attrs
         item = await svc.update(product_id, body)
     except IntegrationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -1407,6 +1415,7 @@ async def import_from_csv(
     brand_column: str = Form(default=""),
     category_column: str = Form(default=""),
     subcategory_column: str = Form(default=""),
+    custom_field_columns: str = Form(default=""),
 ) -> JSONResponse:
     """
     Inicia la importaciÃ³n masiva de productos desde CSV como tarea Celery asÃ­ncrona.
@@ -1450,6 +1459,16 @@ async def import_from_csv(
             detail="El mapeo debe incluir al menos una columna asignada al campo 'name' (Nombre).",
         )
 
+    # Parsear lista de columnas que se crearán como atributos WC.
+    custom_field_cols_list: list[str] = []
+    if custom_field_columns.strip():
+        try:
+            parsed = json.loads(custom_field_columns)
+            if isinstance(parsed, list):
+                custom_field_cols_list = [str(c) for c in parsed if c]
+        except (json.JSONDecodeError, ValueError):
+            pass
+
     get_settings()
     task_id = str(uuid.uuid4())
     csv_b64 = base64.b64encode(content).decode()
@@ -1464,6 +1483,7 @@ async def import_from_csv(
         brand_column=brand_column.strip(),
         category_column=category_column.strip(),
         subcategory_column=subcategory_column.strip(),
+        custom_field_columns=custom_field_cols_list or None,
         wp_url=creds.get("url", ""),
         wp_consumer_key=creds.get("consumer_key", ""),
         wp_consumer_secret=creds.get("consumer_secret", ""),
