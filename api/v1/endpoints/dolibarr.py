@@ -2422,7 +2422,7 @@ async def _get_order_service() -> DolibarrOrderService:
 @orders_router.get("")
 async def list_orders(
     type: str = Query(default="customer"),
-    status: int | None = Query(default=None),
+    order_status: int | None = Query(default=None, alias="status"),
     thirdparty_id: int | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
@@ -2432,7 +2432,7 @@ async def list_orders(
 
     Args:
         type: "customer" (pedidos de cliente) o "supplier" (pedidos de proveedor).
-        status: filtro opcional por estado del pedido.
+        order_status: filtro opcional por estado del pedido (query param: status).
         thirdparty_id: filtro opcional por ID del tercero.
         limit: máximo de pedidos por página.
         offset: desplazamiento desde el inicio.
@@ -2443,7 +2443,7 @@ async def list_orders(
     svc = await _get_order_service()
     try:
         items = await svc.list_orders(
-            type=type, limit=limit, offset=offset, status=status, thirdparty_id=thirdparty_id
+            type=type, limit=limit, offset=offset, status=order_status, thirdparty_id=thirdparty_id
         )
     except IntegrationError as exc:
         logger.error("Error listando pedidos Dolibarr", exc_info=exc)
