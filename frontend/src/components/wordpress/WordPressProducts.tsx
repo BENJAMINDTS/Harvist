@@ -130,7 +130,13 @@ export default function WordPressProducts() {
 
   // ── Sync masivo a Dolibarr ─────────────────────────────────────────────────
   const [syncingToDoli, setSyncingToDoli] = useState(false)
-  const [syncToDoliResult, setSyncToDoliResult] = useState<{ created: number; updated: number; errors: number } | null>(null)
+  const [syncToDoliResult, setSyncToDoliResult] = useState<{
+    created: number
+    updated: number
+    errors: number
+    error_details: string[]
+    assign_warnings: string[]
+  } | null>(null)
 
   // ── Campos del formulario ──────────────────────────────────────────────────
   // Información básica
@@ -296,7 +302,13 @@ export default function WordPressProducts() {
     setSyncToDoliResult(null)
     try {
       const result = await syncWordPressAllToDolibarr()
-      setSyncToDoliResult({ created: result.created, updated: result.updated, errors: result.errors })
+      setSyncToDoliResult({
+        created: result.created,
+        updated: result.updated,
+        errors: result.errors,
+        error_details: result.error_details ?? [],
+        assign_warnings: result.assign_warnings ?? [],
+      })
     } catch (err: unknown) {
       setError((err as { message?: string })?.message ?? 'Error en sync masivo a Dolibarr')
     } finally {
@@ -511,12 +523,36 @@ export default function WordPressProducts() {
       )}
 
       {syncToDoliResult && (
-        <div className="bg-green-50 border-l-4 border-green-400 p-4 rounded text-sm text-green-700 flex items-center justify-between">
-          <span>
-            Sync a Dolibarr completado — {syncToDoliResult.created} creados, {syncToDoliResult.updated} actualizados
-            {syncToDoliResult.errors > 0 && `, ${syncToDoliResult.errors} errores`}
-          </span>
-          <button onClick={() => setSyncToDoliResult(null)} className="text-green-600 hover:text-green-800 font-bold ml-4">✕</button>
+        <div className={`border-l-4 p-4 rounded text-sm ${syncToDoliResult.errors > 0 ? 'bg-yellow-50 border-yellow-400 text-yellow-800' : 'bg-green-50 border-green-400 text-green-700'}`}>
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex-1">
+              <p className="font-medium">
+                Sync a Dolibarr completado — {syncToDoliResult.created} creados, {syncToDoliResult.updated} actualizados
+                {syncToDoliResult.errors > 0 && `, ${syncToDoliResult.errors} errores`}
+              </p>
+              {syncToDoliResult.error_details.length > 0 && (
+                <details className="mt-2">
+                  <summary className="cursor-pointer font-medium text-red-700">
+                    {syncToDoliResult.error_details.length} error(es) — ver detalles
+                  </summary>
+                  <ul className="mt-1 ml-4 list-disc text-red-700 space-y-0.5">
+                    {syncToDoliResult.error_details.map((e, i) => <li key={i}>{e}</li>)}
+                  </ul>
+                </details>
+              )}
+              {syncToDoliResult.assign_warnings.length > 0 && (
+                <details className="mt-2">
+                  <summary className="cursor-pointer font-medium text-orange-700">
+                    {syncToDoliResult.assign_warnings.length} aviso(s) de asignación — ver detalles
+                  </summary>
+                  <ul className="mt-1 ml-4 list-disc text-orange-700 space-y-0.5">
+                    {syncToDoliResult.assign_warnings.map((w, i) => <li key={i}>{w}</li>)}
+                  </ul>
+                </details>
+              )}
+            </div>
+            <button onClick={() => setSyncToDoliResult(null)} className="font-bold ml-2 shrink-0">✕</button>
+          </div>
         </div>
       )}
 

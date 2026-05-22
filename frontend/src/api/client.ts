@@ -2028,9 +2028,10 @@ export async function syncWordPressAllToDolibarr(): Promise<{
   skipped: number
   errors: number
   error_details: string[]
+  assign_warnings: string[]
 }> {
   const r = await apiClient.post<ApiResponse<{
-    total: number; created: number; updated: number; skipped: number; errors: number; error_details: string[]
+    total: number; created: number; updated: number; skipped: number; errors: number; error_details: string[]; assign_warnings: string[]
   }>>('/wordpress/products/sync-all-to-dolibarr', null, { timeout: 3_600_000 })
   return r.data.data
 }
