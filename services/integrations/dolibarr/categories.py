@@ -375,12 +375,13 @@ class DolibarrCategoryService:
         """
         offset = 0
         limit = 100
+        name_lower = name.strip().lower()
         while True:
             batch = await self.list_categories(type=type, limit=limit, offset=offset)
             if not batch:
                 return None
             for cat in batch:
-                if str(cat.get("label", "")) == name:
+                if str(cat.get("label", "")).strip().lower() == name_lower:
                     return cat
             if len(batch) < limit:
                 return None
@@ -393,10 +394,10 @@ class DolibarrCategoryService:
         type: str = "product",
     ) -> dict | None:
         """
-        Busca categoría por nombre exacto bajo un padre específico.
+        Busca categoría por nombre (insensible a mayúsculas) bajo un padre específico.
 
         Args:
-            name:      nombre exacto de la categoría (sensible a mayúsculas).
+            name:      nombre de la categoría (comparación case-insensitive).
             parent_id: ID de la categoría padre.
             type:      tipo de categoría Dolibarr.
 
@@ -405,6 +406,7 @@ class DolibarrCategoryService:
         """
         offset = 0
         limit = 100
+        name_lower = name.strip().lower()
         while True:
             batch = await self.list_categories(type=type, limit=limit, offset=offset)
             if not batch:
@@ -414,11 +416,67 @@ class DolibarrCategoryService:
                     cat_parent_id = int(cat.get("fk_parent") or 0)
                 except (ValueError, TypeError):
                     cat_parent_id = 0
-                if str(cat.get("label", "")) == name and cat_parent_id == parent_id:
+                if str(cat.get("label", "")).strip().lower() == name_lower and cat_parent_id == parent_id:
                     return cat
             if len(batch) < limit:
                 return None
             offset += limit
+
+    async def find_or_create_under_tpv(
+        self,
+        cat_name: str,
+        tpv_name: str = "tpv",
+        parent_cat_name: str | None = None,
+    ) -> dict:
+        """
+        Encuentra o crea una categoría garantizando que sea hija de ``tpv``.
+
+        Jerarquía resultante:
+          - Sin ``parent_cat_name``:  tpv → cat_name
+          - Con ``parent_cat_name``:  tpv → parent_cat_name → cat_name
+
+        Todos los niveles se crean automáticamente si no existen.
+
+        Args:
+            cat_name:        nombre de la categoría hoja a resolver.
+            tpv_name:        nombre de la categoría raíz TPV (default "tpv").
+            parent_cat_name: nombre del nivel intermedio opcional.
+
+        Returns:
+            Dict con id, label de la categoría hoja resuelta o creada.
+
+        Raises:
+            IntegrationError: si falla la creación en Dolibarr.
+        """
+        # Nivel raíz: tpv
+        tpv_cat = await self.find_category_by_name(tpv_name)
+        if not tpv_cat:
+            tpv_cat = await self.create_category(tpv_name)
+            logger.info("Categoría TPV raíz creada en Dolibarr", extra={"name": tpv_name})
+        tpv_id = int(tpv_cat["id"])
+
+        if parent_cat_name:
+            # Nivel intermedio bajo tpv
+            mid_cat = await self.find_category_by_name_and_parent(parent_cat_name, tpv_id)
+            if not mid_cat:
+                mid_cat = await self.create_category(parent_cat_name, parent_id=tpv_id)
+                logger.info(
+                    "Categoría intermedia creada bajo TPV",
+                    extra={"name": parent_cat_name, "tpv_id": tpv_id},
+                )
+            parent_id = int(mid_cat["id"])
+        else:
+            parent_id = tpv_id
+
+        # Nivel hoja
+        leaf_cat = await self.find_category_by_name_and_parent(cat_name, parent_id)
+        if not leaf_cat:
+            leaf_cat = await self.create_category(cat_name, parent_id=parent_id)
+            logger.info(
+                "Categoría hoja creada en Dolibarr",
+                extra={"name": cat_name, "parent_id": parent_id},
+            )
+        return leaf_cat
 
     async def find_or_create_subcategory(
         self,
