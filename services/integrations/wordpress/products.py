@@ -220,6 +220,89 @@ class WordPressProductService:
         """
         return await self._client.create(f"{self._RESOURCE}/{product_id}/variations", data)
 
+    async def resolve_custom_attributes(
+        self,
+        custom_fields: dict[str, str],
+        _cache_by_slug: dict[str, Any] | None = None,
+        _cache_by_name: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Convierte un dict {nombre_campo: valor} en atributos WooCommerce.
+
+        Busca el atributo global por slug (pa_{nombre}) o nombre. Si no existe lo
+        crea via la API. El valor se pasa como opción; no hace falta pre-crear el
+        term para productos simples. Cuando se proporcionan los dicts de caché
+        (durante una importación masiva) se evita recargar todos los atributos en
+        cada llamada.
+
+        Args:
+            custom_fields:    dict campo→valor a convertir.
+            _cache_by_slug:   caché mutable {slug → attr_dict} reutilizado entre filas.
+            _cache_by_name:   caché mutable {name.lower() → attr_dict}.
+
+        Returns:
+            Lista de dicts compatibles con el campo 'attributes' de la API WC.
+        """
+        if not custom_fields:
+            return []
+
+        # Carga global de atributos solo si no se recibe caché externa.
+        if _cache_by_slug is None or _cache_by_name is None:
+            try:
+                existing: list[dict[str, Any]] = await self._client.list(
+                    "products/attributes", limit=100
+                )
+            except Exception as exc:
+                logger.warning("No se pudieron cargar atributos WC", exc_info=exc)
+                existing = []
+            _cache_by_slug = {a.get("slug", ""): a for a in existing}
+            _cache_by_name = {(a.get("name") or "").lower(): a for a in existing}
+
+        result: list[dict[str, Any]] = []
+        for field_name, field_value in custom_fields.items():
+            if not field_name or field_value is None or str(field_value).strip() == "":
+                continue
+            slug = f"pa_{field_name.lower().replace(' ', '_')}"
+            attr = _cache_by_slug.get(slug) or _cache_by_name.get(field_name.lower())
+
+            if not attr:
+                try:
+                    attr = await self._client.create(
+                        "products/attributes",
+                        {
+                            "name": field_name,
+                            "slug": slug,
+                            "type": "select",
+                            "has_archives": False,
+                        },
+                    )
+                    _cache_by_slug[attr.get("slug", slug)] = attr
+                    _cache_by_name[field_name.lower()] = attr
+                    logger.info("Atributo WC creado", extra={"name": field_name, "slug": slug})
+                except Exception as exc:
+                    logger.warning(
+                        "No se pudo crear atributo WC, usando atributo local",
+                        exc_info=exc,
+                        extra={"name": field_name},
+                    )
+                    result.append({
+                        "name": field_name,
+                        "options": [str(field_value)],
+                        "visible": True,
+                        "variation": False,
+                    })
+                    continue
+
+            result.append({
+                "id": attr["id"],
+                "name": attr.get("name", field_name),
+                "options": [str(field_value)],
+                "visible": True,
+                "variation": False,
+            })
+
+        return result
+
     async def sync_from_harvist(
         self,
         harvist_product: dict[str, Any],
@@ -307,6 +390,7 @@ class WordPressProductService:
         category_col: str | None = None,
         subcategory_col: str | None = None,
         category_svc: WordPressCategoryService | None = None,
+        custom_field_cols: list[str] | None = None,
         progress_callback: Callable[[int, int], None] | None = None,
     ) -> list[dict[str, Any]]:
         """
@@ -322,6 +406,8 @@ class WordPressProductService:
           - ``category_col`` resuelve la categoría raíz por nombre (crea si no existe).
           - ``subcategory_col`` resuelve una subcategoría bajo la categoría de ``category_col``
             (crea padre e hijo si no existen). Requiere que ``category_col`` esté presente.
+          - ``custom_field_cols`` columnas CSV que se crean como atributos WC globales si no
+            existen. Los atributos se cachean en memoria durante la importación.
 
         Args:
             content:           contenido raw del archivo CSV.
@@ -332,6 +418,7 @@ class WordPressProductService:
             category_col:      nombre de la columna CSV con la categoría raíz (opcional).
             subcategory_col:   nombre de la columna CSV con la subcategoría (opcional).
             category_svc:      servicio de categorías WordPress para resolver nombres.
+            custom_field_cols: lista de columnas CSV a convertir en atributos WC (opcional).
             progress_callback: función opcional (procesados, total) → None.
 
         Returns:
@@ -343,6 +430,7 @@ class WordPressProductService:
                 "category_col": category_col,
                 "subcategory_col": subcategory_col,
                 "brand_col": brand_col,
+                "custom_field_cols": custom_field_cols,
                 "has_category_svc": category_svc is not None,
                 "has_brand_svc": brand_svc is not None,
             },
@@ -350,6 +438,17 @@ class WordPressProductService:
 
         text = _decode_csv(content)
         delimiter = _detect_delimiter(text)
+
+        # Precarga atributos WC una sola vez para toda la importación.
+        _attr_by_slug: dict[str, Any] = {}
+        _attr_by_name: dict[str, Any] = {}
+        if custom_field_cols:
+            try:
+                all_attrs = await self._client.list("products/attributes", limit=100)
+                _attr_by_slug = {a.get("slug", ""): a for a in all_attrs}
+                _attr_by_name = {(a.get("name") or "").lower(): a for a in all_attrs}
+            except Exception as exc:
+                logger.warning("No se pudieron precargar atributos WC", exc_info=exc)
 
         total_rows = 0
         if progress_callback:
@@ -448,6 +547,29 @@ class WordPressProductService:
                                 extra={"cat": cat_name, "subcat": subcat_name},
                             )
                             result["category_error"] = str(exc)
+
+                # Resolver columnas marcadas como atributos personalizados.
+                if custom_field_cols:
+                    custom_kv = {
+                        col: (row.get(col) or "").strip()
+                        for col in custom_field_cols
+                        if (row.get(col) or "").strip()
+                    }
+                    if custom_kv:
+                        try:
+                            new_attrs = await self.resolve_custom_attributes(
+                                custom_kv,
+                                _cache_by_slug=_attr_by_slug,
+                                _cache_by_name=_attr_by_name,
+                            )
+                            if new_attrs:
+                                payload["attributes"] = payload.get("attributes", []) + new_attrs
+                        except Exception as exc:
+                            logger.warning(
+                                "Error resolviendo atributos personalizados en fila",
+                                exc_info=exc,
+                                extra={"row": row_num},
+                            )
 
                 logger.debug(
                     "Payload WP antes de upsert",

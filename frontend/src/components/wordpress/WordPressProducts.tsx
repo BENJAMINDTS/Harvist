@@ -164,6 +164,9 @@ export default function WordPressProducts() {
   const [formOtherAttrs, setFormOtherAttrs] = useState<WooProductAttribute[]>([])
   const [formCategoryIds, setFormCategoryIds] = useState<number[]>([])
 
+  // Atributos personalizados (campos que no existen aún en WC → se crean como atributos globales)
+  const [formCustomFields, setFormCustomFields] = useState<Array<{ name: string; value: string }>>([{ name: '', value: '' }])
+
   // ── Datos auxiliares ───────────────────────────────────────────────────────
   const [brands, setBrands] = useState<WooBrand[]>([])
   const [brandAttrInfo, setBrandAttrInfo] = useState<WooBrandAttributeInfo | null>(null)
@@ -311,6 +314,7 @@ export default function WordPressProducts() {
     setFormManageStock(false); setFormStock(''); setFormStockStatus('instock')
     setFormWeight(''); setFormLength(''); setFormWidth(''); setFormHeight('')
     setFormBrandId(null); setFormOtherAttrs([]); setFormCategoryIds([])
+    setFormCustomFields([{ name: '', value: '' }])
     setFormError(null)
   }
 
@@ -391,7 +395,12 @@ export default function WordPressProducts() {
 
       const hasDimensions = formLength !== '' || formWidth !== '' || formHeight !== ''
 
-      const data: Partial<WooProduct> = {
+      const activeCustomFields = formCustomFields.filter((cf) => cf.name?.trim() && cf.value?.trim())
+      const customFieldsPayload = activeCustomFields.length > 0
+        ? { custom_fields: Object.fromEntries(activeCustomFields.map((cf) => [cf.name.trim(), cf.value.trim()])) }
+        : {}
+
+      const data: Partial<WooProduct> & { custom_fields?: Record<string, string> } = {
         name: formName,
         sku: formSku,
         ...(formSlug ? { slug: formSlug } : {}),
@@ -408,6 +417,7 @@ export default function WordPressProducts() {
         stock_status: formStockStatus,
         categories: selectedCategories,
         ...brandPayload,
+        ...customFieldsPayload,
       }
 
       if (editProduct) {
@@ -1001,6 +1011,47 @@ export default function WordPressProducts() {
                   </div>
                 )}
 
+                {/* ── Atributos personalizados ───────────────────────────── */}
+                <p className={SECTION_LABEL}>Atributos personalizados</p>
+                <p className="text-xs text-gray-500 -mt-1">
+                  Los campos aquí se crean como atributos WooCommerce globales si no existen.
+                </p>
+                <div className="space-y-2">
+                  {formCustomFields.map((cf, idx) => (
+                    <div key={idx} className="flex gap-2 items-center">
+                      <input
+                        type="text"
+                        value={cf.name ?? ''}
+                        onChange={(e) => setFormCustomFields((prev) => prev.map((x, i) => i === idx ? { ...x, name: e.target.value } : x))}
+                        className={`${INPUT_CLS} flex-1`}
+                        placeholder="Nombre (ej: Volumen)"
+                      />
+                      <input
+                        type="text"
+                        value={cf.value ?? ''}
+                        onChange={(e) => setFormCustomFields((prev) => prev.map((x, i) => i === idx ? { ...x, value: e.target.value } : x))}
+                        className={`${INPUT_CLS} flex-1`}
+                        placeholder="Valor (ej: 1L)"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setFormCustomFields((prev) => prev.length > 1 ? prev.filter((_, i) => i !== idx) : [{ name: '', value: '' }])}
+                        className="text-gray-400 hover:text-red-500 text-lg leading-none flex-shrink-0"
+                        title="Eliminar campo"
+                      >
+                        &times;
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFormCustomFields((prev) => [...prev, { name: '', value: '' }])}
+                  className="text-xs text-purple-600 hover:text-purple-800 font-medium"
+                >
+                  + Añadir atributo
+                </button>
+
               </form>
             </div>
 
@@ -1061,6 +1112,8 @@ function WpCsvImportModal({ onClose, onSuccess }: WpCsvImportModalProps): React.
   const [brandColumn, setBrandColumn] = useState('')
   const [categoryColumn, setCategoryColumn] = useState('')
   const [subcategoryColumn, setSubcategoryColumn] = useState('')
+  // Columnas del CSV marcadas para crear como atributos WC globales.
+  const [customAttrColumns, setCustomAttrColumns] = useState<string[]>([])
   const [result, setResult] = useState<WpImportTask['results'] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -1076,8 +1129,19 @@ function WpCsvImportModal({ onClose, onSuccess }: WpCsvImportModalProps): React.
 
   const fieldOptions = [
     { value: '', label: '— Ignorar columna —' },
+    { value: '__attr__', label: '→ Crear como atributo WC' },
     ...wcFields.map((f) => ({ value: f.key, label: f.label })),
   ]
+
+  const handleMappingChange = (header: string, value: string) => {
+    if (value === '__attr__') {
+      setCustomAttrColumns((prev) => prev.includes(header) ? prev : [...prev, header])
+      setMapping((prev) => ({ ...prev, [header]: '__attr__' }))
+    } else {
+      setCustomAttrColumns((prev) => prev.filter((c) => c !== header))
+      setMapping((prev) => ({ ...prev, [header]: value }))
+    }
+  }
 
   const processFile = async (f: File) => {
     setFile(f); setError(null); setLoading(true)
@@ -1096,7 +1160,9 @@ function WpCsvImportModal({ onClose, onSuccess }: WpCsvImportModalProps): React.
   }
 
   const handleImport = async () => {
-    const activeMapping = Object.fromEntries(Object.entries(mapping).filter(([, v]) => v !== ''))
+    const activeMapping = Object.fromEntries(
+      Object.entries(mapping).filter(([, v]) => v !== '' && v !== '__attr__'),
+    )
     if (!Object.values(activeMapping).includes('name')) {
       setError("Debes asignar al menos una columna al campo 'Nombre del producto'.")
       return
@@ -1108,7 +1174,15 @@ function WpCsvImportModal({ onClose, onSuccess }: WpCsvImportModalProps): React.
     setStep('importing')
 
     try {
-      const task = await importWordPressCsv(file, activeMapping, overwrite, brandColumn || undefined, categoryColumn || undefined, subcategoryColumn || undefined)
+      const task = await importWordPressCsv(
+        file,
+        activeMapping,
+        overwrite,
+        brandColumn || undefined,
+        categoryColumn || undefined,
+        subcategoryColumn || undefined,
+        customAttrColumns.length > 0 ? customAttrColumns : undefined,
+      )
 
       pollRef.current = setInterval(async () => {
         try {
@@ -1227,8 +1301,8 @@ function WpCsvImportModal({ onClose, onSuccess }: WpCsvImportModalProps): React.
                       <span className="text-sm font-mono text-gray-700 truncate" title={h}>{h}</span>
                       <select
                         value={mapping[h] ?? ''}
-                        onChange={(e) => setMapping((prev) => ({ ...prev, [h]: e.target.value }))}
-                        className="px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        onChange={(e) => handleMappingChange(h, e.target.value)}
+                        className={`px-2 py-1.5 border rounded text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent ${mapping[h] === '__attr__' ? 'border-indigo-400 bg-indigo-50' : 'border-gray-300'}`}
                       >
                         {fieldOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                       </select>
