@@ -2,50 +2,50 @@
 Endpoints de la integraciÃ³n WordPress / WooCommerce.
 
 Rutas bajo /api/v1/wordpress:
-  GET  /wordpress/status                     â€” Estado y configuraciÃ³n
-  GET  /wordpress/config                     â€” Leer credenciales actuales
-  POST /wordpress/config                     â€” Guardar credenciales en Redis
-  GET  /wordpress/db/config                  â€” Leer config BD MySQL
-  POST /wordpress/db/config                  â€” Guardar config BD MySQL en Redis
+  GET  /wordpress/status                     â€" Estado y configuraciÃ³n
+  GET  /wordpress/config                     â€" Leer credenciales actuales
+  POST /wordpress/config                     â€" Guardar credenciales en Redis
+  GET  /wordpress/db/config                  â€" Leer config BD MySQL
+  POST /wordpress/db/config                  â€" Guardar config BD MySQL en Redis
 
 Rutas bajo /api/v1/wordpress/products:
-  GET    /wordpress/products                 â€” Listar productos (paginado)
-  GET    /wordpress/products/{id}            â€” Obtener producto
-  POST   /wordpress/products                 â€” Crear producto
-  PUT    /wordpress/products/{id}            â€” Actualizar producto
-  DELETE /wordpress/products/{id}            â€” Eliminar producto
-  POST   /wordpress/products/sync            â€” Sincronizar desde job Harvist
+  GET    /wordpress/products                 â€" Listar productos (paginado)
+  GET    /wordpress/products/{id}            â€" Obtener producto
+  POST   /wordpress/products                 â€" Crear producto
+  PUT    /wordpress/products/{id}            â€" Actualizar producto
+  DELETE /wordpress/products/{id}            â€" Eliminar producto
+  POST   /wordpress/products/sync            â€" Sincronizar desde job Harvist
 
 Rutas bajo /api/v1/wordpress/categories:
-  GET    /wordpress/categories               â€” Listar categorÃ­as
-  GET    /wordpress/categories/tree          â€” Ãrbol jerÃ¡rquico
-  GET    /wordpress/categories/{id}          â€” Obtener categorÃ­a
-  POST   /wordpress/categories               â€” Crear categorÃ­a
-  PUT    /wordpress/categories/{id}          â€” Actualizar categorÃ­a
-  DELETE /wordpress/categories/{id}          â€” Eliminar categorÃ­a
+  GET    /wordpress/categories               â€" Listar categorÃ­as
+  GET    /wordpress/categories/tree          â€" Ãrbol jerÃ¡rquico
+  GET    /wordpress/categories/{id}          â€" Obtener categorÃ­a
+  POST   /wordpress/categories               â€" Crear categorÃ­a
+  PUT    /wordpress/categories/{id}          â€" Actualizar categorÃ­a
+  DELETE /wordpress/categories/{id}          â€" Eliminar categorÃ­a
 
 Rutas bajo /api/v1/wordpress/orders:
-  GET    /wordpress/orders                   â€” Listar pedidos
-  GET    /wordpress/orders/{id}              â€” Obtener pedido
-  PUT    /wordpress/orders/{id}/status       â€” Cambiar estado
-  POST   /wordpress/orders/{id}/notes        â€” AÃ±adir nota
+  GET    /wordpress/orders                   â€" Listar pedidos
+  GET    /wordpress/orders/{id}              â€" Obtener pedido
+  PUT    /wordpress/orders/{id}/status       â€" Cambiar estado
+  POST   /wordpress/orders/{id}/notes        â€" AÃ±adir nota
 
 Rutas bajo /api/v1/wordpress/customers:
-  GET    /wordpress/customers                â€” Listar clientes
-  GET    /wordpress/customers/{id}           â€” Obtener cliente
-  POST   /wordpress/customers                â€” Crear cliente
-  PUT    /wordpress/customers/{id}           â€” Actualizar cliente
-  DELETE /wordpress/customers/{id}           â€” Eliminar cliente
+  GET    /wordpress/customers                â€" Listar clientes
+  GET    /wordpress/customers/{id}           â€" Obtener cliente
+  POST   /wordpress/customers                â€" Crear cliente
+  PUT    /wordpress/customers/{id}           â€" Actualizar cliente
+  DELETE /wordpress/customers/{id}           â€" Eliminar cliente
 
 Rutas bajo /api/v1/wordpress/media:
-  GET    /wordpress/media                    â€” Listar media
-  POST   /wordpress/media                    â€” Subir archivo
+  GET    /wordpress/media                    â€" Listar media
+  POST   /wordpress/media                    â€" Subir archivo
 
 Rutas bajo /api/v1/wordpress/db:
-  GET    /wordpress/db/tables                â€” Listar tablas MySQL
-  GET    /wordpress/db/site-info             â€” Info del sitio WordPress
-  POST   /wordpress/db/query                 â€” Ejecutar query SELECT
-  GET    /wordpress/db/options/{option_name} â€” Leer wp_option
+  GET    /wordpress/db/tables                â€" Listar tablas MySQL
+  GET    /wordpress/db/site-info             â€" Info del sitio WordPress
+  POST   /wordpress/db/query                 â€" Ejecutar query SELECT
+  GET    /wordpress/db/options/{option_name} â€" Leer wp_option
 
 :author: Carlitos6712
 :version: 1.0.0
@@ -114,7 +114,7 @@ _DB_NOT_CONFIGURED_MSG = (
 )
 
 
-# â”€â”€ Helpers de credenciales â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â"€â"€ Helpers de credenciales â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 
 async def _get_wp_credentials() -> dict[str, str]:
@@ -342,15 +342,14 @@ async def _sync_wc_categories_to_dolibarr(
     if not leaf_cats:
         leaf_cats = wc_categories
 
-    logger.debug(
-        "Sync categorías WP→Dolibarr",
-        extra={
-            "sku": sku,
-            "wc_categories": [c.get("name") for c in wc_categories],
-            "parent_ids_in_product": list(parent_ids_in_product),
-            "leaf_cats": [c.get("name") for c in leaf_cats],
-            "wc_parent_map_size": len(wc_parent_map),
-        },
+    # DEBUG TEMPORAL — quitar tras verificar jerarquía correcta
+    _cat_sample = {k: v for k, v in list(wc_parent_map.items())[:20]}
+    logger.info(
+        f"[DEBUG] SKU={sku} | wc_cats={[(c.get('id'), c.get('name')) for c in wc_categories]}"
+        f" | parent_ids={list(parent_ids_in_product)}"
+        f" | leaf_cats={[(c.get('id'), c.get('name')) for c in leaf_cats]}"
+        f" | map_size={len(wc_parent_map)}"
+        f" | map_sample(id->parent_id)={_cat_sample}"
     )
 
     for wc_cat in leaf_cats:
@@ -367,6 +366,12 @@ async def _sync_wc_categories_to_dolibarr(
                 wc_cat_name_map.get(wc_cat_parent_id)
                 or prod_id_to_name.get(wc_cat_parent_id)
             ) or None  # normalizar "" a None
+        # DEBUG TEMPORAL
+        _jerarquia = f"TPV > {parent_cat_name} > {cat_name}" if parent_cat_name else f"TPV > {cat_name}"
+        logger.info(
+            f"[DEBUG] SKU={sku} | cat={cat_name} | wc_parent_id={wc_cat_parent_id}"
+            f" | parent_name={parent_cat_name} | => {_jerarquia}"
+        )
         try:
             if cat_lock:
                 async with cat_lock:
@@ -377,7 +382,13 @@ async def _sync_wc_categories_to_dolibarr(
                 doli_cat = await doli_cat_svc.find_or_create_under_tpv(
                     cat_name, parent_cat_name=parent_cat_name
                 )
-            await doli_cat_svc.assign_product(int(doli_cat["id"]), doli_id)
+            new_cat_id = int(doli_cat["id"])
+            # Quitar categorías TPV anteriores antes de asignar la nueva,
+            # para que el sync reemplace en vez de acumular asignaciones.
+            await doli_cat_svc.clear_product_from_category_group(
+                doli_id, "tpv", keep_cat_id=new_cat_id
+            )
+            await doli_cat_svc.assign_product(new_cat_id, doli_id)
             logger.info(
                 "Categoría sincronizada WP→Dolibarr",
                 extra={"sku": sku, "category": cat_name, "parent": parent_cat_name},
@@ -630,7 +641,7 @@ def _save_config_file(path: str, data: dict[str, Any]) -> None:
         logger.warning("No se pudo escribir config file", exc_info=exc, extra={"path": path})
 
 
-# â”€â”€ Status & Config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â"€â"€ Status & Config â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 
 @router_main.get("/status", response_model=IntegrationStatus)
@@ -843,7 +854,7 @@ async def save_db_config(body: WordPressDBConfigRequest) -> dict[str, Any]:
     return _ok({}, "ConfiguraciÃ³n de BD WordPress guardada correctamente.")
 
 
-# â”€â”€ Products â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â"€â"€ Products â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 
 @router_products.get("")
@@ -954,6 +965,9 @@ async def create_product(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
                 _off += 100
         except Exception as exc:
             logger.warning("No se pudo construir mapa de categorías WC (create)", exc_info=exc)
+        # DEBUG TEMPORAL
+        _map_sample_c = {wc_cat_name_map_create.get(k, f"id={k}"): f"parent={wc_cat_name_map_create.get(v, 'ROOT' if v == 0 else str(v))}" for k, v in list(wc_parent_map_create.items())[:30]}
+        logger.info(f"[DEBUG] wc_parent_map(create) total={len(wc_parent_map_create)} | {_map_sample_c}")
     except IntegrationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
@@ -991,9 +1005,9 @@ async def create_product(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
                         extra={"wc_id": item.get("id"), "sku": sku, "dolibarr_id": doli_id},
                     )
 
-                # â”€â”€ CategorÃ­a WC â†’ Dolibarr â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+                # â"€â"€ CategorÃ­a WC â†’ Dolibarr â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
                 await _sync_wc_categories_to_dolibarr(
-                    item.get(“categories”, []), doli_cat_svc, doli_id, sku,
+                    item.get("categories", []), doli_cat_svc, doli_id, sku,
                     wc_parent_map=wc_parent_map_create,
                     wc_cat_name_map=wc_cat_name_map_create,
                 )
@@ -1003,17 +1017,21 @@ async def create_product(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
                 if brand_name:
                     try:
                         doli_brand = await doli_cat_svc.find_or_create_brand(brand_name)
-                        await doli_cat_svc.assign_product(int(doli_brand[“id”]), doli_id)
+                        new_brand_id = int(doli_brand["id"])
+                        await doli_cat_svc.clear_product_from_category_group(
+                            doli_id, "Marcas", keep_cat_id=new_brand_id
+                        )
+                        await doli_cat_svc.assign_product(new_brand_id, doli_id)
                     except Exception as exc:
                         logger.warning(
-                            “Sync marca WP→Dolibarr (create) falló”,
+                            "Sync marca WP→Dolibarr (create) falló",
                             exc_info=exc,
-                            extra={“sku”: sku},
+                            extra={"sku": sku},
                         )
 
             except Exception as exc:
-                dolibarr_sync = {“synced”: False, “reason”: str(exc)}
-                logger.warning(“Sync WP→Dolibarr (create) falló”, exc_info=exc, extra={“sku”: sku})
+                dolibarr_sync = {"synced": False, "reason": str(exc)}
+                logger.warning("Sync WP→Dolibarr (create) falló", exc_info=exc, extra={"sku": sku})
 
     return _ok({**item, "dolibarr_sync": dolibarr_sync}, "Producto creado en WooCommerce.")
 
@@ -1060,6 +1078,9 @@ async def update_product(product_id: int, body: dict[str, Any] = Body(...)) -> d
                 _off += 100
         except Exception as exc:
             logger.warning("No se pudo construir mapa de categorías WC (update)", exc_info=exc)
+        # DEBUG TEMPORAL
+        _map_sample_u = {wc_cat_name_map_update.get(k, f"id={k}"): f"parent={wc_cat_name_map_update.get(v, 'ROOT' if v == 0 else str(v))}" for k, v in list(wc_parent_map_update.items())[:30]}
+        logger.info(f"[DEBUG] wc_parent_map(update) total={len(wc_parent_map_update)} | {_map_sample_u}")
     except IntegrationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
@@ -1086,7 +1107,7 @@ async def update_product(product_id: int, body: dict[str, Any] = Body(...)) -> d
                         extra={"wc_id": product_id, "sku": sku, "dolibarr_id": doli_id},
                     )
 
-                    # â”€â”€ Stock WC â†’ Dolibarr â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+                    # â"€â"€ Stock WC â†’ Dolibarr â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
                     wc_stock = item.get("stock_quantity")
                     if wc_stock is not None and item.get("manage_stock"):
                         try:
@@ -1098,9 +1119,9 @@ async def update_product(product_id: int, body: dict[str, Any] = Body(...)) -> d
                                 extra={"sku": sku},
                             )
 
-                    # â”€â”€ CategorÃ­a WC â†’ Dolibarr â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+                    # â"€â"€ CategorÃ­a WC â†’ Dolibarr â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
                     await _sync_wc_categories_to_dolibarr(
-                        item.get(“categories”, []), doli_cat_svc, doli_id, sku,
+                        item.get("categories", []), doli_cat_svc, doli_id, sku,
                         wc_parent_map=wc_parent_map_update,
                         wc_cat_name_map=wc_cat_name_map_update,
                     )
@@ -1110,16 +1131,20 @@ async def update_product(product_id: int, body: dict[str, Any] = Body(...)) -> d
                     if brand_name:
                         try:
                             doli_brand = await doli_cat_svc.find_or_create_brand(brand_name)
-                            await doli_cat_svc.assign_product(int(doli_brand[“id”]), doli_id)
+                            new_brand_id = int(doli_brand["id"])
+                            await doli_cat_svc.clear_product_from_category_group(
+                                doli_id, "Marcas", keep_cat_id=new_brand_id
+                            )
+                            await doli_cat_svc.assign_product(new_brand_id, doli_id)
                             logger.info(
-                                “Marca sincronizada WP→Dolibarr”,
-                                extra={“sku”: sku, “brand”: brand_name},
+                                "Marca sincronizada WP→Dolibarr",
+                                extra={"sku": sku, "brand": brand_name},
                             )
                         except Exception as exc:
                             logger.warning(
-                                “Sync marca WP→Dolibarr falló”,
+                                "Sync marca WP→Dolibarr falló",
                                 exc_info=exc,
-                                extra={“sku”: sku, “brand”: brand_name},
+                                extra={"sku": sku, "brand": brand_name},
                             )
                 else:
                     dolibarr_sync = {"synced": False, "reason": f"SKU '{sku}' no encontrado en Dolibarr"}
@@ -1299,6 +1324,10 @@ async def sync_all_to_dolibarr() -> dict[str, Any]:
                 break
             cat_offset += 100
 
+        # DEBUG TEMPORAL — muestra del mapa para verificar jerarquía WC
+        _map_sample_b = {wc_cat_name_map.get(k, f"id={k}"): f"parent={wc_cat_name_map.get(v, 'ROOT' if v == 0 else str(v))}" for k, v in list(wc_parent_map.items())[:30]}
+        logger.info(f"[DEBUG] wc_parent_map(bulk) total={len(wc_parent_map)} | {_map_sample_b}")
+
         offset = 0
         limit = 100
         while True:
@@ -1346,7 +1375,11 @@ async def sync_all_to_dolibarr() -> dict[str, Any]:
                         if brand_name and doli_id:
                             try:
                                 doli_brand = await doli_cat_svc.find_or_create_brand(brand_name)
-                                await doli_cat_svc.assign_product(int(doli_brand["id"]), doli_id)
+                                new_brand_id = int(doli_brand["id"])
+                                await doli_cat_svc.clear_product_from_category_group(
+                                    doli_id, "Marcas", keep_cat_id=new_brand_id
+                                )
+                                await doli_cat_svc.assign_product(new_brand_id, doli_id)
                             except Exception as exc:
                                 msg = f"{sku}: assign marca '{brand_name}' → {exc}"
                                 logger.warning("Sync marca WP→Dolibarr (bulk) falló", exc_info=exc, extra={"sku": sku})
@@ -1479,7 +1512,7 @@ async def sync_from_job(body: SyncFromJobRequest) -> dict[str, Any]:
         await client.close()
 
 
-# â”€â”€ CSV Import â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â"€â"€ CSV Import â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 _MAX_CSV_BYTES = 10 * 1024 * 1024  # 10 MB
 _WP_IMPORT_KEY = "wordpress_import:{task_id}"
@@ -1653,7 +1686,7 @@ async def get_import_status(task_id: str) -> JSONResponse:
     return JSONResponse(content=_ok(json.loads(raw), "Estado de importaciÃ³n."))
 
 
-# â”€â”€ Categories â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â"€â"€ Categories â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 
 @router_categories.get("")
@@ -1754,7 +1787,7 @@ async def delete_category(category_id: int) -> dict[str, Any]:
         await client.close()
 
 
-# â”€â”€ Brands â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â"€â"€ Brands â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 
 @router_brands.get("")
@@ -1971,7 +2004,7 @@ async def get_brand_products(
         await client.close()
 
 
-# â”€â”€ Orders â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â"€â"€ Orders â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 
 @router_orders.get("")
@@ -2061,7 +2094,7 @@ async def add_order_note(order_id: int, body: dict[str, Any] = Body(...)) -> dic
         await client.close()
 
 
-# â”€â”€ Customers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â"€â"€ Customers â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 
 @router_customers.get("")
@@ -2140,7 +2173,7 @@ async def delete_customer(customer_id: int) -> dict[str, Any]:
         await client.close()
 
 
-# â”€â”€ Media â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â"€â"€ Media â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 
 @router_media.get("")
@@ -2201,7 +2234,7 @@ async def upload_media(file: UploadFile = File(...)) -> dict[str, Any]:
         await client.close()
 
 
-# â”€â”€ Database (phpMyAdmin) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â"€â"€ Database (phpMyAdmin) â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 
 @router_db.get("/tables")
@@ -2294,7 +2327,7 @@ async def get_wp_option(option_name: str) -> dict[str, Any]:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
-# â”€â”€ Webhooks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â"€â"€ Webhooks â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 
 @router_webhooks.post("/product")
@@ -2313,7 +2346,7 @@ async def webhook_product_updated(request: Request) -> dict[str, Any]:
         request: peticiÃ³n HTTP con el payload JSON del producto WooCommerce.
 
     Returns:
-        200 siempre â€” WooCommerce requiere 200 para marcar la entrega como exitosa.
+        200 siempre â€" WooCommerce requiere 200 para marcar la entrega como exitosa.
     """
     raw_body = await request.body()
     topic = request.headers.get("X-WC-Webhook-Topic", "unknown")
