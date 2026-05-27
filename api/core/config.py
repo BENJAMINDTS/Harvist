@@ -323,11 +323,11 @@ class Settings(BaseSettings):
 
     # ── IA — Fase 5 — Proveedor ──────────────────────────────────────────────
     ai_provider: Literal["anthropic", "groq"] = Field(
-        default="anthropic",
+        default="groq",
         description=(
             "Proveedor de IA para generar descripciones: "
-            "'anthropic' (Claude API, requiere créditos) | "
-            "'groq' (gratuito, modelos Llama/Mixtral)."
+            "'groq' (gratuito, modelos Llama/Mixtral) | "
+            "'anthropic' (Claude API, requiere créditos)."
         ),
     )
     groq_api_key: str = Field(
