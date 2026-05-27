@@ -22,7 +22,7 @@ y gestión integrada de ERPs y CMS. Sus cuatro pilares son:
 - Backend  → Python 3.11 + FastAPI + Celery + Redis
 - Frontend → React 18 + TypeScript + Vite + Tailwind CSS
 - Scraping → undetected-chromedriver + Selenium 4 + Pillow
-- IA       → Groq API (llama-3.3-70b-versatile)
+- IA       → Groq API (llama-3.3-70b-versatile) + Anthropic Claude — cliente unificado con auto-rotación
 - Testing  → pytest · 130+ tests
 
 ### Equipo
@@ -266,7 +266,12 @@ Si la validación de marcas (Fase 7.4) está activa, NO se escribe hasta confirm
 - `services/scraper/producer.py` — Selenium + fábrica navegadores
 - `services/scraper/consumer.py` — ThreadPoolExecutor + validación Pillow
 - `services/scraper/brand_scraper.py` — Cascada 8 niveles EAN → marca (httpx, sin Selenium)
-- `services/ai/groq_client.py` — Cliente Groq con reintentos + backoff exponencial
+- `services/scraper/brand_cache.py` — Gestión caché GS1 en memoria (brand_cache.json)
+- `services/scraper/brand_validator.py` — Modelo BrandResult + validación EAN checksum
+- `services/scraper/brand_pipeline.py` — Orquestador resolución de marcas por lote
+- `services/utils/amazon_brand_client.py` — Resolver Amazon.es (nivel 3 de la cascada)
+- `services/utils/ean_http_clients.py` — Clientes HTTP Open*Facts + UPCItemDb
+- `services/ai/claude_client.py` — Cliente unificado Anthropic + Groq con auto-rotación, reintentos y backoff exponencial
 - `services/ai/description_generator.py` + `description_pipeline.py` — Descripciones SEO batch
 - `workers/celery_app.py` + `workers/tasks.py` — Celery + Redis persistencia
 - Frontend: CsvUploader · SearchConfig · JobProgress · JobHistory · App state machine
@@ -415,14 +420,19 @@ harvist/
 │   │   ├── pipeline.py
 │   │   ├── producer.py
 │   │   ├── consumer.py
-│   │   └── brand_scraper.py
+│   │   ├── brand_scraper.py
+│   │   ├── brand_cache.py          # Caché GS1 en memoria
+│   │   ├── brand_validator.py      # BrandResult + validación EAN checksum
+│   │   └── brand_pipeline.py       # Orquestador resolución marcas por lote
 │   ├── ai/
-│   │   ├── groq_client.py
-│   │   ├── claude_client.py
+│   │   ├── claude_client.py        # Cliente unificado Anthropic + Groq (auto-rotación)
 │   │   ├── description_generator.py
 │   │   ├── description_pipeline.py
 │   │   ├── seo_pipeline.py         # Fase 7.1
 │   │   └── translation_pipeline.py # Fase 7.2
+│   ├── utils/
+│   │   ├── amazon_brand_client.py  # Resolver Amazon.es (cascada nivel 3)
+│   │   └── ean_http_clients.py     # Clientes Open*Facts + UPCItemDb
 │   └── integrations/
 │       ├── base.py
 │       ├── dolibarr/               # client · products · categories · thirdparties
@@ -442,6 +452,13 @@ harvist/
 │   ├── unit/
 │   └── integration/
 │
+├── docs/
+│   ├── manual_usuario.md           # Manual de usuario
+│   ├── manual_usuario.pdf
+│   ├── manual_despliegue.md        # Manual de despliegue
+│   ├── manual_despliegue.pdf
+│   └── generate_pdfs.py            # Generador PDF desde Markdown
+│
 ├── scripts/
 │   └── setup_gs1_db.py
 │
@@ -459,6 +476,8 @@ harvist/
         ├── App.tsx
         ├── api/client.ts
         ├── components/
+        │   ├── NsLogo.tsx
+        │   ├── ErrorBoundary.tsx
         │   ├── CsvUploader.tsx
         │   ├── SearchConfig.tsx
         │   ├── JobProgress.tsx
