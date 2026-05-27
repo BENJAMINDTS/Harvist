@@ -19,8 +19,35 @@ from services.integrations.dolibarr.client import DolibarrClient
 
 _REDIS_DB_CONFIG_KEY = "integration:dolibarr:db_config"
 
-
 CATEGORY_TYPES = Literal["product", "customer", "supplier", "member"]
+
+
+def _collect_descendants(all_cats: list[dict], root_id: int) -> set[int]:
+    """
+    Construye el conjunto de IDs de todos los descendientes de ``root_id``
+    (incluyendo el propio root) a partir de una lista plana de categorías.
+
+    Args:
+        all_cats: lista plana de dicts de categoría (cada uno con 'id' y 'fk_parent').
+        root_id:  ID del nodo raíz desde el que recoger descendientes.
+
+    Returns:
+        Set de enteros con todos los IDs del subárbol.
+    """
+    parent_to_children: dict[int, list[int]] = {}
+    for cat in all_cats:
+        parent = int(cat.get("fk_parent") or 0)
+        cid = int(cat["id"])
+        parent_to_children.setdefault(parent, []).append(cid)
+
+    result: set[int] = {root_id}
+    queue = [root_id]
+    while queue:
+        current = queue.pop()
+        for child in parent_to_children.get(current, []):
+            result.add(child)
+            queue.append(child)
+    return result
 _DOLIBARR_CATEGORIES_RESOURCE = "categories"
 _DOLIBARR_CATEGORY_OBJECTS_RESOURCE = "objects"
 
@@ -240,28 +267,22 @@ class DolibarrCategoryService:
         # Fallback: INSERT directo en llx_categorie_product.
         return await self._assign_product_db(category_id, product_id)
 
-    async def _assign_product_db(self, category_id: int, product_id: int) -> bool:
+    async def _get_db_conn_params(self) -> dict:
         """
-        Inserta la relación categoría-producto directamente en la BD.
+        Lee los parámetros de conexión a BD de Dolibarr.
 
-        Fallback cuando el endpoint REST no funciona en la versión de Dolibarr.
-        Lee las credenciales de BD desde Redis (config UI) con fallback a .env.
-
-        Args:
-            category_id: ID de la categoría.
-            product_id:  ID del producto.
+        Prioridad: Redis (config UI) → variables de entorno.
 
         Returns:
-            True si la inserción fue exitosa.
+            Dict con host, port, db_name, user, password, prefix.
 
         Raises:
-            IntegrationError: si la BD no está configurada o falla la inserción.
+            IntegrationError: si la BD no está configurada.
         """
         settings = get_settings()
         host = db_name = user = password = prefix = ""
         port = 3306
 
-        # Leer config desde Redis primero (configurada via UI), luego .env.
         redis_client: aioredis.Redis | None = None
         try:
             redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
@@ -280,7 +301,6 @@ class DolibarrCategoryService:
             if redis_client:
                 await redis_client.aclose()
 
-        # Fallback a variables de entorno si Redis no tenía config.
         if not host:
             host = settings.dolibarr_db_host or ""
             port = settings.dolibarr_db_port
@@ -296,14 +316,40 @@ class DolibarrCategoryService:
                 platform="dolibarr",
             )
 
-        table = f"{prefix.strip()}categorie_product"
+        return {
+            "host": host,
+            "port": port,
+            "db_name": db_name,
+            "user": user,
+            "password": password,
+            "prefix": prefix,
+        }
+
+    async def _assign_product_db(self, category_id: int, product_id: int) -> bool:
+        """
+        Inserta la relación categoría-producto directamente en la BD.
+
+        Fallback cuando el endpoint REST no funciona en la versión de Dolibarr.
+
+        Args:
+            category_id: ID de la categoría.
+            product_id:  ID del producto.
+
+        Returns:
+            True si la inserción fue exitosa.
+
+        Raises:
+            IntegrationError: si la BD no está configurada o falla la inserción.
+        """
+        params = await self._get_db_conn_params()
+        table = f"{params['prefix'].strip()}categorie_product"
 
         conn: aiomysql.Connection = await aiomysql.connect(
-            host=host,
-            port=port,
-            db=db_name,
-            user=user,
-            password=password,
+            host=params["host"],
+            port=params["port"],
+            db=params["db_name"],
+            user=params["user"],
+            password=params["password"],
             autocommit=True,
             charset="utf8mb4",
         )
@@ -325,6 +371,136 @@ class DolibarrCategoryService:
             ) from exc
         finally:
             conn.close()
+
+    async def get_product_category_ids(self, product_id: int) -> list[int]:
+        """
+        Devuelve los IDs de todas las categorías a las que pertenece un producto.
+
+        Intenta primero vía REST (``GET /categories?type=product&objtype=product&object_id``);
+        si falla o devuelve lista vacía, consulta la BD directamente.
+
+        Args:
+            product_id: ID del producto en Dolibarr.
+
+        Returns:
+            Lista de IDs de categoría (puede ser vacía).
+        """
+        try:
+            resp = await self._client._request(
+                "GET",
+                "categories",
+                params={
+                    "type": "product",
+                    "objtype": "product",
+                    "object_id": str(product_id),
+                    "limit": "200",
+                },
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, list) and data:
+                    return [int(c["id"]) for c in data if c.get("id")]
+        except Exception as exc:
+            logger.debug(
+                "REST get_product_category_ids falló, usando BD",
+                exc_info=exc,
+                extra={"product_id": product_id},
+            )
+
+        return await self._get_product_category_ids_db(product_id)
+
+    async def _get_product_category_ids_db(self, product_id: int) -> list[int]:
+        """
+        Lee las categorías de un producto directamente desde la BD.
+
+        Args:
+            product_id: ID del producto.
+
+        Returns:
+            Lista de IDs de categoría. Lista vacía si BD no configurada o falla.
+        """
+        try:
+            params = await self._get_db_conn_params()
+        except IntegrationError:
+            logger.debug("BD no configurada para get_product_category_ids", extra={"product_id": product_id})
+            return []
+
+        table = f"{params['prefix'].strip()}categorie_product"
+        conn: aiomysql.Connection = await aiomysql.connect(
+            host=params["host"],
+            port=params["port"],
+            db=params["db_name"],
+            user=params["user"],
+            password=params["password"],
+            autocommit=True,
+            charset="utf8mb4",
+        )
+        try:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    f"SELECT fk_categorie FROM `{table}` WHERE fk_product = %s",
+                    (product_id,),
+                )
+                rows = await cur.fetchall()
+                return [int(r[0]) for r in rows]
+        except Exception as exc:
+            logger.warning(
+                "Error leyendo categorías del producto desde BD",
+                exc_info=exc,
+                extra={"product_id": product_id},
+            )
+            return []
+        finally:
+            conn.close()
+
+    async def clear_product_from_category_group(
+        self,
+        product_id: int,
+        group_root_name: str,
+        keep_cat_id: int,
+    ) -> None:
+        """
+        Elimina un producto de todas las categorías del subárbol de ``group_root_name``,
+        salvo de ``keep_cat_id``.
+
+        Permite que el sync WP→Dolibarr *reemplace* la categoría/marca anterior en
+        vez de acumular asignaciones. Se llama antes de ``assign_product``.
+
+        Args:
+            product_id:      ID del producto en Dolibarr.
+            group_root_name: nombre del nodo raíz del grupo (ej. "tpv", "Marcas").
+            keep_cat_id:     ID de la categoría destino que no se debe eliminar.
+        """
+        root_cat = await self.find_category_by_name(group_root_name)
+        if not root_cat:
+            return
+        root_id = int(root_cat["id"])
+
+        # Construir set de descendientes del root (incluye el root).
+        all_cats = await self.list_categories(type="product", limit=500, offset=0)
+        descendant_ids = _collect_descendants(all_cats, root_id)
+
+        # IDs de categorías actuales del producto.
+        current_ids = await self.get_product_category_ids(product_id)
+
+        for cat_id in current_ids:
+            if cat_id in descendant_ids and cat_id != keep_cat_id:
+                try:
+                    await self.remove_product(cat_id, product_id)
+                    logger.info(
+                        "Categoría anterior eliminada del producto (sync WP→Dolibarr)",
+                        extra={
+                            "cat_id": cat_id,
+                            "product_id": product_id,
+                            "group": group_root_name,
+                        },
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "No se pudo quitar categoría anterior del producto",
+                        exc_info=exc,
+                        extra={"cat_id": cat_id, "product_id": product_id},
+                    )
 
     async def remove_product(
         self,
