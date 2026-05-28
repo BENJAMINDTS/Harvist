@@ -61,5 +61,9 @@ celery_app.conf.update(
             "task": "cleanup_stale_candidates",
             "schedule": crontab(minute=7),  # Cada hora a :07
         },
+        "cleanup_image_cache_orphans": {
+            "task": "cleanup_image_cache_orphans",
+            "schedule": crontab(hour=3, minute=0, day_of_week=0),  # Domingos 03:00 UTC
+        },
     },
 )
