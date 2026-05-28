@@ -486,6 +486,42 @@ export async function confirmPhotoSelection(
   return response.data.data
 }
 
+// ─── Retry parcial de productos fallidos ─────────────────────────────────────
+
+/** Flags que indican qué tipos de fallo incluir en el reintento. */
+export interface RetryJobRequest {
+  retry_images: boolean
+  retry_brands: boolean
+  retry_descriptions: boolean
+  retry_seo: boolean
+}
+
+/** Respuesta del endpoint POST /jobs/{jobId}/retry. */
+export interface RetryJobResponse {
+  job_id: string
+  productos_a_reintentar: number
+  reintentos_previos: number
+}
+
+/**
+ * Encola el reintento parcial de los productos fallidos de un job.
+ *
+ * @author BenjaminDTS
+ * @param jobId   - ID del job a reintentar.
+ * @param request - Flags que indican qué tipos de fallo reintentar.
+ * @returns Respuesta con job_id, productos_a_reintentar y reintentos_previos.
+ */
+export async function retryJob(
+  jobId: string,
+  request: RetryJobRequest,
+): Promise<RetryJobResponse> {
+  const response = await apiClient.post<ApiResponse<RetryJobResponse>>(
+    `/jobs/${jobId}/retry`,
+    request,
+  )
+  return response.data.data
+}
+
 // ────────────────────────────────────────────────────────────────
 // DOLIBARR — Métodos de integración
 // ────────────────────────────────────────────────────────────────

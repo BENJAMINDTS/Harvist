@@ -10,7 +10,8 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useJobWebSocket } from '@/hooks/useJobWebSocket'
 import type { EstadoJob } from '@/hooks/useJobWebSocket'
-import { apiClient } from '@/api/client'
+import { apiClient, retryJob } from '@/api/client'
+import type { RetryJobRequest } from '@/api/client'
 import type { TipoJob } from '@/components/SearchConfig'
 
 // ---------------------------------------------------------------------------
@@ -29,6 +30,11 @@ interface JobProgressProps {
    * Si no se proporciona, el botón no se muestra.
    */
   onResume?: () => void
+  /**
+   * Llamado tras encolar un reintento exitoso, para que el padre remonte el componente
+   * y restablezca la conexión WebSocket. Si no se proporciona, el botón no se muestra.
+   */
+  onRetry?: () => void
 }
 
 // ---------------------------------------------------------------------------
@@ -209,10 +215,19 @@ export const JobProgress: React.FC<JobProgressProps> = ({
   tipoJob,
   onFinished,
   onResume,
+  onRetry,
 }) => {
   const { progress, wsStatus, isFinished } = useJobWebSocket(jobId)
   const [cancelling, setCancelling] = useState(false)
   const [cancelError, setCancelError] = useState<string | null>(null)
+  const [retrying, setRetrying] = useState(false)
+  const [retryError, setRetryError] = useState<string | null>(null)
+  const [retryFlags, setRetryFlags] = useState<RetryJobRequest>({
+    retry_images: true,
+    retry_brands: true,
+    retry_descriptions: false,
+    retry_seo: false,
+  })
 
   // Notificar al padre una sola vez cuando el job llega a estado terminal.
   // Se usa ref para evitar llamadas duplicadas en re-renders.
@@ -250,6 +265,21 @@ export const JobProgress: React.FC<JobProgressProps> = ({
     }
   }
 
+  /** Encola el reintento parcial de los productos fallidos */
+  const handleRetry = async (): Promise<void> => {
+    setRetrying(true)
+    setRetryError(null)
+    try {
+      await retryJob(jobId, retryFlags)
+      onRetry?.()
+    } catch (err: unknown) {
+      const apiErr = err as { message?: string; status?: number }
+      setRetryError(apiErr.message ?? 'No se pudo encolar el reintento.')
+    } finally {
+      setRetrying(false)
+    }
+  }
+
   // ── Skeleton mientras no hay datos ──────────────────────────────────────
   if (progress === null) {
     return (
@@ -271,7 +301,14 @@ export const JobProgress: React.FC<JobProgressProps> = ({
     marcas_procesadas,
     mensaje,
     error,
+    reintentos,
+    n_productos_fallidos,
   } = progress
+
+  const descFallidas = Math.max(0, productos_procesados - descripciones_generadas)
+  const marcasFallidas = Math.max(0, productos_procesados - marcas_procesadas)
+  const hayFallos = imagenes_fallidas > 0 || marcasFallidas > 0 || descFallidas > 0
+  const limiteAlcanzado = reintentos >= 3
 
   const badge = ESTADO_BADGE[estado]
   const progressBarColor = PROGRESS_BAR_COLOR[estado]
@@ -426,6 +463,81 @@ export const JobProgress: React.FC<JobProgressProps> = ({
         >
           <span className="font-medium">Error: </span>
           {error}
+        </div>
+      )}
+
+      {/* Sección de productos fallidos y botón de retry */}
+      {isFinished && estado === 'completado' && hayFallos && onRetry !== undefined && (
+        <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 p-4 space-y-3">
+          <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+            ⚠️ {n_productos_fallidos > 0 ? n_productos_fallidos : 'Algunos'} productos necesitan atención
+          </p>
+
+          <div className="space-y-1.5">
+            {imagenes_fallidas > 0 && (
+              <label className="flex items-center gap-2 text-sm text-amber-800 dark:text-amber-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={retryFlags.retry_images}
+                  onChange={e => setRetryFlags(f => ({ ...f, retry_images: e.target.checked }))}
+                  className="rounded"
+                  disabled={limiteAlcanzado || retrying}
+                />
+                Reintentar imágenes fallidas ({imagenes_fallidas} productos)
+              </label>
+            )}
+            {marcasFallidas > 0 && (
+              <label className="flex items-center gap-2 text-sm text-amber-800 dark:text-amber-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={retryFlags.retry_brands}
+                  onChange={e => setRetryFlags(f => ({ ...f, retry_brands: e.target.checked }))}
+                  className="rounded"
+                  disabled={limiteAlcanzado || retrying}
+                />
+                Reintentar marcas no resueltas ({marcasFallidas} productos)
+              </label>
+            )}
+            {descFallidas > 0 && (
+              <label className="flex items-center gap-2 text-sm text-amber-800 dark:text-amber-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={retryFlags.retry_descriptions}
+                  onChange={e => setRetryFlags(f => ({ ...f, retry_descriptions: e.target.checked }))}
+                  className="rounded"
+                  disabled={limiteAlcanzado || retrying}
+                />
+                Reintentar descripciones fallidas ({descFallidas} productos)
+              </label>
+            )}
+          </div>
+
+          <p className={`text-xs ${limiteAlcanzado ? 'text-red-600 dark:text-red-400 font-semibold' : 'text-amber-700 dark:text-amber-400'}`}>
+            {limiteAlcanzado
+              ? 'Límite alcanzado — no se pueden realizar más reintentos.'
+              : `Máx. 3 reintentos por job · Reintentos usados: ${reintentos}/3`}
+          </p>
+
+          {retryError !== null && (
+            <div className="rounded border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950 px-3 py-2 text-sm text-red-700 dark:text-red-400" role="alert">
+              {retryError}
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => void handleRetry()}
+            disabled={
+              limiteAlcanzado ||
+              retrying ||
+              !retryFlags.retry_images && !retryFlags.retry_brands && !retryFlags.retry_descriptions && !retryFlags.retry_seo
+            }
+            title={limiteAlcanzado ? 'Se ha alcanzado el límite de 3 reintentos' : undefined}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label="Reintentar los productos fallidos seleccionados"
+          >
+            {retrying ? 'Encolando…' : 'Reintentar fallidos'}
+          </button>
         </div>
       )}
 

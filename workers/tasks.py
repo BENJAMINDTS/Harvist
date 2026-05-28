@@ -21,7 +21,7 @@ from celery.utils.log import get_task_logger
 from loguru import logger
 
 from api.core.config import get_settings
-from api.v1.schemas.job import EstadoJob, JobStatus, SearchConfig, TipoJob
+from api.v1.schemas.job import EstadoJob, JobStatus, RetryJobRequest, SearchConfig, TipoJob
 from services.csv_parser import CsvParserError
 from services.scraper.pipeline import ScrapingPipeline
 from workers.celery_app import celery_app
@@ -32,6 +32,7 @@ task_logger = get_task_logger(__name__)
 _JOB_KEY = "job:{job_id}"
 _BRANDS_PENDING_KEY = "job:{job_id}:brands_pending"
 _PHOTOS_PENDING_KEY = "job:{job_id}:photos_pending"
+_FAILED_PRODUCTS_KEY = "job:{job_id}:failed_products"
 
 
 class JobCancelledError(Exception):
@@ -500,6 +501,19 @@ def ejecutar_scraping(
                 f"Completado: {resumen.get('imagenes_descargadas', 0)} imágenes descargadas "
                 f"de {resumen['total_productos']} productos."
             )
+            # Registrar productos fallidos en Redis para permitir retry parcial
+            _productos_fallidos = resumen.get("_productos_fallidos", [])
+            if _productos_fallidos:
+                redis_client.set(
+                    _FAILED_PRODUCTS_KEY.format(job_id=job_id),
+                    json.dumps(_productos_fallidos, ensure_ascii=False),
+                    ex=settings.file_ttl_seconds,
+                )
+                job_status.productos_fallidos = [fp["codigo"] for fp in _productos_fallidos]
+                logger.info(
+                    "Productos fallidos registrados en Redis",
+                    extra={"job_id": job_id, "n_fallidos": len(_productos_fallidos)},
+                )
         _actualizar_estado(redis_client, job_status)
 
         resumen_retorno = {k: v for k, v in resumen.items() if k not in ("errores_csv", "_productos", "_resultados")}
@@ -853,6 +867,203 @@ def importar_productos_wordpress(
             "message": f"Error: {exc}",
             "results": None,
         })
+        return {"error": str(exc)}
+
+    finally:
+        redis_client.close()
+
+
+_JOB_CSV_KEY_WORKER = "job:{job_id}:csv"
+_JOB_CONFIG_KEY_WORKER = "job:{job_id}:config"
+
+
+@celery_app.task(
+    bind=True,
+    name="retry_job",
+    max_retries=0,
+)
+def retry_job(
+    self,
+    job_id: str,
+    retry_config: dict,
+) -> dict:
+    """
+    Reintenta el procesamiento de los productos fallidos de un job de fotos.
+
+    Lee la lista job:{job_id}:failed_products de Redis, filtra según los flags
+    de retry_config, ejecuta el ScrapingPipeline solo con esos productos y
+    actualiza los contadores del JobStatus en Redis.
+
+    Args:
+        self:         instancia de la tarea (bind=True).
+        job_id:       ID del job original a reintentar.
+        retry_config: dict serializado de RetryJobRequest con los flags de reintento.
+
+    Returns:
+        Dict con productos_reintentados y nuevos_ok.
+
+    :author: BenjaminDTS
+    """
+    settings = get_settings()
+    redis_client = _get_redis_client()
+
+    try:
+        # 1. Leer estado actual del job
+        raw = redis_client.get(_JOB_KEY.format(job_id=job_id))
+        if not raw:
+            logger.error("Job no encontrado en Redis para retry", extra={"job_id": job_id})
+            return {"error": "Job no encontrado"}
+
+        job_status = JobStatus.model_validate_json(raw)
+        config_obj = RetryJobRequest(**retry_config)
+
+        # 2. Leer productos fallidos de Redis
+        failed_raw = redis_client.get(_FAILED_PRODUCTS_KEY.format(job_id=job_id))
+        all_failed: list[dict] = json.loads(failed_raw) if failed_raw else []
+
+        # 3. Filtrar según flags de retry_config
+        codigos_a_reintentar: set[str] = set()
+        for fp in all_failed:
+            razon = fp.get("razon", "")
+            if razon == "imagen" and config_obj.retry_images:
+                codigos_a_reintentar.add(fp["codigo"])
+            elif razon == "descripcion" and config_obj.retry_descriptions:
+                codigos_a_reintentar.add(fp["codigo"])
+            elif razon == "marca" and config_obj.retry_brands:
+                codigos_a_reintentar.add(fp["codigo"])
+            elif razon == "seo" and config_obj.retry_seo:
+                codigos_a_reintentar.add(fp["codigo"])
+
+        if not codigos_a_reintentar:
+            logger.warning("Ningún producto coincide con los flags de retry", extra={"job_id": job_id})
+            return {"productos_reintentados": 0, "nuevos_ok": 0}
+
+        n_reintentar = len(codigos_a_reintentar)
+
+        # 4. Incrementar contador de reintentos y cambiar estado a EN_PROCESO
+        job_status.reintentos += 1
+        job_status.estado = EstadoJob.EN_PROCESO
+        job_status.actualizado_en = datetime.utcnow()
+        job_status.mensaje = f"Reintentando {n_reintentar} productos fallidos... (intento {job_status.reintentos})"
+        _actualizar_estado(redis_client, job_status)
+
+        # 5. Leer CSV y config originales
+        csv_raw = redis_client.get(_JOB_CSV_KEY_WORKER.format(job_id=job_id))
+        config_raw = redis_client.get(_JOB_CONFIG_KEY_WORKER.format(job_id=job_id))
+
+        if not csv_raw:
+            job_status.estado = EstadoJob.FALLIDO
+            job_status.error = "CSV original expirado, no se puede reintentar."
+            _actualizar_estado(redis_client, job_status)
+            return {"error": "CSV expirado"}
+
+        config = SearchConfig.model_validate(json.loads(config_raw) if config_raw else {})
+
+        # 6. Callback de progreso para el retry
+        def _callback_retry(
+            jid: str,
+            procesados: int,
+            total: int,
+            img_ok: int,
+            img_fail: int,
+        ) -> None:
+            """
+            Actualiza el JobStatus en Redis durante el reintento.
+
+            Args:
+                jid:       job_id.
+                procesados: productos reintentados hasta ahora.
+                total:     total de productos a reintentar.
+                img_ok:    imágenes recuperadas en este retry.
+                img_fail:  imágenes que siguen fallando.
+
+            Raises:
+                JobCancelledError: si el job fue cancelado externamente.
+            """
+            current_raw = redis_client.get(_JOB_KEY.format(job_id=jid))
+            if current_raw:
+                current = JobStatus.model_validate_json(current_raw)
+                if current.estado == EstadoJob.CANCELADO:
+                    raise JobCancelledError(f"Job {jid} cancelado durante retry.")
+
+            job_status.actualizado_en = datetime.utcnow()
+            job_status.mensaje = f"Reintentando: {procesados}/{total} productos procesados."
+            _actualizar_estado(redis_client, job_status)
+
+        # 7. Ejecutar pipeline solo con los productos fallidos
+        pipeline = ScrapingPipeline(job_id=job_id, config=config)
+        resumen = pipeline.ejecutar(
+            contenido_csv=csv_raw,
+            callback=_callback_retry,
+            codigos_filtro=codigos_a_reintentar,
+        )
+
+        nuevos_ok = resumen.get("imagenes_descargadas", 0)
+        nuevos_fail = resumen.get("imagenes_fallidas", 0)
+
+        # 8. Actualizar contadores: sumar éxitos, restar del total de fallos
+        job_status.imagenes_descargadas = (job_status.imagenes_descargadas or 0) + nuevos_ok
+        job_status.imagenes_fallidas = max(0, (job_status.imagenes_fallidas or 0) - nuevos_ok)
+
+        # 9. Actualizar lista de productos que siguen fallando
+        nuevos_fallidos: list[dict] = resumen.get("_productos_fallidos", [])
+        # Añadir de vuelta los que no se reintentaron en este ciclo (razón diferente)
+        no_reintentados = [fp for fp in all_failed if fp["codigo"] not in codigos_a_reintentar]
+        fallidos_final = nuevos_fallidos + no_reintentados
+
+        if fallidos_final:
+            redis_client.set(
+                _FAILED_PRODUCTS_KEY.format(job_id=job_id),
+                json.dumps(fallidos_final, ensure_ascii=False),
+                ex=settings.file_ttl_seconds,
+            )
+            job_status.productos_fallidos = [fp["codigo"] for fp in fallidos_final]
+        else:
+            redis_client.delete(_FAILED_PRODUCTS_KEY.format(job_id=job_id))
+            job_status.productos_fallidos = []
+
+        # 10. Estado final: COMPLETADO
+        job_status.estado = EstadoJob.COMPLETADO
+        job_status.completado_en = datetime.utcnow()
+        job_status.actualizado_en = datetime.utcnow()
+        job_status.mensaje = (
+            f"Reintento completado: {nuevos_ok} productos recuperados de {n_reintentar} intentados."
+        )
+        _actualizar_estado(redis_client, job_status)
+
+        logger.info(
+            "retry_job completado",
+            extra={
+                "job_id": job_id,
+                "n_reintentar": n_reintentar,
+                "nuevos_ok": nuevos_ok,
+                "nuevos_fail": nuevos_fail,
+                "reintentos": job_status.reintentos,
+            },
+        )
+        return {"productos_reintentados": n_reintentar, "nuevos_ok": nuevos_ok}
+
+    except JobCancelledError:
+        logger.info("retry_job cancelado por el usuario", extra={"job_id": job_id})
+        return {"cancelado": True}
+
+    except Exception as exc:
+        logger.error("Error inesperado en retry_job", exc_info=exc, extra={"job_id": job_id})
+        try:
+            raw_err = redis_client.get(_JOB_KEY.format(job_id=job_id))
+            if raw_err:
+                js_err = JobStatus.model_validate_json(raw_err)
+                js_err.estado = EstadoJob.FALLIDO
+                js_err.error = str(exc)
+                js_err.mensaje = "El reintento falló."
+                js_err.actualizado_en = datetime.utcnow()
+                _actualizar_estado(redis_client, js_err)
+        except Exception as inner_exc:
+            logger.warning(
+                "No se pudo actualizar el estado FALLIDO tras error en retry_job",
+                exc_info=inner_exc,
+                extra={"job_id": job_id},
+            )
         return {"error": str(exc)}
 
     finally:

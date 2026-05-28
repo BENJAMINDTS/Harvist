@@ -34,6 +34,8 @@ export interface JobProgressEvent {
   marcas_procesadas: number
   mensaje: string
   error: string | null
+  reintentos: number
+  n_productos_fallidos: number
 }
 
 /** Estados internos de la conexión WebSocket */

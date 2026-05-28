@@ -66,6 +66,8 @@ from api.v1.schemas.job import (
     ModosBusqueda,
     PhotoSelectionRequest,
     ProductPhotos,
+    RetryJobRequest,
+    RetryJobResponse,
     ReviewAction,
     ReviewStatus,
     SearchConfig,
@@ -95,6 +97,8 @@ _JOB_TRAD_REVIEW_KEY = "job:{job_id}:trad_review:{lang}:{codigo}"
 _SUPPORTED_LANGS = {"es", "en", "fr", "de", "it", "pt"}
 # Clave Redis donde se almacenan las marcas pendientes de validación (Fase 7.4)
 _BRANDS_PENDING_KEY = "job:{job_id}:brands_pending"
+# Clave Redis con la lista de productos fallidos para retry parcial
+_FAILED_PRODUCTS_KEY = "job:{job_id}:failed_products"
 # Lock a nivel de módulo para proteger escrituras concurrentes en brand_cache.json
 _BRAND_CACHE_WRITE_LOCK: _threading.Lock = _threading.Lock()
 
@@ -925,6 +929,144 @@ async def reanudar_job(job_id: str) -> JSONResponse:
     )
 
 
+@router.post(
+    "/{job_id}/retry",
+    response_model=JobResponse,
+    status_code=202,
+    summary="Reintentar solo los productos fallidos de un job completado",
+)
+async def reintentar_job(job_id: str, request: RetryJobRequest) -> JSONResponse:
+    """
+    Encola el reintento parcial de los productos que fallaron en un job.
+
+    Solo procesa los productos listados en job:{job_id}:failed_products que
+    coincidan con los flags activos en el body. El resto del job no se toca.
+
+    Args:
+        job_id:  identificador UUID del job original.
+        request: flags que indican qué tipos de fallo reintentar.
+
+    Returns:
+        JSONResponse 202 con job_id, productos_a_reintentar y reintentos_previos.
+
+    Raises:
+        HTTPException 404: si el job no existe.
+        HTTPException 400: si no hay productos fallidos registrados.
+        HTTPException 409: si el job no está en COMPLETADO o FALLIDO.
+        HTTPException 409: si ya se alcanzó el límite de MAX_REINTENTOS.
+        HTTPException 422: si todos los flags de retry son False.
+        HTTPException 503: si Celery no está disponible.
+
+    :author: BenjaminDTS
+    """
+    if not any([
+        request.retry_images,
+        request.retry_brands,
+        request.retry_descriptions,
+        request.retry_seo,
+    ]):
+        raise HTTPException(
+            status_code=422,
+            detail="Al menos un flag de retry debe ser True.",
+        )
+
+    redis = await _get_redis()
+    try:
+        status = await _get_job_status(redis, job_id)
+
+        if status.estado not in (EstadoJob.COMPLETADO, EstadoJob.FALLIDO):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Solo se pueden reintentar jobs completados o con error. "
+                    f"Estado actual: '{status.estado.value}'."
+                ),
+            )
+
+        if status.reintentos >= JobStatus.MAX_REINTENTOS:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Este job ha alcanzado el límite de {JobStatus.MAX_REINTENTOS} reintentos.",
+            )
+
+        failed_raw = await redis.get(_FAILED_PRODUCTS_KEY.format(job_id=job_id))
+        if not failed_raw:
+            raise HTTPException(
+                status_code=400,
+                detail="Este job no tiene productos fallidos para reintentar.",
+            )
+
+        all_failed: list[dict] = json.loads(failed_raw)
+        if not all_failed:
+            raise HTTPException(
+                status_code=400,
+                detail="Este job no tiene productos fallidos para reintentar.",
+            )
+
+        # Calcular cuántos se van a reintentar según los flags
+        codigos_a_reintentar: set[str] = set()
+        for fp in all_failed:
+            razon = fp.get("razon", "")
+            if razon == "imagen" and request.retry_images:
+                codigos_a_reintentar.add(fp["codigo"])
+            elif razon == "descripcion" and request.retry_descriptions:
+                codigos_a_reintentar.add(fp["codigo"])
+            elif razon == "marca" and request.retry_brands:
+                codigos_a_reintentar.add(fp["codigo"])
+            elif razon == "seo" and request.retry_seo:
+                codigos_a_reintentar.add(fp["codigo"])
+
+        if not codigos_a_reintentar:
+            raise HTTPException(
+                status_code=400,
+                detail="Ningún producto fallido coincide con los flags de retry seleccionados.",
+            )
+
+    finally:
+        await redis.aclose()
+
+    try:
+        from workers.tasks import retry_job
+        retry_job.apply_async(
+            args=[job_id, request.model_dump()],
+            task_id=f"{job_id}:retry:{status.reintentos + 1}",
+        )
+    except Exception as exc:
+        logger.error(
+            "Error al encolar retry_job en Celery",
+            exc_info=exc,
+            extra={"job_id": job_id},
+        )
+        raise HTTPException(status_code=503, detail="No se pudo encolar el reintento.") from exc
+
+    logger.info(
+        "Retry parcial encolado",
+        extra={
+            "job_id": job_id,
+            "productos_a_reintentar": len(codigos_a_reintentar),
+            "reintentos_previos": status.reintentos,
+        },
+    )
+
+    response_data = RetryJobResponse(
+        job_id=job_id,
+        productos_a_reintentar=len(codigos_a_reintentar),
+        reintentos_previos=status.reintentos,
+    )
+
+    return JSONResponse(
+        status_code=202,
+        content={
+            "success": True,
+            "data": response_data.model_dump(),
+            "message": (
+                f"Reintento encolado: {len(codigos_a_reintentar)} productos a reprocesar. "
+                f"Intento {status.reintentos + 1} de {JobStatus.MAX_REINTENTOS}."
+            ),
+        },
+    )
+
+
 @router.patch(
     "/{job_id}/descriptions/{codigo}",
     response_model=dict,
@@ -1719,6 +1861,8 @@ async def websocket_progreso(websocket: WebSocket, job_id: str) -> None:
                 marcas_procesadas=status.marcas_procesadas,
                 mensaje=status.mensaje,
                 error=status.error,
+                reintentos=status.reintentos,
+                n_productos_fallidos=len(status.productos_fallidos),
             )
             await websocket.send_json(event.model_dump())
 

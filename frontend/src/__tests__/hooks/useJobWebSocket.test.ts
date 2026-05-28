@@ -97,6 +97,8 @@ function makeProgressEvent(estado: EstadoJob): JobProgressEvent {
     marcas_procesadas: 0,
     mensaje: 'Procesando…',
     error: null,
+    reintentos: 0,
+    n_productos_fallidos: 0,
   }
 }
 
