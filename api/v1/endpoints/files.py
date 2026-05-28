@@ -27,7 +27,12 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from loguru import logger
 
 from api.core.config import get_settings
-from api.v1.schemas.job import SUPPORTED_LANGUAGES, DescriptionReviewState, ReviewStatus
+from api.v1.schemas.job import (
+    SUPPORTED_LANGUAGES,
+    DescriptionReviewState,
+    ReviewStatus,
+    TranslationReviewState,
+)
 from services.storage_service import get_storage_service
 
 router = APIRouter(prefix="/files", tags=["Files"])
@@ -210,6 +215,8 @@ async def descargar_csv(
                     if state.status == ReviewStatus.APPROVED:
                         if state.edited_text:
                             row["corta"] = state.edited_text
+                        if state.edited_larga:
+                            row["larga"] = state.edited_larga
                         rows_aprobadas.append(row)
 
         if not rows_aprobadas:
@@ -327,7 +334,6 @@ async def descargar_fichas_marca(job_id: str) -> FileResponse:
 @router.get(
     "/{job_id}/translations/{lang}",
     summary="Descargar CSV de traducciones de descripciones por idioma",
-    response_class=FileResponse,
     include_in_schema=True,
 )
 async def descargar_traducciones(
@@ -336,9 +342,17 @@ async def descargar_traducciones(
         description=f"Código ISO 639-1 del idioma destino. Valores permitidos: {SUPPORTED_LANGUAGES}.",
         examples=["en", "fr", "de"],
     ),
-) -> FileResponse:
+    only_approved: bool = Query(
+        default=False,
+        description="Si es true, solo incluye filas aprobadas en revisión.",
+    ),
+) -> Response:
     """
     Devuelve el CSV de traducciones para el idioma especificado (Fase 7.2).
+
+    Si hay revisiones en Redis (approve/edit), aplica los textos editados sobre
+    el CSV original antes de devolver la respuesta. Con only_approved=true,
+    solo incluye las filas con status=approved.
 
     El CSV contiene: codigo, nombre, marca, categoria,
     descripcion_corta, descripcion_larga, keywords, meta_description.
@@ -346,9 +360,10 @@ async def descargar_traducciones(
     Args:
         job_id: identificador UUID del trabajo.
         lang: código ISO 639-1 del idioma destino (ej: 'en', 'fr', 'de', 'it', 'pt').
+        only_approved: si True, solo devuelve filas aprobadas.
 
     Returns:
-        FileResponse con el CSV de traducciones como adjunto descargable.
+        Response con el CSV de traducciones (con edits aplicados) como adjunto.
 
     Raises:
         HTTPException 400: si el idioma no está soportado.
@@ -381,13 +396,53 @@ async def descargar_traducciones(
             ),
         )
 
-    filename = f"descripciones_{lang}_{job_id[:8]}.csv"
-    return FileResponse(
-        path=str(csv_path),
-        media_type="text/csv; charset=utf-8",
-        filename=filename,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    redis: aioredis.Redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        fieldnames: list[str] = []
+        rows_out: list[dict] = []
+
+        with open(csv_path, encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            fieldnames = list(reader.fieldnames or [])
+            for row in reader:
+                codigo = row.get("codigo", "")
+                if not codigo:
+                    continue
+
+                review_key = f"job:{job_id}:trad_review:{lang}:{codigo}"
+                raw_review = await redis.get(review_key)
+                if raw_review:
+                    state = TranslationReviewState.model_validate_json(raw_review)
+                    if only_approved and state.status != ReviewStatus.APPROVED:
+                        continue
+                    if state.status == ReviewStatus.REJECTED:
+                        continue
+                    if state.edited_corta:
+                        row["descripcion_corta"] = state.edited_corta
+                    if state.edited_larga:
+                        row["descripcion_larga"] = state.edited_larga
+                elif only_approved:
+                    # Sin revisión → pending → excluir si only_approved
+                    continue
+
+                rows_out.append(row)
+
+        if not rows_out:
+            return Response(status_code=204)
+
+        buf = io.StringIO()
+        writer = csv.DictWriter(buf, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows_out)
+
+        filename = f"traducciones_{lang}_{job_id[:8]}.csv"
+        return Response(
+            content=buf.getvalue().encode("utf-8-sig"),
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    finally:
+        await redis.aclose()
 
 
 @router.get(
