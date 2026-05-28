@@ -12,7 +12,7 @@ la capa HTTP (api/) y la capa de servicios (services/).
 
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, ClassVar
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -610,6 +610,15 @@ class JobStatus(BaseModel):
     creado_en: datetime = Field(default_factory=datetime.utcnow)
     actualizado_en: datetime = Field(default_factory=datetime.utcnow)
     completado_en: datetime | None = Field(default=None)
+    productos_fallidos: list[str] = Field(
+        default_factory=list,
+        description="Códigos de productos que fallaron en el último procesamiento.",
+    )
+    reintentos: int = Field(
+        default=0,
+        description="Número de veces que se ha reintentado este job.",
+    )
+    MAX_REINTENTOS: ClassVar[int] = 3
 
     @property
     def porcentaje(self) -> float:
@@ -655,3 +664,45 @@ class JobProgressEvent(BaseModel):
     marcas_procesadas: int = 0
     mensaje: str
     error: str | None = None
+
+
+# ── Reintento parcial de productos fallidos ───────────────────────────────────
+
+class RetryJobRequest(BaseModel):
+    """
+    Body de la petición POST para reintentar solo los productos fallidos de un job.
+
+    Cada flag indica qué categoría de fallos se incluye en el reintento.
+    Solo aplican las categorías compatibles con el tipo de job original.
+
+    :author: BenjaminDTS
+    """
+
+    retry_images: bool = Field(
+        default=True,
+        description="Reintentar productos con imagen fallida.",
+    )
+    retry_brands: bool = Field(
+        default=True,
+        description="Reintentar productos con marca no resuelta.",
+    )
+    retry_descriptions: bool = Field(
+        default=False,
+        description="Reintentar productos con descripción fallida.",
+    )
+    retry_seo: bool = Field(
+        default=False,
+        description="Reintentar productos con SEO fallido.",
+    )
+
+
+class RetryJobResponse(BaseModel):
+    """
+    Respuesta de la petición POST de reintento parcial de productos fallidos.
+
+    :author: BenjaminDTS
+    """
+
+    job_id: str = Field(description="ID del job sobre el que se aplica el reintento.")
+    productos_a_reintentar: int = Field(description="Número de productos que se van a reprocesar.")
+    reintentos_previos: int = Field(description="Número de reintentos ya realizados antes de este.")
