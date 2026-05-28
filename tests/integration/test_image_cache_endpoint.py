@@ -196,21 +196,20 @@ class TestImageCacheHitCounting:
             ResultadoDescarga(url="http://test/1.jpg", exitoso=True, ruta_guardada=str(fake_img))
         ]
 
+        settings = MagicMock()
+        settings.image_cache_enabled = False  # caché deshabilitada
+        settings.file_ttl_seconds = 3600
+        settings.redis_url = "redis://localhost:6379/0"
+
+        storage = MagicMock()
+        storage.create_zip.return_value = tmp_path / f"{job_id}.zip"
+
         with patch("workers.tasks._get_redis_client", return_value=mock_redis), \
              patch("services.scraper.pipeline.buscar_urls_imagenes", return_value=["http://test/1.jpg"]) as mock_prod, \
              patch("services.scraper.pipeline.descargar_imagenes_producto", return_value=mock_resultados), \
-             patch("services.scraper.pipeline.get_storage_service") as mock_storage_factory, \
-             patch("api.core.config.get_settings") as mock_settings:
-
-            settings = MagicMock()
-            settings.image_cache_enabled = False  # caché deshabilitada
-            settings.file_ttl_seconds = 3600
-            settings.redis_url = "redis://localhost:6379/0"
-            mock_settings.return_value = settings
-
-            storage = MagicMock()
-            storage.create_zip.return_value = tmp_path / f"{job_id}.zip"
-            mock_storage_factory.return_value = storage
+             patch("services.scraper.pipeline.get_storage_service", return_value=storage), \
+             patch("services.scraper.pipeline.get_settings", return_value=settings), \
+             patch("workers.tasks.get_settings", return_value=settings):
 
             ejecutar_scraping(job_id, _make_csv(2), _make_config_dict())
 
