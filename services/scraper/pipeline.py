@@ -352,7 +352,12 @@ class ScrapingPipeline:
                     from PIL import Image as _PilImage  # noqa: PLC0415
                     with _PilImage.open(ruta_imagen) as img:
                         width, height = img.size
-                except Exception:
+                except Exception as exc:
+                    logger.debug(
+                        "No se pudo leer dimensiones de imagen para caché",
+                        exc_info=exc,
+                        extra={"path": str(ruta_imagen)},
+                    )
                     width, height = 0, 0
                 try:
                     self._image_cache.register(

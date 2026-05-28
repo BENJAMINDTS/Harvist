@@ -181,9 +181,7 @@ class TestCacheMiss:
         pipeline = _make_pipeline(image_cache, storage)
 
         with patch("services.scraper.pipeline.buscar_urls_imagenes", return_value=["http://img.test/1.jpg"]) as mock_prod, \
-             patch("services.scraper.pipeline.descargar_imagenes_producto", return_value=mock_resultados), \
-             patch("services.scraper.pipeline._PilImage_open_safe", return_value=(0, 0)) if False else \
-             patch("builtins.open", side_effect=lambda *a, **kw: (_ for _ in ()).throw(OSError)):
+             patch("services.scraper.pipeline.descargar_imagenes_producto", return_value=mock_resultados):
             pipeline._procesar_producto(_make_producto())
 
         mock_prod.assert_called_once()

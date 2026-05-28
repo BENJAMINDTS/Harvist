@@ -67,6 +67,16 @@ class ImageCacheService:
         with self._connect() as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute(_DDL)
+            # SQLite NULL != NULL in uniqueness checks, so PRIMARY KEY (ean, codigo)
+            # does not prevent duplicate rows when ean is NULL. A partial unique index
+            # on codigo enforces the constraint for the no-EAN case.
+            conn.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_codigo_no_ean
+                    ON image_index (codigo)
+                    WHERE ean IS NULL OR ean = ''
+                """
+            )
         logger.debug("ImageCacheService inicializado", extra={"db_path": str(db_path)})
 
     def _connect(self) -> sqlite3.Connection:
