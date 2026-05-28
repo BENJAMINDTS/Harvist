@@ -23,7 +23,6 @@ import pytest
 
 from api.v1.schemas.job import EstadoJob, JobStatus, RetryJobRequest, SearchConfig, TipoJob
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 

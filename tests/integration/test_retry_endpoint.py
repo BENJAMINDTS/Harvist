@@ -44,7 +44,6 @@ get_settings.cache_clear()
 from api.main import app  # noqa: E402
 from api.v1.schemas.job import EstadoJob, JobStatus  # noqa: E402
 
-
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 
