@@ -102,22 +102,28 @@ class DescriptionReviewRequest(BaseModel):
     action: ReviewAction = Field(description="Acción a aplicar: approve, reject o edit.")
     edited_text: str | None = Field(
         default=None,
-        description="Requerido si action es 'edit'. Texto editado por el usuario.",
+        description="Descripción corta editada por el usuario (opcional cuando action es 'edit').",
+    )
+    edited_larga: str | None = Field(
+        default=None,
+        description="Descripción larga editada por el usuario (opcional cuando action es 'edit').",
     )
 
     @model_validator(mode="after")
     def edited_text_required_when_edit(self) -> "DescriptionReviewRequest":
         """
-        Valida que edited_text esté presente cuando action es 'edit'.
+        Valida que al menos uno de edited_text o edited_larga esté presente cuando action es 'edit'.
 
         Returns:
             La instancia validada.
 
         Raises:
-            ValueError: si action es 'edit' y edited_text está ausente o vacío.
+            ValueError: si action es 'edit' y ningún campo editado está presente.
         """
-        if self.action == ReviewAction.EDIT and not self.edited_text:
-            raise ValueError("edited_text es requerido cuando action es 'edit'")
+        if self.action == ReviewAction.EDIT and not self.edited_text and not self.edited_larga:
+            raise ValueError(
+                "Al menos uno de edited_text (corta) o edited_larga debe estar presente cuando action es 'edit'"
+            )
         return self
 
 
@@ -137,7 +143,11 @@ class DescriptionReviewState(BaseModel):
     )
     edited_text: str | None = Field(
         default=None,
-        description="Texto editado por el usuario (solo cuando action='edit').",
+        description="Descripción corta editada por el usuario.",
+    )
+    edited_larga: str | None = Field(
+        default=None,
+        description="Descripción larga editada por el usuario.",
     )
 
 
@@ -154,6 +164,89 @@ class DescriptionReviewEntry(DescriptionReviewState):
     nombre: str = Field(default="", description="Nombre del producto.")
     descripcion_corta: str = Field(default="", description="Descripción corta generada por IA.")
     descripcion_larga: str = Field(default="", description="Descripción larga generada por IA.")
+
+
+# ── Revisión de traducciones (Fase 7.2 — extensión revisión) ─────────────────
+
+
+class TranslationReviewRequest(BaseModel):
+    """
+    Body de la petición PATCH para revisar una traducción.
+
+    Permite aprobar, rechazar o editar descripcion_corta y/o descripcion_larga
+    de la traducción de un producto en un idioma concreto.
+
+    :author: BenjaminDTS
+    """
+
+    action: ReviewAction = Field(description="Acción a aplicar: approve, reject o edit.")
+    edited_corta: str | None = Field(
+        default=None,
+        description="Descripción corta traducida editada (opcional cuando action es 'edit').",
+    )
+    edited_larga: str | None = Field(
+        default=None,
+        description="Descripción larga traducida editada (opcional cuando action es 'edit').",
+    )
+
+    @model_validator(mode="after")
+    def validate_edit_fields(self) -> "TranslationReviewRequest":
+        """
+        Valida que al menos un campo editado esté presente cuando action es 'edit'.
+
+        Returns:
+            La instancia validada.
+
+        Raises:
+            ValueError: si action es 'edit' y ningún campo editado está presente.
+        """
+        if self.action == ReviewAction.EDIT and not self.edited_corta and not self.edited_larga:
+            raise ValueError(
+                "Al menos uno de edited_corta o edited_larga debe estar presente cuando action es 'edit'"
+            )
+        return self
+
+
+class TranslationReviewState(BaseModel):
+    """
+    Estado de revisión de una traducción almacenado en Redis.
+
+    Clave Redis: job:{job_id}:trad_review:{lang}:{codigo}
+
+    :author: BenjaminDTS
+    """
+
+    codigo: str = Field(description="Código del producto.")
+    lang: str = Field(description="Código ISO 639-1 del idioma (ej: 'en', 'fr').")
+    status: ReviewStatus = Field(
+        default=ReviewStatus.PENDING,
+        description="Estado de revisión de la traducción.",
+    )
+    edited_corta: str | None = Field(
+        default=None,
+        description="Descripción corta editada por el usuario.",
+    )
+    edited_larga: str | None = Field(
+        default=None,
+        description="Descripción larga editada por el usuario.",
+    )
+
+
+class TranslationReviewEntry(TranslationReviewState):
+    """
+    Entrada de revisión de traducción enriquecida con el contenido del CSV.
+
+    Combina el estado de revisión de Redis con los datos del CSV de traducciones
+    para devolver al frontend toda la información en un solo objeto.
+
+    :author: BenjaminDTS
+    """
+
+    nombre: str = Field(default="", description="Nombre del producto.")
+    descripcion_corta: str = Field(default="", description="Descripción corta traducida por IA.")
+    descripcion_larga: str = Field(default="", description="Descripción larga traducida por IA.")
+    keywords: str = Field(default="", description="Keywords SEO traducidas.")
+    meta_description: str = Field(default="", description="Meta description SEO traducida.")
 
 
 # ── Validación de marcas (Fase 7.4) ───────────────────────────────────────────

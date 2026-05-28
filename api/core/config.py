@@ -323,11 +323,11 @@ class Settings(BaseSettings):
 
     # ── IA — Fase 5 — Proveedor ──────────────────────────────────────────────
     ai_provider: Literal["anthropic", "groq"] = Field(
-        default="anthropic",
+        default="groq",
         description=(
             "Proveedor de IA para generar descripciones: "
-            "'anthropic' (Claude API, requiere créditos) | "
-            "'groq' (gratuito, modelos Llama/Mixtral)."
+            "'groq' (gratuito, modelos Llama/Mixtral) | "
+            "'anthropic' (Claude API, requiere créditos)."
         ),
     )
     groq_api_key: str = Field(
@@ -350,10 +350,14 @@ class Settings(BaseSettings):
         description="Modelo Claude a usar para generar descripciones.",
     )
     claude_max_tokens: int = Field(
-        default=300,
+        default=2048,
         ge=50,
-        le=4096,
-        description="Máximo de tokens por descripción generada.",
+        le=8192,
+        description=(
+            "Máximo de tokens en la respuesta del modelo IA. "
+            "Con batch de 10 productos cada uno necesita ~120-150 tokens (corta + larga). "
+            "Mínimo recomendado: 2048 para batches de 10 productos."
+        ),
     )
     claude_timeout: int = Field(default=30, ge=5)
     claude_max_retries: int = Field(default=3, ge=1)

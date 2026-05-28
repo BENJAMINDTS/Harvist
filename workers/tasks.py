@@ -502,7 +502,7 @@ def ejecutar_scraping(
             )
         _actualizar_estado(redis_client, job_status)
 
-        resumen_retorno = {k: v for k, v in resumen.items() if k not in ("errores_csv", "_productos")}
+        resumen_retorno = {k: v for k, v in resumen.items() if k not in ("errores_csv", "_productos", "_resultados")}
         logger.info(
             "Tarea Celery completada",
             extra={"job_id": job_id, **resumen_retorno},
