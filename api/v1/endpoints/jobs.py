@@ -13,6 +13,8 @@ Rutas expuestas:
   POST   /api/v1/jobs/{job_id}/resume                          — Reanudar un job cancelado o fallido
   PATCH  /api/v1/jobs/{job_id}/descriptions/{codigo}           — Revisar (aprobar/rechazar/editar) una descripción (Fase 7.3)
   GET    /api/v1/jobs/{job_id}/descriptions/review             — Estado de revisión de todas las descripciones (Fase 7.3)
+  GET    /api/v1/jobs/{job_id}/translations/{lang}/review      — Estado de revisión de traducciones por idioma (Fase 7.2)
+  PATCH  /api/v1/jobs/{job_id}/translations/{lang}/{codigo}    — Revisar (aprobar/rechazar/editar) una traducción (Fase 7.2)
   WS     /api/v1/jobs/{job_id}/ws                              — Stream de progreso en tiempo real
 
 Este módulo solo maneja HTTP: valida, delega a workers y devuelve respuesta.
@@ -68,6 +70,9 @@ from api.v1.schemas.job import (
     ReviewStatus,
     SearchConfig,
     TipoJob,
+    TranslationReviewEntry,
+    TranslationReviewRequest,
+    TranslationReviewState,
 )
 from services.storage_service import get_storage_service
 
@@ -84,6 +89,10 @@ _JOB_CONFIG_KEY = "job:{job_id}:config"
 _KEY_TTL = settings.file_ttl_seconds
 # Clave Redis donde se almacena el estado de revisión de una descripción individual
 _JOB_REVIEW_KEY = "job:{job_id}:review:{codigo}"
+# Clave Redis donde se almacena el estado de revisión de una traducción individual
+_JOB_TRAD_REVIEW_KEY = "job:{job_id}:trad_review:{lang}:{codigo}"
+# Idiomas soportados para traducción
+_SUPPORTED_LANGS = {"es", "en", "fr", "de", "it", "pt"}
 # Clave Redis donde se almacenan las marcas pendientes de validación (Fase 7.4)
 _BRANDS_PENDING_KEY = "job:{job_id}:brands_pending"
 # Lock a nivel de módulo para proteger escrituras concurrentes en brand_cache.json
@@ -994,17 +1003,21 @@ async def revisar_descripcion(
         if body.action == ReviewAction.APPROVE:
             new_status = ReviewStatus.APPROVED
             edited_text = None
+            edited_larga = None
         elif body.action == ReviewAction.REJECT:
             new_status = ReviewStatus.REJECTED
             edited_text = None
-        else:  # EDIT
+            edited_larga = None
+        else:  # EDIT — al menos uno de los dos campos estará presente (validado en schema)
             new_status = ReviewStatus.APPROVED
             edited_text = body.edited_text
+            edited_larga = body.edited_larga
 
         new_review_state = DescriptionReviewState(
             codigo=codigo,
             status=new_status,
             edited_text=edited_text,
+            edited_larga=edited_larga,
         )
 
         # Persistir en Redis con TTL
@@ -1443,6 +1456,218 @@ async def confirmar_seleccion_fotos(
                 ),
             }
         )
+    finally:
+        await redis.aclose()
+
+
+# ── Revisión de traducciones (Fase 7.2) ───────────────────────────────────────
+
+
+@router.get(
+    "/{job_id}/translations/{lang}/review",
+    response_model=dict,
+    summary="Obtener estado de revisión de traducciones por idioma (paginado)",
+)
+async def obtener_revisiones_traducciones(
+    job_id: str,
+    lang: str,
+    limit: int = 25,
+    offset: int = 0,
+) -> JSONResponse:
+    """
+    Devuelve el estado de revisión de todas las traducciones de un idioma para un job, paginado.
+
+    Las traducciones sin entrada en Redis se devuelven con status=pending por defecto.
+    Requiere que traducciones_{lang}.csv exista en el storage del job.
+
+    Args:
+        job_id: identificador UUID del trabajo.
+        lang: código ISO 639-1 del idioma (ej: 'en', 'fr', 'de').
+        limit: máximo de registros por página (1-100, por defecto 25).
+        offset: número de registros a saltar (por defecto 0).
+
+    Returns:
+        JSONResponse con lista paginada de TranslationReviewEntry.
+
+    Raises:
+        HTTPException 400: si lang no está soportado o limit fuera de rango.
+        HTTPException 404: si el job no existe o no tiene traducciones para ese idioma.
+
+    :author: BenjaminDTS
+    """
+    if lang not in _SUPPORTED_LANGS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Idioma '{lang}' no soportado. Valores válidos: {sorted(_SUPPORTED_LANGS)}.",
+        )
+    if not (1 <= limit <= 100):
+        raise HTTPException(status_code=400, detail="limit debe estar entre 1 y 100.")
+
+    redis = await _get_redis()
+    try:
+        await _get_job_status(redis, job_id)  # 404 si no existe
+
+        storage = get_storage_service()
+        csv_path: Path = storage.get_job_dir(job_id) / f"traducciones_{lang}.csv"
+        if not csv_path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"No se encontraron traducciones '{lang}' para el job '{job_id}'.",
+            )
+
+        filas: list[dict] = []
+        with open(csv_path, encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row.get("codigo") and row.get("exitoso", "True") != "False":
+                    filas.append(row)
+
+        total = len(filas)
+        pagina = filas[offset : offset + limit]
+
+        revisiones: list[dict] = []
+        for fila in pagina:
+            cod = fila["codigo"]
+            review_key = _JOB_TRAD_REVIEW_KEY.format(job_id=job_id, lang=lang, codigo=cod)
+            raw_review = await redis.get(review_key)
+            if raw_review:
+                base_state = TranslationReviewState.model_validate_json(raw_review)
+            else:
+                base_state = TranslationReviewState(codigo=cod, lang=lang)
+            entry = TranslationReviewEntry(
+                codigo=cod,
+                lang=lang,
+                status=base_state.status,
+                edited_corta=base_state.edited_corta,
+                edited_larga=base_state.edited_larga,
+                nombre=fila.get("nombre", ""),
+                descripcion_corta=fila.get("descripcion_corta", ""),
+                descripcion_larga=fila.get("descripcion_larga", ""),
+                keywords=fila.get("keywords", ""),
+                meta_description=fila.get("meta_description", ""),
+            )
+            revisiones.append(entry.model_dump())
+
+        return JSONResponse(
+            content={
+                "success": True,
+                "data": {
+                    "items": revisiones,
+                    "total": total,
+                    "limit": limit,
+                    "offset": offset,
+                    "lang": lang,
+                },
+                "message": f"{len(revisiones)} traducciones devueltas.",
+            }
+        )
+
+    finally:
+        await redis.aclose()
+
+
+@router.patch(
+    "/{job_id}/translations/{lang}/{codigo}",
+    response_model=dict,
+    summary="Revisar una traducción generada por IA (aprobar / rechazar / editar)",
+)
+async def revisar_traduccion(
+    job_id: str,
+    lang: str,
+    codigo: str,
+    body: TranslationReviewRequest,
+) -> JSONResponse:
+    """
+    Aplica una acción de revisión (approve / reject / edit) sobre una traducción individual.
+
+    El estado se persiste en Redis bajo job:{job_id}:trad_review:{lang}:{codigo}
+    con el mismo TTL que el job.
+
+    Args:
+        job_id: identificador UUID del trabajo.
+        lang: código ISO 639-1 del idioma (ej: 'en', 'fr').
+        codigo: código del producto.
+        body: acción y campos editados.
+
+    Returns:
+        JSONResponse con el nuevo estado de la traducción.
+
+    Raises:
+        HTTPException 400: si lang no está soportado.
+        HTTPException 404: si el job o la traducción no existen.
+
+    :author: BenjaminDTS
+    """
+    if lang not in _SUPPORTED_LANGS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Idioma '{lang}' no soportado. Valores válidos: {sorted(_SUPPORTED_LANGS)}.",
+        )
+
+    redis = await _get_redis()
+    try:
+        await _get_job_status(redis, job_id)
+
+        storage = get_storage_service()
+        csv_path: Path = storage.get_job_dir(job_id) / f"traducciones_{lang}.csv"
+        if not csv_path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"No se encontraron traducciones '{lang}' para el job '{job_id}'.",
+            )
+
+        # Verificar que el producto existe en el CSV
+        codigo_existe = False
+        with open(csv_path, encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row.get("codigo") == codigo:
+                    codigo_existe = True
+                    break
+        if not codigo_existe:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Producto '{codigo}' no encontrado en traducciones '{lang}' del job '{job_id}'.",
+            )
+
+        review_key = _JOB_TRAD_REVIEW_KEY.format(job_id=job_id, lang=lang, codigo=codigo)
+
+        if body.action == ReviewAction.APPROVE:
+            new_status = ReviewStatus.APPROVED
+            edited_corta = None
+            edited_larga = None
+        elif body.action == ReviewAction.REJECT:
+            new_status = ReviewStatus.REJECTED
+            edited_corta = None
+            edited_larga = None
+        else:  # EDIT
+            new_status = ReviewStatus.APPROVED
+            edited_corta = body.edited_corta
+            edited_larga = body.edited_larga
+
+        new_state = TranslationReviewState(
+            codigo=codigo,
+            lang=lang,
+            status=new_status,
+            edited_corta=edited_corta,
+            edited_larga=edited_larga,
+        )
+
+        await redis.set(review_key, new_state.model_dump_json(), ex=_KEY_TTL)
+
+        logger.info(
+            "Traducción revisada",
+            extra={"job_id": job_id, "lang": lang, "codigo": codigo, "action": body.action.value},
+        )
+
+        return JSONResponse(
+            content={
+                "success": True,
+                "data": new_state.model_dump(),
+                "message": f"Traducción '{codigo}' ({lang}) marcada como {new_status.value}.",
+            }
+        )
+
     finally:
         await redis.aclose()
 
