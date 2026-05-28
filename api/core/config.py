@@ -154,6 +154,22 @@ class Settings(BaseSettings):
             raise ValueError("brand_cache_path no puede estar vacío.")
         return v.strip()
 
+    # ── Caché de imágenes entre jobs ──────────────────────────────────────────
+    image_cache_enabled: bool = Field(
+        default=True,
+        description="Si True, reutiliza imágenes descargadas en jobs anteriores.",
+    )
+    image_cache_path: str = Field(
+        default="data/image_cache.db",
+        description="Ruta a la base de datos SQLite del índice de imágenes.",
+    )
+
+    @property
+    def image_cache_db(self) -> "Path":
+        """Devuelve la ruta al fichero SQLite de la caché de imágenes."""
+        from pathlib import Path
+        return Path(self.image_cache_path)
+
     # ── Selección de fotos — Fase 7.5 ─────────────────────────────────────────
     candidates_ttl_hours: int = Field(
         default=24,
