@@ -664,6 +664,8 @@ class JobProgressEvent(BaseModel):
     marcas_procesadas: int = 0
     mensaje: str
     error: str | None = None
+    reintentos: int = 0
+    n_productos_fallidos: int = 0
 
 
 # ── Reintento parcial de productos fallidos ───────────────────────────────────

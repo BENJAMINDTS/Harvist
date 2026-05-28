@@ -1861,6 +1861,8 @@ async def websocket_progreso(websocket: WebSocket, job_id: str) -> None:
                 marcas_procesadas=status.marcas_procesadas,
                 mensaje=status.mensaje,
                 error=status.error,
+                reintentos=status.reintentos,
+                n_productos_fallidos=len(status.productos_fallidos),
             )
             await websocket.send_json(event.model_dump())
 
