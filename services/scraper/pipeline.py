@@ -34,6 +34,9 @@ from services.storage_service import StorageService, get_storage_service
 # Firma: (job_id, productos_procesados, total, imagenes_ok, imagenes_fail) -> None
 ProgressCallback = Callable[[str, int, int, int, int], None]
 
+# Sentinel para distinguir "image_cache no pasado" de "image_cache=None explícito"
+_CACHE_UNSET = object()
+
 
 class ScrapingPipeline:
     """
@@ -50,7 +53,7 @@ class ScrapingPipeline:
         config: SearchConfig,
         storage: StorageService | None = None,
         carpeta_job_id: str | None = None,
-        image_cache=None,
+        image_cache=_CACHE_UNSET,
     ) -> None:
         """
         Inicializa el pipeline para un job concreto.
@@ -62,9 +65,9 @@ class ScrapingPipeline:
             carpeta_job_id: job_id cuya carpeta de almacenamiento se reutiliza.
                 Al reanudar un job se pasa el job_id original para que las
                 imágenes se escriban en la misma carpeta. Si None se usa job_id.
-            image_cache: ImageCacheService opcional. Si None, se construye uno
-                automáticamente cuando IMAGE_CACHE_ENABLED=true. Pasar una
-                instancia explícita facilita los tests.
+            image_cache: ImageCacheService explícito o None para deshabilitar caché.
+                Si no se pasa (sentinel), se construye uno automáticamente según
+                IMAGE_CACHE_ENABLED. Pasar None desactiva el caché sin leer settings.
 
         :author: BenjaminDTS
         """
@@ -74,16 +77,18 @@ class ScrapingPipeline:
         self._storage = storage or get_storage_service()
         self._cache_hits = 0
 
-        # Inicializar caché de imágenes si está habilitada
-        if image_cache is not None:
-            self._image_cache = image_cache
-        else:
+        # Inicializar caché de imágenes
+        if image_cache is _CACHE_UNSET:
+            # No pasado explícitamente: leer de settings
             settings = get_settings()
             if settings.image_cache_enabled:
                 from services.scraper.image_cache import ImageCacheService  # noqa: PLC0415
                 self._image_cache = ImageCacheService(settings.image_cache_db)
             else:
                 self._image_cache = None
+        else:
+            # Valor explícito (incluido None para deshabilitar en tests)
+            self._image_cache = image_cache
 
     def ejecutar(
         self,
