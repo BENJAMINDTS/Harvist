@@ -72,6 +72,7 @@ class ScrapingPipeline:
         callback: ProgressCallback | None = None,
         offset_productos: int = 0,
         save_all_candidates: bool = False,
+        codigos_filtro: set[str] | None = None,
     ) -> dict:
         """
         Ejecuta el pipeline completo y devuelve un resumen del resultado.
@@ -83,14 +84,19 @@ class ScrapingPipeline:
             offset_productos: número de productos a saltar desde el inicio de
                 la lista antes de comenzar a procesar. Se usa al reanudar un
                 job cancelado o fallido. Por defecto 0 (procesar desde el
-                principio).
+                principio). Ignorado cuando codigos_filtro está definido.
             save_all_candidates: si True, descarga TODAS las candidatas válidas
                                 sin límite al directorio candidates/. Si False,
                                 comportamiento por defecto (hasta max_imagenes).
+            codigos_filtro: conjunto de códigos de producto a procesar. Si se
+                proporciona, solo se procesan los productos cuyos códigos estén
+                en este conjunto (modo retry parcial). Tiene prioridad sobre
+                offset_productos.
 
         Returns:
             Diccionario con el resumen: total_productos, imagenes_descargadas,
-            imagenes_fallidas, errores_csv, ruta_zip, _productos.
+            imagenes_fallidas, errores_csv, ruta_zip, _productos,
+            _productos_fallidos.
 
         Raises:
             CsvParserError: si el CSV es inválido estructuralmente.
@@ -99,7 +105,11 @@ class ScrapingPipeline:
         """
         logger.info(
             "Pipeline iniciado",
-            extra={"job_id": self._job_id, "offset_productos": offset_productos},
+            extra={
+                "job_id": self._job_id,
+                "offset_productos": offset_productos,
+                "codigos_filtro": len(codigos_filtro) if codigos_filtro is not None else None,
+            },
         )
 
         # ── Paso 1: Parsear y validar el CSV ──────────────────────────────────
@@ -113,11 +123,25 @@ class ScrapingPipeline:
             )
 
         productos = resultado_csv.productos
-        total = len(productos)
+        total_original = len(productos)
 
-        # Aplicar offset para reanudar desde donde se dejó
-        if offset_productos > 0:
+        if codigos_filtro is not None:
+            # Modo retry: procesar solo los productos con código en el filtro
+            productos_pendientes = [p for p in productos if p.codigo in codigos_filtro]
+            total = len(productos_pendientes)
+            idx_start = 1
+            logger.info(
+                "Filtro de códigos aplicado (modo retry)",
+                extra={
+                    "job_id": self._job_id,
+                    "codigos_filtro": len(codigos_filtro),
+                    "productos_a_reintentar": total,
+                },
+            )
+        elif offset_productos > 0:
             productos_pendientes = productos[offset_productos:]
+            total = total_original
+            idx_start = offset_productos + 1
             logger.info(
                 "Offset aplicado, saltando productos ya procesados",
                 extra={
@@ -128,12 +152,14 @@ class ScrapingPipeline:
             )
         else:
             productos_pendientes = productos
+            total = total_original
+            idx_start = 1
 
         logger.info(
             "CSV parseado, iniciando scraping",
             extra={
                 "job_id": self._job_id,
-                "total_productos": total,
+                "total_productos": total_original,
                 "errores_csv": len(resultado_csv.errores),
             },
         )
@@ -141,14 +167,23 @@ class ScrapingPipeline:
         # ── Paso 2: Procesar cada producto (Productor → Consumidor) ───────────
         imagenes_ok = 0
         imagenes_fail = 0
+        _productos_fallidos: list[dict] = []
 
-        for idx, producto in enumerate(productos_pendientes, start=offset_productos + 1):
+        for idx, producto in enumerate(productos_pendientes, start=idx_start):
             producto_ok, producto_fail = self._procesar_producto(
                 producto,
                 save_all_candidates=save_all_candidates,
             )
             imagenes_ok += producto_ok
             imagenes_fail += producto_fail
+
+            # Registrar productos sin imágenes descargadas como fallidos
+            if producto_ok == 0 and producto_fail > 0:
+                _productos_fallidos.append({
+                    "codigo": producto.codigo,
+                    "nombre": producto.nombre,
+                    "razon": "imagen",
+                })
 
             if callback:
                 callback(self._job_id, idx, total, imagenes_ok, imagenes_fail)
@@ -181,17 +216,18 @@ class ScrapingPipeline:
                 ruta_zip = ""
 
         resumen = {
-            "total_productos": total,
+            "total_productos": total_original,
             "imagenes_descargadas": imagenes_ok,
             "imagenes_fallidas": imagenes_fail,
             "errores_csv": resultado_csv.errores,
             "ruta_zip": ruta_zip,
             "_productos": productos,  # Lista de productos para acceso posterior (Fase 7.5)
+            "_productos_fallidos": _productos_fallidos,  # Fallos por producto para retry
         }
 
         logger.info(
             "Pipeline completado",
-            extra={"job_id": self._job_id, **{k: v for k, v in resumen.items() if k != "errores_csv"}},
+            extra={"job_id": self._job_id, **{k: v for k, v in resumen.items() if k not in ("errores_csv", "_productos", "_productos_fallidos")}},
         )
         return resumen
 
