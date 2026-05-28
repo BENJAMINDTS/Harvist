@@ -103,7 +103,7 @@ class TestDescargarTraducciones:
             response = await client.get(f"/api/v1/files/{job_id}/translations/de")
 
         disposition = response.headers.get("content-disposition", "")
-        assert "descripciones_de_" in disposition
+        assert "traducciones_de_" in disposition
         assert ".csv" in disposition
 
     @pytest.mark.asyncio
