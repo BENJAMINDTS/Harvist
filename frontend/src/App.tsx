@@ -19,11 +19,12 @@ import { HomeScreen } from '@/components/HomeScreen'
 import { DashboardHome } from '@/components/DashboardHome'
 import { BrandsPanel } from '@/components/BrandsPanel'
 import { ReviewPanel } from '@/components/ReviewPanel'
+import { TranslationReviewPanel } from '@/components/TranslationReviewPanel'
 import BrandValidationPanel from '@/components/BrandValidationPanel'
 import PhotoSelectionPanel from '@/components/PhotoSelectionPanel'
 
 import { NsLogo } from '@/components/NsLogo'
-import { apiClient, getBrands, getBrandsPending, resumeJob, downloadTranslationCsv } from '@/api/client'
+import { apiClient, getBrands, getBrandsPending, resumeJob } from '@/api/client'
 import type { ApiError, BrandEntry, BrandPendingEntry, BrandValidationResult } from '@/api/client'
 import type { SearchConfigValues, TipoJob } from '@/components/SearchConfig'
 
@@ -50,6 +51,50 @@ function getModuleFromHash(): Module {
   const hash = window.location.hash.replace(/^#/, '').toLowerCase()
   const valid: Module[] = ['harvist', 'dolibarr', 'odoo', 'wordpress']
   return valid.includes(hash as Module) ? (hash as Module) : 'dashboard'
+}
+
+/**
+ * Wrapper colapsable para el panel de revisión de traducciones de un idioma.
+ *
+ * @author BenjaminDTS
+ */
+function TranslationReviewPanelSection({
+  jobId,
+  lang,
+  label,
+}: {
+  jobId: string
+  lang: string
+  label: string
+}) {
+  const [open, setOpen] = useState(true)
+  return (
+    <section className="w-full">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-3 text-sm font-semibold text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
+        aria-expanded={open}
+      >
+        <span>Revisar traducciones — {label}</span>
+        <svg
+          className={`h-4 w-4 text-gray-500 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          aria-hidden="true"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && (
+        <div className="mt-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-2">
+          <TranslationReviewPanel jobId={jobId} lang={lang} label={label} />
+        </div>
+      )}
+    </section>
+  )
 }
 
 const App: React.FC = () => {
@@ -361,7 +406,7 @@ const App: React.FC = () => {
     <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-950">
       {/* ── Cabecera ── */}
       <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-6 py-4">
-        <div className="max-w-6xl mx-auto flex items-center justify-between gap-6">
+        <div className="max-w-screen-2xl mx-auto flex items-center justify-between gap-6">
           <button
             type="button"
             onClick={handleBackToDashboard}
@@ -436,7 +481,7 @@ const App: React.FC = () => {
 
       {/* ── Contenido principal ── */}
       <div className="flex-1 overflow-auto">
-      <main className="max-w-6xl mx-auto px-4 py-8 space-y-6">
+      <main className="max-w-screen-2xl mx-auto px-4 py-8 space-y-6">
         {error && (
           <div className="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm" role="alert">
             {error}
@@ -495,69 +540,38 @@ const App: React.FC = () => {
               />
             )}
 
-            {/* Traducciones disponibles — visible cuando job de descripciones termina con idiomas seleccionados */}
+            {/* Paneles de revisión de traducciones — uno por idioma seleccionado */}
             {appState === 'done' &&
               tipoJob === 'descripciones' &&
               jobId !== null &&
-              targetLanguages.length > 0 && (
-                <section
-                  className="w-full max-w-2xl mx-auto rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4"
-                  aria-label="Descargar traducciones"
-                >
-                  <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
-                    Traducciones generadas
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {(
-                      [
-                        { code: 'en', label: 'Inglés' },
-                        { code: 'fr', label: 'Francés' },
-                        { code: 'de', label: 'Alemán' },
-                        { code: 'it', label: 'Italiano' },
-                        { code: 'pt', label: 'Portugués' },
-                      ] as const
-                    )
-                      .filter(({ code }) => targetLanguages.includes(code))
-                      .map(({ code, label }) => (
-                        <button
-                          key={code}
-                          type="button"
-                          onClick={async () => {
-                            try {
-                              const blob = await downloadTranslationCsv(jobId, code)
-                              const url = URL.createObjectURL(blob)
-                              const a = document.createElement('a')
-                              a.href = url
-                              a.download = `descripciones_${code}_${jobId.slice(0, 8)}.csv`
-                              a.click()
-                              URL.revokeObjectURL(url)
-                            } catch {
-                              // Error silencioso — el botón simplemente no descarga
-                            }
-                          }}
-                          className={
-                            "flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors duration-150 " +
-                            "bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700 " +
-                            "text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/40"
-                          }
-                          aria-label={`Descargar CSV en ${label}`}
-                        >
-                          <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                            <path d="M8 12l-4.5-4.5 1.06-1.06L7 9.38V2h2v7.38l2.44-2.94 1.06 1.06L8 12zM2 14h12v-2H2v2z" />
-                          </svg>
-                          {label}
-                        </button>
-                      ))}
-                  </div>
-                </section>
-              )}
+              targetLanguages.length > 0 &&
+              (
+                [
+                  { code: 'en', label: 'Inglés' },
+                  { code: 'fr', label: 'Francés' },
+                  { code: 'de', label: 'Alemán' },
+                  { code: 'it', label: 'Italiano' },
+                  { code: 'pt', label: 'Portugués' },
+                  { code: 'es', label: 'Español' },
+                ] as const
+              )
+                .filter(({ code }) => targetLanguages.includes(code))
+                .map(({ code, label }) => (
+                  <TranslationReviewPanelSection
+                    key={code}
+                    jobId={jobId}
+                    lang={code}
+                    label={label}
+                  />
+                ))
+            }
 
             {/* Panel de revisión de descripciones — visible cuando job de descripciones termina */}
             {appState === 'done' &&
               tipoJob === 'descripciones' &&
               jobId !== null &&
               descripcionesGeneradas > 0 && (
-                <section className="w-full max-w-2xl mx-auto">
+                <section className="w-full">
                   <button
                     type="button"
                     onClick={() => setReviewPanelOpen((o) => !o)}
@@ -577,7 +591,7 @@ const App: React.FC = () => {
                     </svg>
                   </button>
                   {reviewPanelOpen && (
-                    <div className="mt-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
+                    <div className="mt-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-2">
                       <ReviewPanel jobId={jobId} onComplete={handleReset} />
                     </div>
                   )}
