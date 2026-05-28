@@ -21,6 +21,7 @@ interface ReviewEntry {
   descripcion_larga: string
   status: 'pending' | 'approved' | 'rejected'
   edited_text: string | null
+  edited_larga: string | null
 }
 
 interface ReviewPanelProps {
@@ -35,6 +36,7 @@ interface ApiReviewItem {
   descripcion_larga: string
   status: 'pending' | 'approved' | 'rejected'
   edited_text: string | null
+  edited_larga: string | null
 }
 
 interface ApiReviewResponse {
@@ -53,6 +55,7 @@ interface ApiPatchResponse {
     codigo: string
     status: 'pending' | 'approved' | 'rejected'
     edited_text: string | null
+    edited_larga: string | null
   }
 }
 
@@ -90,11 +93,15 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ jobId, onComplete }) =
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [editingCodigo, setEditingCodigo] = useState<string | null>(null)
   const [editingText, setEditingText] = useState('')
+  const [editingLargaCodigo, setEditingLargaCodigo] = useState<string | null>(null)
+  const [editingLargeText, setEditingLargeText] = useState('')
   const [actionError, setActionError] = useState<string | null>(null)
   const [exportLoading, setExportLoading] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const textareaLargeRef = useRef<HTMLTextAreaElement>(null)
   const confirmingRef = useRef(false)
+  const confirmingLargeRef = useRef(false)
 
   // ── Carga de datos ───────────────────────────────────────────────────────────
 
@@ -136,27 +143,35 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ jobId, onComplete }) =
     }
   }, [editingCodigo])
 
+  useEffect(() => {
+    if (editingLargaCodigo && textareaLargeRef.current) {
+      textareaLargeRef.current.focus()
+    }
+  }, [editingLargaCodigo])
+
   // ── Acciones de revisión ─────────────────────────────────────────────────────
 
   const aplicarAccion = useCallback(
     async (
       codigo: string,
       action: 'approve' | 'reject' | 'edit',
-      editedText?: string
+      editedText?: string,
+      editedLarga?: string
     ): Promise<void> => {
       setActionLoading(codigo)
       setActionError(null)
       try {
-        const body: { action: string; edited_text?: string } = { action }
-        if (action === 'edit' && editedText !== undefined) {
-          body.edited_text = editedText
+        const body: { action: string; edited_text?: string; edited_larga?: string } = { action }
+        if (action === 'edit') {
+          if (editedText !== undefined) body.edited_text = editedText
+          if (editedLarga !== undefined) body.edited_larga = editedLarga
         }
 
         const response = await apiClient.patch<ApiPatchResponse>(
           `/jobs/${jobId}/descriptions/${encodeURIComponent(codigo)}`,
           body
         )
-        const { status: newStatus, edited_text: newEditedText } = response.data.data
+        const { status: newStatus, edited_text: newEditedText, edited_larga: newEditedLarga } = response.data.data
 
         setEntries((prev) =>
           prev.map((e) =>
@@ -165,8 +180,11 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ jobId, onComplete }) =
                   ...e,
                   status: newStatus,
                   edited_text: newEditedText,
+                  edited_larga: newEditedLarga,
                   descripcion_corta:
                     action === 'edit' && newEditedText ? newEditedText : e.descripcion_corta,
+                  descripcion_larga:
+                    action === 'edit' && newEditedLarga ? newEditedLarga : e.descripcion_larga,
                 }
               : e
           )
@@ -227,6 +245,47 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ jobId, onComplete }) =
       }
     },
     [handleConfirmEdit, handleCancelEdit]
+  )
+
+  // ── Handlers edición descripción larga ──────────────────────────────────────
+
+  const handleStartEditLarga = useCallback((entry: ReviewEntry) => {
+    setEditingLargaCodigo(entry.codigo)
+    setEditingLargeText(entry.edited_larga ?? entry.descripcion_larga)
+  }, [])
+
+  const handleConfirmEditLarga = useCallback(
+    async (codigo: string) => {
+      if (confirmingLargeRef.current) return
+      confirmingLargeRef.current = true
+      try {
+        if (editingLargeText.trim()) {
+          await aplicarAccion(codigo, 'edit', undefined, editingLargeText.trim())
+        }
+        setEditingLargaCodigo(null)
+        setEditingLargeText('')
+      } finally {
+        confirmingLargeRef.current = false
+      }
+    },
+    [aplicarAccion, editingLargeText]
+  )
+
+  const handleCancelEditLarga = useCallback(() => {
+    setEditingLargaCodigo(null)
+    setEditingLargeText('')
+  }, [])
+
+  const handleKeyDownEditLarga = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>, codigo: string) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        handleConfirmEditLarga(codigo)
+      } else if (e.key === 'Escape') {
+        handleCancelEditLarga()
+      }
+    },
+    [handleConfirmEditLarga, handleCancelEditLarga]
   )
 
   // ── Aprobación masiva ────────────────────────────────────────────────────────
@@ -441,7 +500,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ jobId, onComplete }) =
                 <th className="px-3 py-2 text-left w-24">Código</th>
                 <th className="px-3 py-2 text-left w-32">Nombre</th>
                 <th className="px-3 py-2 text-left">Descripción corta</th>
-                <th className="px-3 py-2 text-left hidden lg:table-cell">Descripción larga</th>
+                <th className="px-3 py-2 text-left table-cell">Descripción larga</th>
                 <th className="px-3 py-2 text-left w-24">Estado</th>
                 <th className="px-3 py-2 text-right w-28">Acciones</th>
               </tr>
@@ -489,8 +548,31 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ jobId, onComplete }) =
                         </span>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 dark:text-gray-400 align-top text-xs hidden lg:table-cell">
-                      <span className="line-clamp-3">{entry.descripcion_larga}</span>
+                    <td
+                      className="px-3 py-2 align-top text-xs table-cell cursor-pointer"
+                      onClick={() => !editingLargaCodigo && handleStartEditLarga(entry)}
+                      title="Click para editar descripción larga"
+                    >
+                      {editingLargaCodigo === entry.codigo ? (
+                        <textarea
+                          ref={textareaLargeRef}
+                          value={editingLargeText}
+                          onChange={(e) => setEditingLargeText(e.target.value)}
+                          onBlur={() => handleConfirmEditLarga(entry.codigo)}
+                          onKeyDown={(e) => handleKeyDownEditLarga(e, entry.codigo)}
+                          rows={6}
+                          className={
+                            "w-full rounded border border-blue-400 dark:border-blue-500 bg-white dark:bg-gray-800 " +
+                            "px-2 py-1 text-xs text-gray-800 dark:text-gray-100 " +
+                            "focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+                          }
+                          aria-label={`Editar descripción larga de ${entry.codigo}`}
+                        />
+                      ) : (
+                        <span className="text-gray-600 dark:text-gray-400 line-clamp-3 hover:line-clamp-none">
+                          {entry.edited_larga ?? entry.descripcion_larga}
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-2 align-top">
                       <span
