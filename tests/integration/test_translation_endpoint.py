@@ -165,8 +165,8 @@ class TestDescargarTraducciones:
         job_dir = tmp_path / job_id
         job_dir.mkdir(parents=True, exist_ok=True)
 
-        header = "codigo,nombre,idioma\n"
-        (job_dir / "traducciones_it.csv").write_bytes(header.encode("utf-8-sig"))
+        content = "codigo,nombre,idioma\nPROD001,Producto uno,it\n"
+        (job_dir / "traducciones_it.csv").write_bytes(content.encode("utf-8-sig"))
 
         storage = MagicMock()
         storage.get_job_dir.return_value = job_dir
