@@ -1156,3 +1156,34 @@ def cleanup_stale_candidates() -> dict:
 
     finally:
         redis_client.close()
+
+
+@celery_app.task(name="cleanup_image_cache_orphans")
+def cleanup_image_cache_orphans() -> dict:
+    """
+    Elimina del índice SQLite las entradas cuya imagen en disco ya no existe.
+
+    Se ejecuta semanalmente (domingos 03:00 UTC) para limpiar entradas
+    de jobs limpiados o archivos borrados manualmente.
+
+    Returns:
+        Dict con orphans_removed.
+
+    :author: BenjaminDTS
+    """
+    settings = get_settings()
+
+    if not settings.image_cache_enabled:
+        logger.info("Caché de imágenes deshabilitada, limpieza omitida.")
+        return {"orphans_removed": 0}
+
+    from services.scraper.image_cache import ImageCacheService  # noqa: PLC0415
+
+    cache = ImageCacheService(settings.image_cache_db)
+    removed = cache.cleanup_orphans()
+
+    logger.info(
+        "Limpieza de huérfanos del caché de imágenes completada",
+        extra={"orphans_removed": removed},
+    )
+    return {"orphans_removed": removed}
