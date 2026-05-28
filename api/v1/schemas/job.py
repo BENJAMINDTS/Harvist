@@ -553,6 +553,11 @@ class JobStatus(BaseModel):
     productos_procesados: int = Field(default=0, ge=0)
     imagenes_descargadas: int = Field(default=0, ge=0)
     imagenes_fallidas: int = Field(default=0, ge=0)
+    imagenes_cache_hit: int = Field(
+        default=0,
+        ge=0,
+        description="Imágenes reutilizadas desde la caché de jobs anteriores.",
+    )
     descripciones_generadas: int = Field(
         default=0,
         ge=0,

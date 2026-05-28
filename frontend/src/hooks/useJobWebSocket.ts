@@ -36,6 +36,7 @@ export interface JobProgressEvent {
   error: string | null
   reintentos: number
   n_productos_fallidos: number
+  imagenes_cache_hit: number
 }
 
 /** Estados internos de la conexión WebSocket */

@@ -7,6 +7,7 @@ Coordina:
   3. Consumer (ThreadPool) → descarga, validación y guardado de imágenes
   4. StorageService → compresión final en ZIP
   5. Callback de progreso → actualización del JobStatus en Redis
+  6. ImageCacheService → deduplicación de imágenes entre jobs (opcional)
 
 El pipeline se ejecuta dentro de la tarea Celery. Este módulo no importa
 nada de api/ ni de workers/ — es lógica de negocio pura.
@@ -18,9 +19,11 @@ nada de api/ ni de workers/ — es lógica de negocio pura.
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
 from loguru import logger
 
+from api.core.config import get_settings
 from api.v1.schemas.job import SearchConfig
 from services.csv_parser import CsvParser, CsvParserError, Producto
 from services.scraper.consumer import descargar_imagenes_producto
@@ -30,6 +33,9 @@ from services.storage_service import StorageService, get_storage_service
 # Tipo del callback de progreso que recibe el pipeline del worker
 # Firma: (job_id, productos_procesados, total, imagenes_ok, imagenes_fail) -> None
 ProgressCallback = Callable[[str, int, int, int, int], None]
+
+# Sentinel para distinguir "image_cache no pasado" de "image_cache=None explícito"
+_CACHE_UNSET = object()
 
 
 class ScrapingPipeline:
@@ -47,6 +53,7 @@ class ScrapingPipeline:
         config: SearchConfig,
         storage: StorageService | None = None,
         carpeta_job_id: str | None = None,
+        image_cache=_CACHE_UNSET,
     ) -> None:
         """
         Inicializa el pipeline para un job concreto.
@@ -58,6 +65,9 @@ class ScrapingPipeline:
             carpeta_job_id: job_id cuya carpeta de almacenamiento se reutiliza.
                 Al reanudar un job se pasa el job_id original para que las
                 imágenes se escriban en la misma carpeta. Si None se usa job_id.
+            image_cache: ImageCacheService explícito o None para deshabilitar caché.
+                Si no se pasa (sentinel), se construye uno automáticamente según
+                IMAGE_CACHE_ENABLED. Pasar None desactiva el caché sin leer settings.
 
         :author: BenjaminDTS
         """
@@ -65,6 +75,20 @@ class ScrapingPipeline:
         self._carpeta_id = carpeta_job_id or job_id
         self._config = config
         self._storage = storage or get_storage_service()
+        self._cache_hits = 0
+
+        # Inicializar caché de imágenes
+        if image_cache is _CACHE_UNSET:
+            # No pasado explícitamente: leer de settings
+            settings = get_settings()
+            if settings.image_cache_enabled:
+                from services.scraper.image_cache import ImageCacheService  # noqa: PLC0415
+                self._image_cache = ImageCacheService(settings.image_cache_db)
+            else:
+                self._image_cache = None
+        else:
+            # Valor explícito (incluido None para deshabilitar en tests)
+            self._image_cache = image_cache
 
     def ejecutar(
         self,
@@ -219,6 +243,7 @@ class ScrapingPipeline:
             "total_productos": total_original,
             "imagenes_descargadas": imagenes_ok,
             "imagenes_fallidas": imagenes_fail,
+            "imagenes_cache_hit": self._cache_hits,
             "errores_csv": resultado_csv.errores,
             "ruta_zip": ruta_zip,
             "_productos": productos,  # Lista de productos para acceso posterior (Fase 7.5)
@@ -235,6 +260,11 @@ class ScrapingPipeline:
         """
         Ejecuta el ciclo Productor→Consumidor para un producto individual.
 
+        Si IMAGE_CACHE_ENABLED está activo, comprueba si el producto ya fue
+        descargado en un job anterior antes de lanzar Selenium. En caso de
+        cache hit, copia la imagen directamente y omite el scraping.
+        Tras una descarga exitosa, registra la imagen en el índice de caché.
+
         Args:
             producto: producto con su query ya construida.
             save_all_candidates: si True, descarga TODAS las candidatas válidas
@@ -246,7 +276,38 @@ class ScrapingPipeline:
 
         :author: BenjaminDTS
         """
-        # Productor: obtener URLs de Bing
+        # ── Cache lookup: evitar Selenium si la imagen ya existe ──────────────
+        if self._image_cache is not None and not save_all_candidates:
+            ean = producto.ean if producto.ean and producto.ean.strip() else None
+            try:
+                cached_path = self._image_cache.lookup(ean, producto.codigo)
+                if cached_path is not None:
+                    dest = self._storage.copy_from_cache(
+                        cached_path,
+                        self._carpeta_id,
+                        producto.codigo,
+                    )
+                    self._cache_hits += 1
+                    logger.info(
+                        "Cache hit — imagen reutilizada sin Selenium",
+                        extra={
+                            "job_id": self._job_id,
+                            "codigo": producto.codigo,
+                            "ean": ean,
+                            "cached_path": str(cached_path),
+                            "dest": str(dest),
+                        },
+                    )
+                    return 1, 0
+            except Exception as exc:
+                # Fallback: si copy_from_cache falla, continuar con descarga normal
+                logger.error(
+                    "Error al reutilizar imagen de caché, descargando de nuevo",
+                    exc_info=exc,
+                    extra={"job_id": self._job_id, "codigo": producto.codigo},
+                )
+
+        # ── Productor: obtener URLs de Bing ───────────────────────────────────
         try:
             urls = buscar_urls_imagenes(
                 producto=producto,
@@ -267,7 +328,7 @@ class ScrapingPipeline:
             )
             return 0, 0
 
-        # Consumidor: descargar, validar y guardar
+        # ── Consumidor: descargar, validar y guardar ──────────────────────────
         resultados = descargar_imagenes_producto(
             job_id=self._carpeta_id,
             producto=producto,
@@ -279,4 +340,39 @@ class ScrapingPipeline:
 
         ok = sum(1 for r in resultados if r.exitoso)
         fail = sum(1 for r in resultados if not r.exitoso)
+
+        # ── Registrar en caché la primera imagen válida descargada ────────────
+        # Solo después de validación Pillow exitosa (resultados exitosos ya pasaron Pillow).
+        if ok > 0 and self._image_cache is not None and not save_all_candidates:
+            primera_exitosa = next((r for r in resultados if r.exitoso), None)
+            if primera_exitosa and primera_exitosa.ruta_guardada:
+                ean = producto.ean if producto.ean and producto.ean.strip() else None
+                ruta_imagen = Path(primera_exitosa.ruta_guardada)
+                try:
+                    from PIL import Image as _PilImage  # noqa: PLC0415
+                    with _PilImage.open(ruta_imagen) as img:
+                        width, height = img.size
+                except Exception as exc:
+                    logger.debug(
+                        "No se pudo leer dimensiones de imagen para caché",
+                        exc_info=exc,
+                        extra={"path": str(ruta_imagen)},
+                    )
+                    width, height = 0, 0
+                try:
+                    self._image_cache.register(
+                        ean=ean,
+                        codigo=producto.codigo,
+                        path=ruta_imagen,
+                        job_id=self._carpeta_id,
+                        width=width,
+                        height=height,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "No se pudo registrar imagen en caché",
+                        exc_info=exc,
+                        extra={"job_id": self._job_id, "codigo": producto.codigo},
+                    )
+
         return ok, fail

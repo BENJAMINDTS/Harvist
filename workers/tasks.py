@@ -497,9 +497,15 @@ def ejecutar_scraping(
             job_status.total_productos = resumen["total_productos"]
             job_status.imagenes_descargadas = resumen.get("imagenes_descargadas", 0)
             job_status.imagenes_fallidas = resumen.get("imagenes_fallidas", 0)
+            job_status.imagenes_cache_hit = resumen.get("imagenes_cache_hit", 0)
+            cache_hit_txt = (
+                f" ({job_status.imagenes_cache_hit} desde caché)"
+                if job_status.imagenes_cache_hit > 0
+                else ""
+            )
             job_status.mensaje = (
-                f"Completado: {resumen.get('imagenes_descargadas', 0)} imágenes descargadas "
-                f"de {resumen['total_productos']} productos."
+                f"Completado: {resumen.get('imagenes_descargadas', 0)} imágenes descargadas"
+                f"{cache_hit_txt} de {resumen['total_productos']} productos."
             )
             # Registrar productos fallidos en Redis para permitir retry parcial
             _productos_fallidos = resumen.get("_productos_fallidos", [])
@@ -1150,3 +1156,34 @@ def cleanup_stale_candidates() -> dict:
 
     finally:
         redis_client.close()
+
+
+@celery_app.task(name="cleanup_image_cache_orphans")
+def cleanup_image_cache_orphans() -> dict:
+    """
+    Elimina del índice SQLite las entradas cuya imagen en disco ya no existe.
+
+    Se ejecuta semanalmente (domingos 03:00 UTC) para limpiar entradas
+    de jobs limpiados o archivos borrados manualmente.
+
+    Returns:
+        Dict con orphans_removed.
+
+    :author: BenjaminDTS
+    """
+    settings = get_settings()
+
+    if not settings.image_cache_enabled:
+        logger.info("Caché de imágenes deshabilitada, limpieza omitida.")
+        return {"orphans_removed": 0}
+
+    from services.scraper.image_cache import ImageCacheService  # noqa: PLC0415
+
+    cache = ImageCacheService(settings.image_cache_db)
+    removed = cache.cleanup_orphans()
+
+    logger.info(
+        "Limpieza de huérfanos del caché de imágenes completada",
+        extra={"orphans_removed": removed},
+    )
+    return {"orphans_removed": removed}
