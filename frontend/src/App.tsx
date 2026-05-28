@@ -119,6 +119,7 @@ const App: React.FC = () => {
   const [photoSelectionDone, setPhotoSelectionDone] = useState(false)
   const [selectPhotos, setSelectPhotos] = useState(false)
   const [isPendingPhotoSelection, setIsPendingPhotoSelection] = useState(false)
+  const [retryCount, setRetryCount] = useState(0)
 
   // ── Hash routing ────────────────────────────────────────────────────────
 
@@ -383,6 +384,11 @@ const App: React.FC = () => {
     setTab('nuevo')
   }
 
+  /** Fuerza el remonte de JobProgress tras encolar un reintento parcial */
+  const handleRetry = (): void => {
+    setRetryCount(c => c + 1)
+  }
+
   /** Reanuda el job actual llamando al endpoint de reanudación */
   const handleResume = async (): Promise<void> => {
     if (!jobId) return
@@ -532,11 +538,12 @@ const App: React.FC = () => {
 
             {(appState === 'running' || appState === 'done') && jobId && (
               <JobProgress
-                key={`${jobId}-${photoSelectionDone ? '1' : '0'}-${brandValidationDone ? '1' : '0'}`}
+                key={`${jobId}-${photoSelectionDone ? '1' : '0'}-${brandValidationDone ? '1' : '0'}-${retryCount}`}
                 jobId={jobId}
                 tipoJob={tipoJob}
                 onFinished={handleJobFinished}
                 onResume={resumeLoading ? undefined : handleResume}
+                onRetry={handleRetry}
               />
             )}
 
