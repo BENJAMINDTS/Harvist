@@ -1058,8 +1058,12 @@ def retry_job(
                 js_err.mensaje = "El reintento falló."
                 js_err.actualizado_en = datetime.utcnow()
                 _actualizar_estado(redis_client, js_err)
-        except Exception:
-            pass
+        except Exception as inner_exc:
+            logger.warning(
+                "No se pudo actualizar el estado FALLIDO tras error en retry_job",
+                exc_info=inner_exc,
+                extra={"job_id": job_id},
+            )
         return {"error": str(exc)}
 
     finally:

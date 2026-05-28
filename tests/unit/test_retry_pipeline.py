@@ -310,10 +310,7 @@ class TestRetryJobTask:
             result = retry_job(job_id, retry_config.model_dump())
 
         assert result["productos_reintentados"] == 2
-        call_kwargs = mock_pipeline.ejecutar.call_args
-        assert call_kwargs is not None
-        codigos = call_kwargs.kwargs.get("codigos_filtro") or call_kwargs.args[0] if call_kwargs.args else None
-        # Verificar que se pasó codigos_filtro con los dos productos
+        assert mock_pipeline.ejecutar.call_args is not None
         filtro = mock_pipeline.ejecutar.call_args.kwargs.get("codigos_filtro", set())
         assert "AAA" in filtro
         assert "BBB" in filtro
