@@ -10,6 +10,7 @@ NUNCA hardcodear valores aquí — usar siempre get_settings().
 """
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, field_validator
@@ -165,9 +166,8 @@ class Settings(BaseSettings):
     )
 
     @property
-    def image_cache_db(self) -> "Path":
+    def image_cache_db(self) -> Path:
         """Devuelve la ruta al fichero SQLite de la caché de imágenes."""
-        from pathlib import Path
         return Path(self.image_cache_path)
 
     # ── Selección de fotos — Fase 7.5 ─────────────────────────────────────────

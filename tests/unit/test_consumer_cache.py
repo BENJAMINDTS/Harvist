@@ -17,7 +17,6 @@ from services.csv_parser import Producto
 from services.scraper.image_cache import ImageCacheService
 from services.scraper.pipeline import ScrapingPipeline
 
-
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 

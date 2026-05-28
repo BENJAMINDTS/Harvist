@@ -11,7 +11,6 @@ import pytest
 
 from services.scraper.image_cache import ImageCacheService
 
-
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 

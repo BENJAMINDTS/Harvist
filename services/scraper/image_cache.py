@@ -22,7 +22,7 @@ Clave de lookup: EAN si está disponible, codigo como fallback.
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from loguru import logger
@@ -143,7 +143,7 @@ class ImageCacheService:
             height: alto validado por Pillow.
         """
         ean_key = ean.strip() if ean and ean.strip() else None
-        now = datetime.now(tz=timezone.utc).isoformat()
+        now = datetime.now(tz=UTC).isoformat()
 
         with self._connect() as conn:
             conn.execute(
