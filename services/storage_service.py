@@ -341,6 +341,53 @@ class LocalStorageService(StorageService):
             raise FileNotFoundError(f"ZIP del job '{job_id}' no encontrado.")
         return zip_path
 
+    def copy_from_cache(
+        self,
+        source_path: Path,
+        job_id: str,
+        codigo: str,
+    ) -> Path:
+        """
+        Copia una imagen desde la caché al directorio del job actual.
+
+        Garantiza que cada job tiene su propia copia física del archivo
+        para evitar dependencias entre jobs (si uno se limpia, el otro
+        no pierde su imagen).
+
+        Args:
+            source_path: ruta de origen de la imagen en caché.
+            job_id:      ID del job destino.
+            codigo:      código del producto (se usa como nombre de archivo base).
+
+        Returns:
+            Path a la copia en el directorio del job actual.
+
+        Raises:
+            FileNotFoundError: si source_path no existe en disco.
+        """
+        if not source_path.exists():
+            raise FileNotFoundError(
+                f"Imagen de caché no encontrada en disco: {source_path}"
+            )
+
+        job_dir = self.ensure_job_dir(job_id)
+        suffix = source_path.suffix or ".jpg"
+        safe_codigo = "".join(
+            c if c.isalnum() or c in "-_." else "_" for c in codigo
+        ).strip("_") or codigo
+        dest = job_dir / f"{safe_codigo}_001{suffix}"
+        shutil.copy2(source_path, dest)
+        logger.info(
+            "Imagen copiada desde caché",
+            extra={
+                "job_id": job_id,
+                "codigo": codigo,
+                "source": str(source_path),
+                "dest": str(dest),
+            },
+        )
+        return dest
+
     def delete_job_files(self, job_id: str) -> None:
         """
         Elimina el directorio de imágenes y el ZIP del job.
