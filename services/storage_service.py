@@ -207,6 +207,33 @@ class StorageService(ABC):
             Número de archivos eliminados.
         """
 
+    def copy_from_cache(
+        self,
+        source_path: Path,
+        job_id: str,
+        codigo: str,
+    ) -> Path:
+        """
+        Copia una imagen desde la caché al directorio del job actual.
+
+        Implementaciones cloud (S3, Azure) deben sobrescribir este método.
+        La implementación local está en LocalStorageService.
+
+        Args:
+            source_path: ruta de origen de la imagen en caché.
+            job_id:      ID del job destino.
+            codigo:      código del producto.
+
+        Returns:
+            Path a la copia en el directorio del job actual.
+
+        Raises:
+            NotImplementedError: si el backend no soporta caché local.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} no implementa copy_from_cache."
+        )
+
 
 # ---------------------------------------------------------------------------
 # Implementación local
