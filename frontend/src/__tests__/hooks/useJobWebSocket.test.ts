@@ -99,6 +99,7 @@ function makeProgressEvent(estado: EstadoJob): JobProgressEvent {
     error: null,
     reintentos: 0,
     n_productos_fallidos: 0,
+    imagenes_cache_hit: 0,
   }
 }
 

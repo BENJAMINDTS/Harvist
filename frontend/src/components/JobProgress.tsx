@@ -297,6 +297,7 @@ export const JobProgress: React.FC<JobProgressProps> = ({
     total_productos,
     imagenes_descargadas,
     imagenes_fallidas,
+    imagenes_cache_hit,
     descripciones_generadas,
     marcas_procesadas,
     mensaje,
@@ -438,6 +439,13 @@ export const JobProgress: React.FC<JobProgressProps> = ({
               value={imagenes_descargadas}
               colorClass="text-green-600"
             />
+            {imagenes_cache_hit > 0 && (
+              <CounterCard
+                label="⚡ Desde caché"
+                value={imagenes_cache_hit}
+                colorClass="text-teal-600"
+              />
+            )}
             <CounterCard
               label="Imágenes fallidas"
               value={imagenes_fallidas}
