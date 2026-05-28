@@ -71,7 +71,7 @@ def descargar_imagenes_producto(
     actúan como fallback si los anteriores fallan: en cuanto se alcanza el límite,
     el resto de futures se descarta.
 
-    Si save_all_candidates=True: descarga TODOS los candidatos válidos sin límite,
+    Si save_all_candidates=True: descarga candidatos válidos hasta max_imagenes,
     guardándolos como {nombre_base}_candidate_{n}.jpg en storage.candidates_dir(),
     continuando aunque haya errores. Retorna la lista completa de ResultadoDescarga.
 
@@ -82,11 +82,11 @@ def descargar_imagenes_producto(
         storage: servicio de almacenamiento donde guardar las imágenes.
         max_imagenes: número máximo de imágenes válidas a guardar. Si None, usa
                       ``settings.images_per_product`` como valor por defecto.
-                      Ignorado si save_all_candidates=True.
+                      Se aplica tanto en modo normal como en modo candidatos.
         callback_imagen: función opcional invocada con (exitoso: bool)
                          tras procesar cada imagen, para actualizar contadores.
-        save_all_candidates: si True, descarga TODOS los candidatos válidos
-                            sin límite al directorio candidates/. Si False,
+        save_all_candidates: si True, descarga candidatas al directorio candidates/
+                            respetando el límite de max_imagenes. Si False,
                             comportamiento por defecto (hasta max_imagenes).
 
     Returns:
@@ -103,7 +103,10 @@ def descargar_imagenes_producto(
     ).strip("_") or producto.codigo
 
     if save_all_candidates:
-        # Modo candidatos: descargar TODOS sin límite
+        # Modo candidatos: descargar hasta max_imagenes candidatas válidas.
+        # El productor devuelve murls+turls (2× cantidad) como fallback para
+        # modo normal; aquí aplicamos el límite para no guardar el doble.
+        limite_cand = max_imagenes if max_imagenes is not None else settings.images_per_product
         imagenes_validas = 0
         with ThreadPoolExecutor(max_workers=settings.download_workers) as executor:
             futuros: dict[Future, str] = {
@@ -122,6 +125,10 @@ def descargar_imagenes_producto(
             for futuro in as_completed(futuros):
                 url = futuros[futuro]
 
+                if imagenes_validas >= limite_cand:
+                    futuro.cancel()
+                    continue
+
                 try:
                     imagen_bytes, extension = futuro.result()
                 except Exception as exc:
@@ -135,6 +142,9 @@ def descargar_imagenes_producto(
                     )
                     if callback_imagen:
                         callback_imagen(False)
+                    continue
+
+                if imagenes_validas >= limite_cand:
                     continue
 
                 # Guardar como candidata con índice 0-based
