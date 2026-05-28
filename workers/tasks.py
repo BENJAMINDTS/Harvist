@@ -497,9 +497,15 @@ def ejecutar_scraping(
             job_status.total_productos = resumen["total_productos"]
             job_status.imagenes_descargadas = resumen.get("imagenes_descargadas", 0)
             job_status.imagenes_fallidas = resumen.get("imagenes_fallidas", 0)
+            job_status.imagenes_cache_hit = resumen.get("imagenes_cache_hit", 0)
+            cache_hit_txt = (
+                f" ({job_status.imagenes_cache_hit} desde caché)"
+                if job_status.imagenes_cache_hit > 0
+                else ""
+            )
             job_status.mensaje = (
-                f"Completado: {resumen.get('imagenes_descargadas', 0)} imágenes descargadas "
-                f"de {resumen['total_productos']} productos."
+                f"Completado: {resumen.get('imagenes_descargadas', 0)} imágenes descargadas"
+                f"{cache_hit_txt} de {resumen['total_productos']} productos."
             )
             # Registrar productos fallidos en Redis para permitir retry parcial
             _productos_fallidos = resumen.get("_productos_fallidos", [])
