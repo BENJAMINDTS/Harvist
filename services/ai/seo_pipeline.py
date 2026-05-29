@@ -24,7 +24,7 @@ from collections.abc import Callable
 from loguru import logger
 
 from api.core.config import get_settings
-from api.v1.schemas.job import SearchConfig
+from services.schemas.job import SearchConfig
 from services.ai.claude_client import ClaudeClient
 from services.ai.description_generator import DescriptionGenerator, ResultadoSEO
 from services.csv_parser import CsvParser, CsvParserError
