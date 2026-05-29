@@ -25,8 +25,8 @@ from pathlib import Path
 from loguru import logger
 
 from api.core.config import get_settings
-from services.schemas.job import SearchConfig
 from services.csv_parser import CsvParser, CsvParserError, Producto
+from services.schemas.job import SearchConfig
 from services.scraper.consumer import descargar_imagenes_producto
 from services.scraper.producer import buscar_urls_imagenes
 from services.storage_service import StorageService, get_storage_service
