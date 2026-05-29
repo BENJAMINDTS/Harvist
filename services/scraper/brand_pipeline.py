@@ -30,7 +30,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from api.v1.schemas.job import SearchConfig
+from services.schemas.job import SearchConfig
 from services.csv_parser import CsvParser, CsvParserError
 from services.scraper.brand_scraper import EanBrandResolver
 from services.scraper.brand_validator import BrandResult
