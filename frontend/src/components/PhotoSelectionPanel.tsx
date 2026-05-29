@@ -44,6 +44,11 @@ interface SelectionState {
   [codigo: string]: number | null
 }
 
+interface LightboxState {
+  url: string
+  alt: string
+}
+
 const PhotoSelectionPanel: React.FC<PhotoSelectionPanelProps> = ({ jobId, onComplete }) => {
   const [products, setProducts] = useState<ProductPhotos[]>([])
   const [selections, setSelections] = useState<SelectionState>({})
@@ -51,6 +56,7 @@ const PhotoSelectionPanel: React.FC<PhotoSelectionPanelProps> = ({ jobId, onComp
   const [confirming, setConfirming] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [imageLoadErrors, setImageLoadErrors] = useState<Set<string>>(new Set())
+  const [lightbox, setLightbox] = useState<LightboxState | null>(null)
 
   // Cargar productos con candidatas
   useEffect(() => {
@@ -100,6 +106,26 @@ const PhotoSelectionPanel: React.FC<PhotoSelectionPanelProps> = ({ jobId, onComp
       [codigo]: index,
     }))
   }, [])
+
+  // Clic derecho — abrir lightbox con imagen ampliada
+  const handleContextMenu = useCallback((e: React.MouseEvent, url: string, alt: string): void => {
+    e.preventDefault()
+    setLightbox({ url, alt })
+  }, [])
+
+  const closeLightbox = useCallback((): void => {
+    setLightbox(null)
+  }, [])
+
+  // Cerrar con ESC
+  useEffect(() => {
+    if (!lightbox) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') closeLightbox()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [lightbox, closeLightbox])
 
   // Confirmar selecciones y generar ZIP
   const handleConfirm = useCallback(async (): Promise<void> => {
@@ -304,6 +330,13 @@ const PhotoSelectionPanel: React.FC<PhotoSelectionPanelProps> = ({ jobId, onComp
                         key={`${product.codigo}-${candidate.index}`}
                         type="button"
                         onClick={() => handleSelectCandidate(product.codigo, candidate.index)}
+                        onContextMenu={(e) =>
+                          handleContextMenu(
+                            e,
+                            candidate.url,
+                            `Candidata ${candidate.index} de ${product.nombre}`,
+                          )
+                        }
                         className={
                           "relative shrink-0 rounded-lg overflow-hidden transition-all duration-200 cursor-pointer " +
                           "hover:opacity-100 " +
@@ -372,6 +405,37 @@ const PhotoSelectionPanel: React.FC<PhotoSelectionPanelProps> = ({ jobId, onComp
           <p className="text-sm text-green-700 dark:text-green-300">
             Perfecto. Todos los productos tienen foto seleccionada. Presiona el botón para confirmar.
           </p>
+        </div>
+      )}
+
+      {/* Lightbox — clic derecho sobre imagen la amplía */}
+      {lightbox && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Vista ampliada de imagen"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          onClick={closeLightbox}
+        >
+          <div
+            className="relative max-w-[90vw] max-h-[90vh] flex flex-col items-center gap-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={lightbox.url}
+              alt={lightbox.alt}
+              className="max-w-full max-h-[80vh] rounded-lg object-contain shadow-2xl"
+            />
+            <p className="text-xs text-gray-300">{lightbox.alt}</p>
+            <button
+              type="button"
+              onClick={closeLightbox}
+              className="absolute -top-3 -right-3 w-7 h-7 rounded-full bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 flex items-center justify-center shadow-lg hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              aria-label="Cerrar vista ampliada"
+            >
+              ✕
+            </button>
+          </div>
         </div>
       )}
     </section>
