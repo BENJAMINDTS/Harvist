@@ -22,7 +22,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from services.integrations.wordpress.products import WordPressProductService
-from services.utils.csv_utils import decode_csv as _decode_csv, detect_delimiter as _detect_delimiter
+from services.utils.csv_utils import decode_csv as _decode_csv
+from services.utils.csv_utils import detect_delimiter as _detect_delimiter
 
 
 def _make_client() -> MagicMock:
