@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 
 from loguru import logger
 
-from api.v1.schemas.job import ModosBusqueda, SearchConfig
+from services.schemas.job import ModosBusqueda, SearchConfig
 
 # Columnas mínimas requeridas según el modo de búsqueda
 _COLUMNAS_NOMBRE_MARCA = {"nombre", "marca"}

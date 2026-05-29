@@ -19,31 +19,11 @@ from typing import TYPE_CHECKING, Any
 from loguru import logger
 
 from services.integrations.wordpress.client import WordPressClient
+from services.utils.csv_utils import decode_csv, detect_delimiter
 
 if TYPE_CHECKING:
     from services.integrations.wordpress.brands import WordPressBrandService
     from services.integrations.wordpress.categories import WordPressCategoryService
-
-
-# ── Helpers CSV (sin dependencias externas) ───────────────────────────────────
-
-def _decode_csv(content: bytes) -> str:
-    try:
-        return content.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        return content.decode("latin-1")
-
-
-def _detect_delimiter(text: str) -> str:
-    sample = text[:4096]
-    try:
-        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
-        return dialect.delimiter
-    except csv.Error:
-        first_line = sample.split("\n")[0]
-        counts = {d: first_line.count(d) for d in (";", ",", "\t", "|")}
-        best = max(counts, key=lambda d: counts[d])
-        return best if counts[best] > 0 else ","
 
 
 # Campos WooCommerce soportados en la importación CSV.
@@ -367,8 +347,8 @@ class WordPressProductService:
         Returns:
             Dict con headers, preview (list of dicts) y total_rows.
         """
-        text = _decode_csv(content)
-        delimiter = _detect_delimiter(text)
+        text = decode_csv(content)
+        delimiter = detect_delimiter(text)
         reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
         headers = list(reader.fieldnames or [])
         preview: list[dict[str, str]] = []
@@ -437,8 +417,8 @@ class WordPressProductService:
             },
         )
 
-        text = _decode_csv(content)
-        delimiter = _detect_delimiter(text)
+        text = decode_csv(content)
+        delimiter = detect_delimiter(text)
 
         # Precarga atributos WC una sola vez para toda la importación.
         _attr_by_slug: dict[str, Any] = {}

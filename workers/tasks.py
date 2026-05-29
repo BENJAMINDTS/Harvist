@@ -2,8 +2,8 @@
 Tareas Celery del Proyecto Scraping.
 
 Este módulo envuelve los servicios de negocio en tareas asíncronas Celery.
-No contiene lógica de dominio — solo integración con Celery y actualización
-del estado del job en Redis.
+Contiene _JobProgressReporter, adaptador Redis que desacopla la lógica de
+persistencia de progreso de los pipelines de servicio.
 
 :author: BenjaminDTS
 :author: Carlitos6712
@@ -72,6 +72,227 @@ def _actualizar_estado(
     )
 
 
+class _JobProgressReporter:
+    """
+    Adaptador Redis para los callbacks de progreso de los pipelines.
+
+    Encapsula la lógica de comprobación de cancelación y actualización
+    de estado en Redis. Los pipelines reciben métodos enlazados de esta
+    clase como callables genéricos — no saben nada de Redis.
+
+    :author: BenjaminDTS
+    """
+
+    def __init__(
+        self,
+        redis_client: sync_redis.Redis,
+        job_status: JobStatus,
+    ) -> None:
+        """
+        Inicializa el reporter con el cliente Redis y el estado del job.
+
+        Args:
+            redis_client: cliente Redis síncrono compartido con la tarea.
+            job_status: instancia mutable de JobStatus que se persiste en Redis.
+        """
+        self._redis = redis_client
+        self._status = job_status
+
+    def _check_cancelled(self, job_id: str) -> None:
+        """
+        Lanza JobCancelledError si el job fue cancelado externamente.
+
+        Args:
+            job_id: identificador del job a comprobar.
+
+        Raises:
+            JobCancelledError: si el estado en Redis es CANCELADO.
+        """
+        raw = self._redis.get(_JOB_KEY.format(job_id=job_id))
+        if raw:
+            current = JobStatus.model_validate_json(raw)
+            if current.estado == EstadoJob.CANCELADO:
+                raise JobCancelledError(f"Job {job_id} cancelado por el usuario.")
+
+    def _save(self) -> None:
+        """Persiste el estado actual en Redis."""
+        self._status.actualizado_en = datetime.utcnow()
+        _actualizar_estado(self._redis, self._status)
+
+    def fotos(
+        self,
+        jid: str,
+        procesados: int,
+        total: int,
+        img_ok: int,
+        img_fail: int,
+    ) -> None:
+        """
+        Callback de progreso para el pipeline de descarga de fotos.
+
+        Args:
+            jid: job_id.
+            procesados: productos procesados hasta ahora.
+            total: total de productos del CSV.
+            img_ok: imágenes descargadas exitosamente.
+            img_fail: imágenes que fallaron.
+
+        Raises:
+            JobCancelledError: si el job fue cancelado desde la API.
+        """
+        self._check_cancelled(jid)
+        self._status.total_productos = total
+        self._status.productos_procesados = procesados
+        self._status.imagenes_descargadas = img_ok
+        self._status.imagenes_fallidas = img_fail
+        self._status.mensaje = (
+            f"Procesando producto {procesados}/{total} — "
+            f"{img_ok} imágenes descargadas."
+        )
+        self._save()
+
+    def descripciones(
+        self,
+        jid: str,
+        procesados: int,
+        total: int,
+        descripciones_ok: int,
+    ) -> None:
+        """
+        Callback de progreso para el pipeline de generación de descripciones.
+
+        Args:
+            jid: job_id.
+            procesados: productos procesados hasta ahora.
+            total: total de productos del CSV.
+            descripciones_ok: descripciones generadas exitosamente.
+
+        Raises:
+            JobCancelledError: si el job fue cancelado desde la API.
+        """
+        self._check_cancelled(jid)
+        self._status.total_productos = total
+        self._status.productos_procesados = procesados
+        self._status.descripciones_generadas = descripciones_ok
+        self._status.mensaje = (
+            f"Generando descripción {procesados}/{total} — "
+            f"{descripciones_ok} completadas."
+        )
+        self._save()
+
+    def marcas(
+        self,
+        jid: str,
+        procesadas: int,
+        total: int,
+        exitosas: int,
+    ) -> None:
+        """
+        Callback de progreso para el pipeline de resolución de marcas.
+
+        Args:
+            jid: job_id.
+            procesadas: marcas procesadas hasta ahora.
+            total: total de marcas únicas extraídas del CSV.
+            exitosas: marcas procesadas con éxito.
+
+        Raises:
+            JobCancelledError: si el job fue cancelado desde la API.
+        """
+        self._check_cancelled(jid)
+        self._status.total_productos = total
+        self._status.productos_procesados = procesadas
+        self._status.marcas_procesadas = exitosas
+        self._status.mensaje = (
+            f"Procesando marca {procesadas}/{total} — "
+            f"{exitosas} completadas."
+        )
+        self._save()
+
+    def traducciones(
+        self,
+        jid: str,
+        idioma: str,
+        total: int,
+        traducciones_ok: int,
+    ) -> None:
+        """
+        Callback de progreso para el pipeline de traducción automática.
+
+        Args:
+            jid: job_id.
+            idioma: código ISO 639-1 del idioma destino.
+            total: total de productos a traducir.
+            traducciones_ok: traducciones generadas exitosamente en este idioma.
+
+        Raises:
+            JobCancelledError: si el job fue cancelado desde la API.
+        """
+        self._check_cancelled(jid)
+        self._status.traducciones_generadas[idioma] = traducciones_ok
+        self._status.mensaje = (
+            f"Traduciendo al {idioma}: {traducciones_ok}/{total} completadas."
+        )
+        self._save()
+
+    def seo(
+        self,
+        jid: str,
+        procesados: int,
+        total: int,
+        seo_ok: int,
+    ) -> None:
+        """
+        Callback de progreso para el pipeline de generación de textos SEO.
+
+        Args:
+            jid: job_id.
+            procesados: productos procesados hasta ahora.
+            total: total de productos del CSV.
+            seo_ok: textos SEO generados exitosamente.
+
+        Raises:
+            JobCancelledError: si el job fue cancelado desde la API.
+        """
+        self._check_cancelled(jid)
+        self._status.total_productos = total
+        self._status.productos_procesados = procesados
+        self._status.seo_generados = seo_ok
+        self._status.mensaje = (
+            f"Generando SEO {procesados}/{total} — "
+            f"{seo_ok} completados."
+        )
+        self._save()
+
+    def retry(
+        self,
+        jid: str,
+        procesados: int,
+        total: int,
+        _img_ok: int,
+        _img_fail: int,
+    ) -> None:
+        """
+        Callback de progreso para el pipeline de reintento de fotos fallidas.
+
+        Los contadores de imágenes se actualizan fuera del callback tras completar
+        el pipeline, por lo que aquí solo se persiste el mensaje de progreso.
+
+        Args:
+            jid: job_id.
+            procesados: productos reintentados hasta ahora.
+            total: total de productos a reintentar.
+            _img_ok: ignorado — los contadores se calculan al finalizar.
+            _img_fail: ignorado — los contadores se calculan al finalizar.
+
+        Raises:
+            JobCancelledError: si el job fue cancelado externamente.
+        """
+        self._check_cancelled(jid)
+        self._status.mensaje = f"Reintentando: {procesados}/{total} productos procesados."
+        self._save()
+
+
 @celery_app.task(
     bind=True,
     name="workers.tasks.ejecutar_scraping",
@@ -126,175 +347,7 @@ def ejecutar_scraping(
 
     logger.info("Tarea Celery iniciada", extra={"job_id": job_id})
 
-    def _callback_fotos(
-        jid: str,
-        procesados: int,
-        total: int,
-        img_ok: int,
-        img_fail: int,
-    ) -> None:
-        """
-        Actualiza el estado del job de fotos en Redis tras procesar cada producto.
-
-        Args:
-            jid: job_id.
-            procesados: productos procesados hasta ahora.
-            total: total de productos del CSV.
-            img_ok: imágenes descargadas exitosamente.
-            img_fail: imágenes que fallaron.
-
-        Raises:
-            JobCancelledError: si el job fue cancelado desde la API.
-        """
-        raw = redis_client.get(_JOB_KEY.format(job_id=jid))
-        if raw:
-            current = JobStatus.model_validate_json(raw)
-            if current.estado == EstadoJob.CANCELADO:
-                raise JobCancelledError(f"Job {jid} cancelado por el usuario.")
-
-        job_status.total_productos = total
-        job_status.productos_procesados = procesados
-        job_status.imagenes_descargadas = img_ok
-        job_status.imagenes_fallidas = img_fail
-        job_status.actualizado_en = datetime.utcnow()
-        job_status.mensaje = (
-            f"Procesando producto {procesados}/{total} — "
-            f"{img_ok} imágenes descargadas."
-        )
-        _actualizar_estado(redis_client, job_status)
-
-    def _callback_descripciones(
-        jid: str,
-        procesados: int,
-        total: int,
-        descripciones_ok: int,
-    ) -> None:
-        """
-        Actualiza el estado del job de descripciones en Redis tras cada producto.
-
-        Args:
-            jid: job_id.
-            procesados: productos procesados hasta ahora.
-            total: total de productos del CSV.
-            descripciones_ok: descripciones generadas exitosamente.
-
-        Raises:
-            JobCancelledError: si el job fue cancelado desde la API.
-        """
-        raw = redis_client.get(_JOB_KEY.format(job_id=jid))
-        if raw:
-            current = JobStatus.model_validate_json(raw)
-            if current.estado == EstadoJob.CANCELADO:
-                raise JobCancelledError(f"Job {jid} cancelado por el usuario.")
-
-        job_status.total_productos = total
-        job_status.productos_procesados = procesados
-        job_status.descripciones_generadas = descripciones_ok
-        job_status.actualizado_en = datetime.utcnow()
-        job_status.mensaje = (
-            f"Generando descripción {procesados}/{total} — "
-            f"{descripciones_ok} completadas."
-        )
-        _actualizar_estado(redis_client, job_status)
-
-    def _callback_marcas(
-        jid: str,
-        procesadas: int,
-        total: int,
-        exitosas: int,
-    ) -> None:
-        """
-        Actualiza el estado del job de marcas en Redis tras procesar cada marca.
-
-        Args:
-            jid: job_id.
-            procesadas: marcas procesadas hasta ahora.
-            total: total de marcas únicas extraídas del CSV.
-            exitosas: marcas procesadas con éxito.
-
-        Raises:
-            JobCancelledError: si el job fue cancelado desde la API.
-        """
-        raw = redis_client.get(_JOB_KEY.format(job_id=jid))
-        if raw:
-            current = JobStatus.model_validate_json(raw)
-            if current.estado == EstadoJob.CANCELADO:
-                raise JobCancelledError(f"Job {jid} cancelado por el usuario.")
-
-        job_status.total_productos = total
-        job_status.productos_procesados = procesadas
-        job_status.marcas_procesadas = exitosas
-        job_status.actualizado_en = datetime.utcnow()
-        job_status.mensaje = (
-            f"Procesando marca {procesadas}/{total} — "
-            f"{exitosas} completadas."
-        )
-        _actualizar_estado(redis_client, job_status)
-
-    def _callback_traducciones(
-        jid: str,
-        idioma: str,
-        total: int,
-        traducciones_ok: int,
-    ) -> None:
-        """
-        Actualiza el estado del job de traducciones en Redis tras procesar cada idioma.
-
-        Args:
-            jid: job_id.
-            idioma: código ISO 639-1 del idioma destino.
-            total: total de productos a traducir.
-            traducciones_ok: traducciones generadas exitosamente en este idioma.
-
-        Raises:
-            JobCancelledError: si el job fue cancelado desde la API.
-        """
-        raw = redis_client.get(_JOB_KEY.format(job_id=jid))
-        if raw:
-            current = JobStatus.model_validate_json(raw)
-            if current.estado == EstadoJob.CANCELADO:
-                raise JobCancelledError(f"Job {jid} cancelado por el usuario.")
-
-        job_status.traducciones_generadas[idioma] = traducciones_ok
-        job_status.actualizado_en = datetime.utcnow()
-        job_status.mensaje = (
-            f"Traduciendo al {idioma}: {traducciones_ok}/{total} completadas."
-        )
-        _actualizar_estado(redis_client, job_status)
-
-    def _callback_seo(
-        jid: str,
-        procesados: int,
-        total: int,
-        seo_ok: int,
-    ) -> None:
-        """
-        Actualiza el estado del job de SEO en Redis tras procesar cada producto.
-
-        Args:
-            jid: job_id.
-            procesados: productos procesados hasta ahora.
-            total: total de productos del CSV.
-            seo_ok: textos SEO generados exitosamente.
-
-        Raises:
-            JobCancelledError: si el job fue cancelado desde la API.
-        """
-        raw = redis_client.get(_JOB_KEY.format(job_id=jid))
-        if raw:
-            current = JobStatus.model_validate_json(raw)
-            if current.estado == EstadoJob.CANCELADO:
-                raise JobCancelledError(f"Job {jid} cancelado por el usuario.")
-
-        job_status.total_productos = total
-        job_status.productos_procesados = procesados
-        job_status.seo_generados = seo_ok
-        job_status.actualizado_en = datetime.utcnow()
-        job_status.mensaje = (
-            f"Generando SEO {procesados}/{total} — "
-            f"{seo_ok} completados."
-        )
-        _actualizar_estado(redis_client, job_status)
+    reporter = _JobProgressReporter(redis_client, job_status)
 
     try:
         if config.tipo_job == TipoJob.DESCRIPCIONES:
@@ -302,7 +355,7 @@ def ejecutar_scraping(
             pipeline_desc = DescripcionPipeline(job_id=job_id, config=config, carpeta_job_id=carpeta_job_id)
             resumen = pipeline_desc.ejecutar(
                 contenido_csv=contenido_csv,
-                callback=_callback_descripciones,
+                callback=reporter.descripciones,
                 offset_productos=offset_productos,
             )
 
@@ -323,7 +376,7 @@ def ejecutar_scraping(
                         descripciones=_resultados_desc,
                         idioma_destino=idioma,
                     )
-                    _callback_traducciones(
+                    reporter.traducciones(
                         job_id,
                         idioma,
                         resumen_trad["total_productos"],
@@ -334,7 +387,7 @@ def ejecutar_scraping(
             pipeline_seo = SeoPipeline(job_id=job_id, config=config, carpeta_job_id=carpeta_job_id)
             resumen = pipeline_seo.ejecutar(
                 contenido_csv=contenido_csv,
-                callback=_callback_seo,
+                callback=reporter.seo,
                 offset_productos=offset_productos,
             )
         elif config.tipo_job == TipoJob.MARCAS:
@@ -347,14 +400,14 @@ def ejecutar_scraping(
             )
             resumen = pipeline_marcas.ejecutar(
                 contenido_csv=contenido_csv,
-                callback=_callback_marcas,
+                callback=reporter.marcas,
                 offset_productos=offset_productos,
             )
         else:
             pipeline_fotos = ScrapingPipeline(job_id=job_id, config=config, carpeta_job_id=carpeta_job_id)
             resumen = pipeline_fotos.ejecutar(
                 contenido_csv=contenido_csv,
-                callback=_callback_fotos,
+                callback=reporter.fotos,
                 offset_productos=offset_productos,
                 save_all_candidates=config.select_photos,
             )
@@ -966,41 +1019,13 @@ def retry_job(
         config = SearchConfig.model_validate(json.loads(config_raw) if config_raw else {})
 
         # 6. Callback de progreso para el retry
-        def _callback_retry(
-            jid: str,
-            procesados: int,
-            total: int,
-            img_ok: int,
-            img_fail: int,
-        ) -> None:
-            """
-            Actualiza el JobStatus en Redis durante el reintento.
-
-            Args:
-                jid:       job_id.
-                procesados: productos reintentados hasta ahora.
-                total:     total de productos a reintentar.
-                img_ok:    imágenes recuperadas en este retry.
-                img_fail:  imágenes que siguen fallando.
-
-            Raises:
-                JobCancelledError: si el job fue cancelado externamente.
-            """
-            current_raw = redis_client.get(_JOB_KEY.format(job_id=jid))
-            if current_raw:
-                current = JobStatus.model_validate_json(current_raw)
-                if current.estado == EstadoJob.CANCELADO:
-                    raise JobCancelledError(f"Job {jid} cancelado durante retry.")
-
-            job_status.actualizado_en = datetime.utcnow()
-            job_status.mensaje = f"Reintentando: {procesados}/{total} productos procesados."
-            _actualizar_estado(redis_client, job_status)
+        retry_reporter = _JobProgressReporter(redis_client, job_status)
 
         # 7. Ejecutar pipeline solo con los productos fallidos
         pipeline = ScrapingPipeline(job_id=job_id, config=config)
         resumen = pipeline.ejecutar(
             contenido_csv=csv_raw,
-            callback=_callback_retry,
+            callback=retry_reporter.retry,
             codigos_filtro=codigos_a_reintentar,
         )
 

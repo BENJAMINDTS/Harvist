@@ -9,8 +9,8 @@ Coordina:
   5. Callback de progreso → actualización del JobStatus en Redis
   6. ImageCacheService → deduplicación de imágenes entre jobs (opcional)
 
-El pipeline se ejecuta dentro de la tarea Celery. Este módulo no importa
-nada de api/ ni de workers/ — es lógica de negocio pura.
+El pipeline se ejecuta dentro de la tarea Celery. Solo importa de api.core.config
+(configuración compartida) y de services/ — no depende de contratos HTTP ni de workers/.
 
 :author: BenjaminDTS
 :author: Carlitos6712
@@ -25,8 +25,8 @@ from pathlib import Path
 from loguru import logger
 
 from api.core.config import get_settings
-from api.v1.schemas.job import SearchConfig
 from services.csv_parser import CsvParser, CsvParserError, Producto
+from services.schemas.job import SearchConfig
 from services.scraper.consumer import descargar_imagenes_producto
 from services.scraper.producer import buscar_urls_imagenes
 from services.storage_service import StorageService, get_storage_service
