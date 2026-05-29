@@ -9,7 +9,7 @@ Verifica:
 - set_image: llama update con images payload
 - sync_from_harvist: crea cuando no existe, actualiza si overwrite, omite si no
 - parse_csv_preview: detecta headers y retorna preview
-- _detect_delimiter: detecta ; , \t
+- detect_delimiter (services.utils.csv_utils): detecta ; , \t
 
 :author: BenjaminDTS
 :version: 1.0.0
@@ -21,11 +21,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.integrations.wordpress.products import (
-    WordPressProductService,
-    _decode_csv,
-    _detect_delimiter,
-)
+from services.integrations.wordpress.products import WordPressProductService
+from services.utils.csv_utils import decode_csv as _decode_csv, detect_delimiter as _detect_delimiter
 
 
 def _make_client() -> MagicMock:
