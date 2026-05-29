@@ -6,6 +6,7 @@ import { render, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('@/api/client', () => ({
+  apiClient: { get: vi.fn(), post: vi.fn() },
   getDolibarrDBConfig: vi.fn(),
   saveDolibarrDBConfig: vi.fn(),
 }))

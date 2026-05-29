@@ -15,6 +15,8 @@ vi.mock('@/api/client', () => ({
   syncWordPressAllToDolibarr: vi.fn(),
   listWordPressCategories: vi.fn(),
   listWordPressBrands: vi.fn(),
+  getWordPressBrandAttribute: vi.fn(),
+  getWordPressCategoryTree: vi.fn(),
   getWordPressCsvFields: vi.fn(),
   previewWordPressCsv: vi.fn(),
   importWordPressCsv: vi.fn(),
@@ -25,6 +27,8 @@ import {
   listWordPressProducts,
   listWordPressCategories,
   listWordPressBrands,
+  getWordPressBrandAttribute,
+  getWordPressCategoryTree,
   getWordPressCsvFields,
 } from '@/api/client'
 import WordPressProducts from '@/components/wordpress/WordPressProducts'
@@ -37,6 +41,8 @@ describe('WordPressProducts', () => {
     } as never)
     vi.mocked(listWordPressCategories).mockResolvedValue([] as never)
     vi.mocked(listWordPressBrands).mockResolvedValue([] as never)
+    vi.mocked(getWordPressBrandAttribute).mockResolvedValue({ mode: 'native' } as never)
+    vi.mocked(getWordPressCategoryTree).mockResolvedValue([] as never)
     vi.mocked(getWordPressCsvFields).mockResolvedValue([] as never)
   })
 
