@@ -12,6 +12,7 @@ const defaultProps = {
   csvHeaders: ['nombre', 'ean', 'codigo'],
   onStart: vi.fn(),
   onBack: vi.fn(),
+  onLaunch: vi.fn().mockResolvedValue(undefined),
 }
 
 describe('SearchConfig', () => {

@@ -2,7 +2,7 @@
  * Tests unitarios para OdooConfig.
  * @author BenjaminDTS
  */
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('@/api/client', () => ({
@@ -23,12 +23,12 @@ describe('OdooConfig', () => {
   })
 
   it('renders without crashing', () => {
-    render(<OdooConfig onSaved={vi.fn()} />)
+    render(<OdooConfig onSaved={vi.fn()} status={null} />)
     expect(document.body).toBeInTheDocument()
   })
 
   it('shows form fields for connection config', async () => {
-    render(<OdooConfig onSaved={vi.fn()} />)
+    render(<OdooConfig onSaved={vi.fn()} status={null} />)
     await waitFor(() => {
       const inputs = document.querySelectorAll('input')
       expect(inputs.length).toBeGreaterThan(0)

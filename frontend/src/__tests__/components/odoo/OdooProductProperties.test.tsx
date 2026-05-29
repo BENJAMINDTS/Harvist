@@ -2,7 +2,7 @@
  * Tests unitarios para OdooProductProperties.
  * @author BenjaminDTS
  */
-import { render, screen, waitFor } from '@testing-library/react'
+import { render } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('@/api/client', () => ({
@@ -22,7 +22,7 @@ describe('OdooProductProperties', () => {
   })
 
   it('renders without crashing', () => {
-    render(<OdooProductProperties />)
+    render(<OdooProductProperties productId={null} categoryId={false} />)
     expect(document.body).toBeInTheDocument()
   })
 })

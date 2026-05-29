@@ -2,7 +2,7 @@
  * Tests unitarios para OdooCsvImport.
  * @author BenjaminDTS
  */
-import { render, screen } from '@testing-library/react'
+import { render } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('@/api/client', () => ({
@@ -29,12 +29,12 @@ describe('OdooCsvImport', () => {
   })
 
   it('renders without crashing', () => {
-    render(<OdooCsvImport />)
+    render(<OdooCsvImport onClose={vi.fn()} onSuccess={vi.fn()} />)
     expect(document.body).toBeInTheDocument()
   })
 
   it('shows file input for CSV upload', () => {
-    render(<OdooCsvImport />)
+    render(<OdooCsvImport onClose={vi.fn()} onSuccess={vi.fn()} />)
     const fileInput = document.querySelector('input[type="file"]')
     expect(fileInput).toBeInTheDocument()
   })

@@ -9,7 +9,7 @@
  *
  * @author BenjaminDTS
  */
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import { CsvUploader } from '@/components/CsvUploader'
 
