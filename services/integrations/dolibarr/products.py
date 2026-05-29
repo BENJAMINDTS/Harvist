@@ -23,6 +23,7 @@ from loguru import logger
 
 from services.integrations.base import IntegrationError
 from services.integrations.dolibarr.client import DolibarrClient
+from services.utils.csv_utils import decode_csv, detect_delimiter
 
 if TYPE_CHECKING:
     from services.integrations.dolibarr.categories import DolibarrCategoryService
@@ -70,30 +71,6 @@ _STANDARD_FIELDS: list[dict[str, Any]] = [
     {"key": "customcode", "label": "Código HS", "type": "text", "required": False, "section": "Aduanas", "is_extra": False},
     {"key": "country_id", "label": "País de origen (ID Dolibarr)", "type": "number", "required": False, "section": "Aduanas", "is_extra": False},
 ]
-
-
-def _decode_csv(content: bytes) -> str:
-    """Decodifica bytes CSV intentando UTF-8 y latin-1 como fallback."""
-    try:
-        return content.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        return content.decode("latin-1")
-
-
-def _detect_delimiter(text: str) -> str:
-    """Detecta el delimitador CSV priorizando ; y , sobre tabulador y pipe.
-
-    Usa csv.Sniffer primero; si falla cuenta ocurrencias en la primera línea.
-    """
-    sample = text[:4096]
-    try:
-        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
-        return dialect.delimiter
-    except csv.Error:
-        first_line = sample.split("\n")[0]
-        counts = {d: first_line.count(d) for d in (";", ",", "\t", "|")}
-        best = max(counts, key=lambda d: counts[d])
-        return best if counts[best] > 0 else ","
 
 
 def _normalize_product(raw: dict[str, Any]) -> dict[str, Any]:
@@ -598,8 +575,8 @@ class DolibarrProductService:
         Returns:
             Dict con headers, preview (list of dicts) y total_rows.
         """
-        text = _decode_csv(content)
-        delimiter = _detect_delimiter(text)
+        text = decode_csv(content)
+        delimiter = detect_delimiter(text)
         reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
         headers = list(reader.fieldnames or [])
         preview: list[dict[str, str]] = []
@@ -664,8 +641,8 @@ class DolibarrProductService:
         Returns:
             Lista de dicts con row, ref, action, dolibarr_id, error y category_assigned.
         """
-        text = _decode_csv(content)
-        delimiter = _detect_delimiter(text)
+        text = decode_csv(content)
+        delimiter = detect_delimiter(text)
 
         # Contar filas totales para progreso (parse rápido extra si hay callback)
         total_rows = 0
