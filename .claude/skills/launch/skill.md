@@ -18,13 +18,13 @@ docker compose ps
 
 **Step 2 — Celery worker (background)**
 ```bash
-celery -A workers.celery_app worker --loglevel=info --pool=solo
+.venv/Scripts/celery -A workers.celery_app worker --loglevel=info --pool=solo
 ```
 Run in background (`run_in_background: true`). Working dir: project root.
 
 **Step 3 — FastAPI / uvicorn (background)**
 ```bash
-uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+.venv/Scripts/uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
 ```
 Run in background. Working dir: project root.
 
@@ -55,6 +55,7 @@ Report status table:
 ## Notes
 
 - Windows: Celery needs `--pool=solo` (no fork support).
+- Always use `.venv/Scripts/celery` and `.venv/Scripts/uvicorn` — system binaries don't inherit the venv Python path and their reloader subprocesses fail to find `.env.development`.
 - All services use `.env.development` via Pydantic Settings at startup.
 - Swagger UI only available in `development` environment.
 - Do NOT launch if already running — check first with `docker compose ps` and ask user.
