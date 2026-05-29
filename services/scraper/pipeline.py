@@ -339,7 +339,9 @@ class ScrapingPipeline:
         )
 
         ok = sum(1 for r in resultados if r.exitoso)
-        fail = sum(1 for r in resultados if not r.exitoso)
+        # Count missing images, not failed URL attempts — producer supplies extra
+        # fallback URLs so some may fail even when the product got enough images.
+        fail = max(0, self._config.imagenes_por_producto - ok)
 
         # ── Registrar en caché la primera imagen válida descargada ────────────
         # Solo después de validación Pillow exitosa (resultados exitosos ya pasaron Pillow).

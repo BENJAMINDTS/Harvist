@@ -306,8 +306,8 @@ export const JobProgress: React.FC<JobProgressProps> = ({
     n_productos_fallidos,
   } = progress
 
-  const descFallidas = Math.max(0, productos_procesados - descripciones_generadas)
-  const marcasFallidas = Math.max(0, productos_procesados - marcas_procesadas)
+  const descFallidas = tipoJob === 'descripciones' ? Math.max(0, productos_procesados - descripciones_generadas) : 0
+  const marcasFallidas = tipoJob === 'marcas' ? Math.max(0, productos_procesados - marcas_procesadas) : 0
   const hayFallos = imagenes_fallidas > 0 || marcasFallidas > 0 || descFallidas > 0
   const limiteAlcanzado = reintentos >= 3
 
