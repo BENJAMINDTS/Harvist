@@ -7,7 +7,7 @@
  * un acceso rápido al historial.
  *
  * @module HomeScreen
- * @author BenjaminDTS | Carlos Vico
+ * @author Carlitos6712
  * @version 1.0.0
  */
 

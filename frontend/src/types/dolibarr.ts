@@ -1,7 +1,7 @@
 /**
  * Tipos TypeScript para la integración Dolibarr.
  *
- * @author BenjaminDTS
+ * @author BenjaminDTS | Carlitos6712
  */
 
 export interface IntegrationStatus {

@@ -1,7 +1,7 @@
 /**
  * Panel de productos de Odoo.
  *
- * @author Carlitos6712
+ * @author BenjaminDTS | Carlitos6712
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { listOdooProducts, deleteOdooProduct, updateOdooProduct, createOdooProduct, listOdooCategories, setOdooProductProperties, deleteOdooProducts, listOdooBrands, listOdooPublicCategories } from '@/api/client'

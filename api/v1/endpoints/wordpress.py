@@ -47,6 +47,7 @@ Rutas bajo /api/v1/wordpress/db:
   POST   /wordpress/db/query                 â€" Ejecutar query SELECT
   GET    /wordpress/db/options/{option_name} â€" Leer wp_option
 
+:author: BenjaminDTS
 :author: Carlitos6712
 :version: 1.0.0
 """

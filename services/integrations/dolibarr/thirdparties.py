@@ -5,7 +5,7 @@ En Dolibarr, clientes y proveedores son el mismo objeto 'societe'.
 La distinción se hace con los flags client=1 y supplier=1.
 Un tercero puede ser cliente Y proveedor a la vez.
 
-:author: Carlitos6712
+:author: BenjaminDTS
 :version: 1.0.0
 """
 

@@ -12,6 +12,7 @@ Estados factura proveedor:
   0 = Borrador    1 = Aprobada
   2 = Pagada
 
+:author: BenjaminDTS
 :author: Carlitos6712
 :version: 1.0.0
 """

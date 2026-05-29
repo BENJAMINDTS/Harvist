@@ -1,7 +1,7 @@
 /**
  * Tipos TypeScript para la integración Odoo.
  *
- * @author Carlitos6712
+ * @author BenjaminDTS | Carlitos6712
  */
 
 export interface OdooProduct {

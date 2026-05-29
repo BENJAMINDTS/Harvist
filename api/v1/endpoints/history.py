@@ -11,6 +11,7 @@ No contiene lógica de negocio: solo orquesta la lectura desde Redis y
 devuelve la respuesta paginada con el contrato estándar.
 
 :author: BenjaminDTS
+:author: Carlitos6712
 :version: 1.1.0
 """
 

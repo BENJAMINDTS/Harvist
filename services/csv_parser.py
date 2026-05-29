@@ -10,6 +10,7 @@ Responsabilidades:
 Este módulo no importa nada de api/ — es lógica de negocio pura.
 
 :author: BenjaminDTS
+:author: Carlitos6712
 :version: 1.0.0
 """
 

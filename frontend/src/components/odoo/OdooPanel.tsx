@@ -2,7 +2,7 @@
  * Panel principal de la integración Odoo.
  * Muestra el estado de conexión y los módulos disponibles como tabs internos.
  *
- * @author Carlitos6712
+ * @author BenjaminDTS | Carlitos6712
  */
 import { useEffect, useState } from 'react'
 import { getOdooStatus } from '@/api/client'

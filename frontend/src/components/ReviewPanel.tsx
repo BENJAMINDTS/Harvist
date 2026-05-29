@@ -5,7 +5,7 @@
  * Incluye edición inline (blur/Enter confirma, Escape cancela), tabs de filtro,
  * paginación y aprobación masiva.
  *
- * @author Carlitos6712
+ * @author BenjaminDTS | Carlitos6712
  * @param jobId      - Identificador del job a revisar.
  * @param onComplete - Callback llamado cuando todas las revisiones están hechas.
  */

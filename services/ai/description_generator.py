@@ -7,6 +7,7 @@ La respuesta de Claude es JSON estructurado con: corta, larga, keywords y meta_d
 El prompt es configurable por tipo de tienda (CLAUDE_STORE_TYPE) o mediante un archivo
 de plantilla externo (CLAUDE_PROMPT_FILE) con los placeholders {store_type} y {productos_json}.
 
+:author: BenjaminDTS
 :author: Carlitos6712
 :version: 2.0.0
 """

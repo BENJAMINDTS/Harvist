@@ -7,7 +7,7 @@
  * Para gestionar las definiciones (crear / eliminar campos) usa el
  * módulo "Campos extra" en el panel principal de Odoo.
  *
- * @author Carlitos6712
+ * @author BenjaminDTS | Carlitos6712
  */
 import { useEffect, useRef, useState } from 'react'
 import { getOdooCategoryProperties, getOdooProductProperties } from '@/api/client'

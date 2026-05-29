@@ -10,6 +10,7 @@ Todos los clientes son síncronos (httpx.Client) para compatibilidad con Celery.
 Ninguno usa Selenium ni ningún navegador.
 
 :author: BenjaminDTS
+:author: Carlitos6712
 :version: 1.0.0
 """
 

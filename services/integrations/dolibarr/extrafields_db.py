@@ -6,6 +6,7 @@ versiÃ³n instalada de Dolibarr. Replica exactamente el comportamiento
 del admin de Dolibarr: INSERT en llx_extrafields + ALTER TABLE en la
 tabla de datos del elemento.
 
+:author: BenjaminDTS
 :author: Carlitos6712
 :version: 1.0.0
 """

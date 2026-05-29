@@ -2,7 +2,7 @@
  * Panel principal de la integración WordPress / WooCommerce.
  * Muestra el estado de conexión y los módulos disponibles como tabs internos.
  *
- * @author Carlos Vico
+ * @author BenjaminDTS | Carlos Vico
  */
 import { useEffect, useState } from 'react'
 import { getWordPressStatus } from '@/api/client'

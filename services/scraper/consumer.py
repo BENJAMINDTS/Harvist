@@ -6,6 +6,7 @@ Cada imagen se valida con Pillow antes de guardarse: tamaño mínimo,
 formato soportado y que no sea una imagen de error/placeholder.
 
 :author: BenjaminDTS
+:author: Carlitos6712
 :version: 1.0.0
 """
 

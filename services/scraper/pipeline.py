@@ -13,6 +13,7 @@ El pipeline se ejecuta dentro de la tarea Celery. Este módulo no importa
 nada de api/ ni de workers/ — es lógica de negocio pura.
 
 :author: BenjaminDTS
+:author: Carlitos6712
 :version: 1.0.0
 """
 

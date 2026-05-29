@@ -2,7 +2,7 @@
  * Panel principal de la integración Dolibarr.
  * Muestra el estado de conexión y los módulos disponibles como tabs internos.
  *
- * @author BenjaminDTS
+ * @author BenjaminDTS | Carlitos6712
  */
 import { useEffect, useState } from 'react'
 import { getDolibarrStatus } from '@/api/client'

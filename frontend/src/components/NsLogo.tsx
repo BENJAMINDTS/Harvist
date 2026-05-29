@@ -2,7 +2,7 @@
  * Componente de logotipo de la empresa.
  *
  * @module NsLogo
- * @author BenjaminDTS | Carlos Vico
+ * @author Carlitos6712
  * @version 1.1.0
  */
 

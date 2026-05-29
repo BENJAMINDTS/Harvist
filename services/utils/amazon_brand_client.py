@@ -9,6 +9,7 @@ Si no hay ASIN disponible, intenta extraer la marca directamente del listado
 (confidence="medium"). Usa User-Agents rotatorios y delay anti-bot.
 
 :author: BenjaminDTS
+:author: Carlitos6712
 :version: 1.0.0
 """
 

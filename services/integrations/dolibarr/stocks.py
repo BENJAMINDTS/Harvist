@@ -8,6 +8,7 @@ Tipos de movimiento de stock:
   3 = Transferencia entre almacenes
 
 :author: BenjaminDTS
+:author: Carlitos6712
 :version: 1.0.0
 """
 

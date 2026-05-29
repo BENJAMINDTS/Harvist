@@ -56,6 +56,7 @@ Rutas bajo /api/v1/odoo/inventory:
 
 Todos los endpoints devuelven 503 si Odoo no está configurado.
 
+:author: BenjaminDTS
 :author: Carlitos6712
 :version: 1.0.0
 """

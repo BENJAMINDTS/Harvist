@@ -3,6 +3,7 @@ Servicio de gestión de categorías WooCommerce.
 
 Cubre árbol jerárquico, CRUD y asignación a productos.
 
+:author: BenjaminDTS
 :author: Carlitos6712
 :version: 1.0.0
 """

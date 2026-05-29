@@ -4,6 +4,7 @@ Gestiona autenticación, reintentos exponenciales y paginación.
 
 Documentación API: {DOLIBARR_URL}/api/index.php/explorer
 
+:author: BenjaminDTS
 :author: Carlitos6712
 :version: 1.0.0
 """

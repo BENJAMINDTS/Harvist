@@ -22,6 +22,7 @@ a un nombre de producto semántico antes de buscar imágenes:
   3. EAN desnudo en Bing Images — último recurso.
 
 :author: BenjaminDTS
+:author: Carlitos6712
 :version: 2.3.0
 """
 

@@ -7,6 +7,7 @@ marcas (brand_cache, brand_scraper, brand_pipeline, …) deben importar
 ``BrandResult`` DESDE AQUÍ para evitar importaciones circulares.
 
 :author: BenjaminDTS
+:author: Carlitos6712
 :version: 2.0.0
 """
 

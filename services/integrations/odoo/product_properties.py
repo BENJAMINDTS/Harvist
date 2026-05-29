@@ -9,6 +9,7 @@ En Odoo 17, los campos extra de productos usan el sistema "Properties":
 
 El campo "name" hex actúa como FK lógica entre ambos JSON.
 
+:author: BenjaminDTS
 :author: Carlitos6712
 :version: 1.0.0
 """

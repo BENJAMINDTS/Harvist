@@ -1,7 +1,7 @@
 /**
  * Tipos TypeScript para la integración WordPress / WooCommerce.
  *
- * @author Carlos Vico
+ * @author BenjaminDTS | Carlos Vico
  */
 
 export interface WooProductAttribute {

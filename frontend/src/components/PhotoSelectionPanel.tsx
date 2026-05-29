@@ -3,7 +3,7 @@
  * Aparece automáticamente cuando el job está en PENDIENTE_SELECCION_FOTOS.
  * El usuario elige una foto por producto antes de generar el ZIP.
  *
- * @author BenjaminDTS
+ * @author BenjaminDTS | Carlitos6712
  * @param jobId      - Identificador del job en selección.
  * @param onComplete - Callback llamado tras confirmar la selección.
  */

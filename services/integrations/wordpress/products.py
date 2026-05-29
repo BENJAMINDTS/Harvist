@@ -4,6 +4,7 @@ Servicio de gestión de productos WooCommerce.
 Cubre productos simples, variables y agrupados.
 Sincronización desde job Harvist → WooCommerce.
 
+:author: BenjaminDTS
 :author: Carlitos6712
 :version: 1.0.0
 """

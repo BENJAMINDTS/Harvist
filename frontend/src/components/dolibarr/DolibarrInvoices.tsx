@@ -1,7 +1,7 @@
 /**
  * Módulo de gestión de facturas de Dolibarr.
  *
- * @author BenjaminDTS
+ * @author BenjaminDTS | Carlitos6712
  */
 import { useEffect, useState } from 'react'
 import { listDolibarrInvoices } from '@/api/client'

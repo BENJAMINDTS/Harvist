@@ -4,7 +4,7 @@
  * obtiene el schema de campos desde el endpoint /products/fields,
  * que combina campos estándar con los extra fields configurados en esa instancia.
  *
- * @author BenjaminDTS
+ * @author BenjaminDTS | Carlitos6712
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {

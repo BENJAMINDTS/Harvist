@@ -19,6 +19,7 @@ si devuelve 404 se cae al modo atributo. El resultado se cachea
 por instancia.
 
 :author: BenjaminDTS
+:author: Carlitos6712
 :version: 2.0.0
 """
 

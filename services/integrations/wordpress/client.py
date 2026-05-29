@@ -7,6 +7,7 @@ Documentación API:
   WC  → {WP_URL}/wp-json/wc/v3/
   WP  → {WP_URL}/wp-json/wp/v2/
 
+:author: BenjaminDTS
 :author: Carlitos6712
 :version: 1.1.0
 """

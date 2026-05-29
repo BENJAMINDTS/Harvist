@@ -2,6 +2,7 @@
 Módulo de gestión de categorías en Dolibarr.
 Soporta categorías de producto, cliente y proveedor.
 
+:author: BenjaminDTS
 :author: Carlitos6712
 :version: 1.0.0
 """

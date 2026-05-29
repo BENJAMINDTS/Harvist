@@ -3,7 +3,7 @@
  *
  * Permite filtrar por fuente y nivel de confianza, y descargar el CSV.
  *
- * @author BenjaminDTS
+ * @author Carlitos6712
  * @param jobId - Identificador del job del que mostrar las marcas.
  * @param brandsData - Array de marcas resueltas recibido del endpoint.
  */

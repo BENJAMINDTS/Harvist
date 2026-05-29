@@ -1,6 +1,7 @@
 """
 Servicio de gestión de categorías de producto en Odoo (product.category).
 
+:author: BenjaminDTS
 :author: Carlitos6712
 :version: 1.0.0
 """

@@ -1,6 +1,7 @@
 """
 Servicio de gestión de productos en Odoo (product.template).
 
+:author: BenjaminDTS
 :author: Carlitos6712
 :version: 1.0.0
 """

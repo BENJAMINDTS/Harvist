@@ -10,7 +10,7 @@ Flujo:
   2. DescriptionGenerator.translate_descriptions() → traducciones por idioma
   3. Exportar traducciones_{lang}.csv al storage del job
 
-:author: BenjaminDTS
+:author: Carlitos6712
 :version: 1.0.0
 """
 

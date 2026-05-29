@@ -28,6 +28,7 @@ Sin Selenium:
   lo que simplifica la gestión de recursos y el uso en entornos Celery.
 
 :author: BenjaminDTS
+:author: Carlitos6712
 :version: 7.0.0
 """
 

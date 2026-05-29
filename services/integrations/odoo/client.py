@@ -5,6 +5,7 @@ para mantener compatibilidad con FastAPI sin añadir dependencias externas.
 
 Documentación API: https://www.odoo.com/documentation/17.0/developer/reference/external_api.html
 
+:author: BenjaminDTS
 :author: Carlitos6712
 :version: 1.0.0
 """

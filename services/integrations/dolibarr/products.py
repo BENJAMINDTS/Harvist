@@ -4,6 +4,7 @@ Módulo de gestión de productos en Dolibarr.
 Wrapper sobre DolibarrClient que añade lógica de negocio específica de productos:
 validación, imagen, sincronización desde job Harvist.
 
+:author: BenjaminDTS
 :author: Carlitos6712
 :version: 1.0.0
 """

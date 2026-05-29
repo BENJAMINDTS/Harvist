@@ -7,6 +7,7 @@ y gestionar la BD de WordPress sin salir de la aplicación.
 
 Solo operaciones de lectura por defecto. Escritura solo via métodos explícitos.
 
+:author: BenjaminDTS
 :author: Carlitos6712
 :version: 1.0.0
 """

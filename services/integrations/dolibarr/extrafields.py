@@ -5,6 +5,7 @@ Permite crear, listar y eliminar atributos personalizados para
 cualquier tipo de elemento (producto, tercero, factura, etc.).
 Los campos creados aquí aparecen de inmediato en la interfaz de Dolibarr.
 
+:author: BenjaminDTS
 :author: Carlitos6712
 :version: 1.0.0
 """

@@ -45,6 +45,7 @@ Rutas expuestas bajo /api/v1/dolibarr/stocks:
 
 Todos los endpoints devuelven 503 si Dolibarr no está configurado.
 
+:author: BenjaminDTS
 :author: Carlitos6712
 :version: 1.0.0
 """

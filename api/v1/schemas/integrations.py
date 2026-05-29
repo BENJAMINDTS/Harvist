@@ -1,6 +1,7 @@
 """
 Schemas Pydantic compartidos para todas las integraciones ERP/CMS.
 
+:author: BenjaminDTS
 :author: Carlitos6712
 :version: 1.0.0
 """
