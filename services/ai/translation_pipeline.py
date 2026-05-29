@@ -22,7 +22,6 @@ import io
 from loguru import logger
 
 from api.core.config import get_settings
-from services.schemas.job import SearchConfig
 from services.ai.claude_client import ClaudeClient
 from services.ai.description_generator import (
     DescriptionGenerator,
@@ -30,6 +29,7 @@ from services.ai.description_generator import (
     ResultadoTraduccion,
 )
 from services.csv_parser import Producto
+from services.schemas.job import SearchConfig
 from services.storage_service import StorageService, get_storage_service
 
 
