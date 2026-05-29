@@ -28,7 +28,6 @@ from services.schemas.job import (  # noqa: F401
     TipoJob,
 )
 
-
 # ── Revisión manual de descripciones (Fase 7.3) ──────────────────────────────
 
 class ReviewAction(str, Enum):
