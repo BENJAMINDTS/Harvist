@@ -23,8 +23,8 @@ import pytest
 
 from services.integrations.wordpress.products import (
     WordPressProductService,
-    _detect_delimiter,
     _decode_csv,
+    _detect_delimiter,
 )
 
 
