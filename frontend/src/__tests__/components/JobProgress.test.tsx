@@ -19,6 +19,7 @@ class MockWS {
   onerror: (() => void) | null = null
   onclose: (() => void) | null = null
   closed = false
+  // eslint-disable-next-line @typescript-eslint/no-this-alias
   constructor() { lastWs = this }
   close() { this.closed = true }
 }
