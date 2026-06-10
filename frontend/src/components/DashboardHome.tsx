@@ -11,7 +11,6 @@
  */
 
 import React from 'react'
-import { NsLogo } from '@/components/NsLogo'
 
 interface DashboardHomeProps {
   onSelectHarvist: () => void
@@ -97,7 +96,6 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
   return (
     <div className="flex flex-col items-center w-full max-w-4xl mx-auto px-4 py-4 gap-6">
       <div className="flex flex-col items-center gap-2 text-center">
-        <NsLogo size={52} />
         <div>
           <h1 className="text-3xl font-bold tracking-tight" style={{ color: '#1B5FAB' }}>
             Harvist

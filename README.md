@@ -16,7 +16,7 @@
 
 > Automatización inteligente de catálogos para e-commerce — imágenes, descripciones SEO con IA, resolución de marcas y sincronización con los principales ERPs y CMS del mercado.
 >
-> Desarrollado por **BenjaminDTS** & **Carlos Vico** · Nubium Solutions
+> Desarrollado por **BenjaminDTS** & **Carlos Vico**
 
 </div>
 
@@ -346,7 +346,7 @@ cd frontend && npm run type-check
 
 <div align="center">
 
-**Harvist** · Nubium Solutions · 2026
+**Harvist** · 2026
 
 ---
 

@@ -476,7 +476,6 @@ harvist/
         ├── App.tsx
         ├── api/client.ts
         ├── components/
-        │   ├── NsLogo.tsx
         │   ├── ErrorBoundary.tsx
         │   ├── CsvUploader.tsx
         │   ├── SearchConfig.tsx

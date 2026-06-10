@@ -1,7 +1,7 @@
 # Manual de Despliegue — Harvist
 
 **Versión:** 1.0.0  
-**Autores:** BenjaminDTS · Carlos Vico (Nubium Solutions)  
+**Autores:** BenjaminDTS · Carlos Vico  
 **Última actualización:** Mayo 2026
 
 ---
@@ -1441,5 +1441,5 @@ Referencia completa de todas las variables disponibles en `.env.example`:
 
 ---
 
-*Harvist — Nubium Solutions*  
+*Harvist*  
 *Para soporte técnico, contacta con el equipo en benjamin.pk02@gmail.com*

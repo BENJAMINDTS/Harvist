@@ -1,7 +1,7 @@
 /**
  * Pantalla de inicio de Harvist.
  *
- * Muestra el logotipo de NS, el nombre de la aplicación y tres tarjetas
+ * Muestra el nombre de la aplicación y tres tarjetas
  * de selección de modo de trabajo: descarga de imágenes, generación de
  * descripciones con IA y extracción de fichas de marca. También expone
  * un acceso rápido al historial.
@@ -12,7 +12,6 @@
  */
 
 import React from 'react'
-import { NsLogo } from '@/components/NsLogo'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -152,7 +151,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
       {/* ── Cabecera con logo y título ── */}
       <div className="flex flex-col items-center gap-4 text-center">
-        <NsLogo size={72} />
         <div>
           <h1 className="text-4xl font-bold tracking-tight" style={{ color: '#1B5FAB' }}>
             Harvist

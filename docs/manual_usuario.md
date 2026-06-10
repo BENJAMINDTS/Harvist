@@ -1,7 +1,7 @@
 # Manual de Usuario — Harvist
 
 **Versión:** 1.0.0  
-**Autores:** BenjaminDTS · Carlos Vico (Nubium Solutions)  
+**Autores:** BenjaminDTS · Carlos Vico  
 **Última actualización:** Mayo 2026
 
 ---
@@ -749,5 +749,5 @@ Indica que la marca se obtuvo de una fuente menos fiable (ej. Google Dorking) o 
 
 ---
 
-*Harvist — Nubium Solutions*  
+*Harvist*  
 *Para soporte técnico, contacta con el equipo en benjamin.pk02@gmail.com*

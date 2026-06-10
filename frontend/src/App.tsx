@@ -23,7 +23,6 @@ import { TranslationReviewPanel } from '@/components/TranslationReviewPanel'
 import BrandValidationPanel from '@/components/BrandValidationPanel'
 import PhotoSelectionPanel from '@/components/PhotoSelectionPanel'
 
-import { NsLogo } from '@/components/NsLogo'
 import { apiClient, getBrands, getBrandsPending, resumeJob } from '@/api/client'
 import type { ApiError, BrandEntry, BrandPendingEntry, BrandValidationResult } from '@/api/client'
 import type { SearchConfigValues, TipoJob } from '@/components/SearchConfig'
@@ -419,13 +418,9 @@ const App: React.FC = () => {
             className="flex items-center gap-3 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 rounded-lg p-1 flex-shrink-0"
             aria-label="Volver al dashboard"
           >
-            <NsLogo size={36} />
             <div className="text-left">
               <span className="block text-xl font-bold leading-tight" style={{ color: '#1B5FAB' }}>
                 Harvist
-              </span>
-              <span className="block text-xs text-gray-400 dark:text-gray-500 leading-tight">
-                by Nubium Solutions
               </span>
             </div>
           </button>
