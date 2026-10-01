@@ -459,12 +459,13 @@ async def csv_import_products(
                     "Créalas primero en la pestaña Categorías."
                 ),
             )
-    elif categ_csv_col:
-        # Modo categoría simple: validar que todas existen
+    if categ_csv_col:
+        # Categoría simple: filas sin subcategoría (o CSV sin columna de subcategoría)
         unique_cat_names: set[str] = {
             row[categ_csv_col].strip()
             for row in rows
             if row.get(categ_csv_col, "").strip()
+            and not (subcateg_csv_col and row.get(subcateg_csv_col, "").strip())
         }
         if unique_cat_names:
             missing_cats: list[str] = []
@@ -539,11 +540,13 @@ async def csv_import_products(
                     "Créalas primero en la pestaña Categorías web."
                 ),
             )
-    elif pub_categ_csv_col:
+    if pub_categ_csv_col:
+        # Categoría eCommerce simple: filas sin subcategoría eCommerce
         unique_pub_cats: set[str] = {
             row[pub_categ_csv_col].strip()
             for row in rows
             if row.get(pub_categ_csv_col, "").strip()
+            and not (pub_subcateg_csv_col and row.get(pub_subcateg_csv_col, "").strip())
         }
         if unique_pub_cats:
             missing_pub_cats: list[str] = []
