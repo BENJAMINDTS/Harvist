@@ -418,3 +418,13 @@ class TestVersionCompat:
         search_call = next(c for c in mock_exec.call_args_list if c[0][1] == "search_read")
         assert search_call[0][3]["fields"] == ["id", "detailed_type"]
 
+    @pytest.mark.asyncio
+    async def test_execute_treats_none_marshal_fault_as_success(self):
+        client = _make_client()
+        client._uid = 1
+        fault = xmlrpc.client.Fault(1, "Traceback ...\nTypeError: cannot marshal None unless allow_none is enabled")
+
+        with patch("asyncio.to_thread", new=AsyncMock(side_effect=fault)):
+            result = await client._execute("stock.quant", "action_apply_inventory", [[1]])
+
+        assert result is None
