@@ -38,6 +38,86 @@ class OdooProductService:
         """
         self._client = client
 
+    # ------------------------------------------------------------------
+    # Compatibilidad entre versiones de Odoo
+    # ------------------------------------------------------------------
+    # Odoo 18 eliminó ``detailed_type``: el tipo pasa a ``type``
+    # (consu/service/combo) y "almacenable" es el booleano ``is_storable``.
+    # Además, campos como ``available_in_pos`` solo existen si el módulo
+    # correspondiente está instalado. Pedir un campo inexistente hace que
+    # Odoo rechace toda la llamada, así que se filtran contra fields_get.
+
+    async def _model_fields(self) -> set[str] | None:
+        """
+        Campos disponibles en product.template, o None si el cliente no es Odoo real.
+
+        Returns:
+            Conjunto de nombres de campo, o None (p. ej. clientes simulados en tests).
+        """
+        from services.integrations.odoo.client import OdooClient
+        if not isinstance(self._client, OdooClient):
+            return None
+        return await self._client.get_model_fields("product.template")
+
+    async def _read_fields(self) -> list[str]:
+        """
+        Lista de campos a leer, limitada a los que existen en esta instancia Odoo.
+
+        Returns:
+            Subconjunto de ``_FIELDS`` (más ``is_storable`` en Odoo 18+).
+        """
+        available = await self._model_fields()
+        if available is None:
+            return self._FIELDS
+        fields = [f for f in self._FIELDS if f in available]
+        if "detailed_type" not in available and "is_storable" in available:
+            fields.append("is_storable")
+        return fields
+
+    @staticmethod
+    def _to_legacy_type(record: dict) -> dict:
+        """
+        Rellena ``detailed_type`` en registros de Odoo 18+ para el frontend.
+
+        Args:
+            record: producto leído de Odoo.
+
+        Returns:
+            El mismo dict, con ``detailed_type`` si faltaba.
+        """
+        if "detailed_type" not in record and "type" in record:
+            record["detailed_type"] = "product" if record.get("is_storable") else record["type"]
+        return record
+
+    async def _adapt_write(self, data: dict) -> dict:
+        """
+        Adapta un payload de escritura a los campos de esta instancia Odoo.
+
+        Traduce ``detailed_type`` a ``type`` + ``is_storable`` en Odoo 18+ y
+        descarta campos que no existen en el modelo (registrándolo en el log).
+
+        Args:
+            data: campos a escribir.
+
+        Returns:
+            Copia del payload aceptable por Odoo.
+        """
+        available = await self._model_fields()
+        if available is None:
+            return data
+        data = dict(data)
+        if "detailed_type" in data and "detailed_type" not in available:
+            detailed = data.pop("detailed_type")
+            data["type"] = "consu" if detailed == "product" else detailed
+            if "is_storable" in available:
+                data["is_storable"] = detailed == "product"
+        dropped = [k for k in data if k not in available]
+        if dropped:
+            logger.warning("Campos no disponibles en Odoo omitidos", extra={"fields": dropped})
+            for k in dropped:
+                del data[k]
+        return data
+
     async def list_products(
         self,
         limit: int = 50,
@@ -65,12 +145,13 @@ class OdooProductService:
             domain.append(("name", "ilike", search))
 
         try:
-            return await self._client.list(
+            records = await self._client.list(
                 "product.template",
                 limit=limit,
                 offset=offset,
-                filters={"domain": domain, "fields": self._FIELDS},
+                filters={"domain": domain, "fields": await self._read_fields()},
             )
+            return [self._to_legacy_type(r) for r in records]
         except Exception as exc:
             logger.error("Error listando productos Odoo", exc_info=exc)
             raise IntegrationError("Fallo listando productos Odoo") from exc
@@ -89,7 +170,7 @@ class OdooProductService:
             IntegrationError: si no existe o falla.
         """
         try:
-            return await self._client.get("product.template", product_id)
+            return self._to_legacy_type(await self._client.get("product.template", product_id))
         except Exception as exc:
             logger.error("Error obteniendo producto Odoo", exc_info=exc, extra={"id": product_id})
             raise IntegrationError(f"Producto Odoo {product_id} no encontrado") from exc
@@ -108,9 +189,9 @@ class OdooProductService:
             results = await self._client.list(
                 "product.template",
                 limit=1,
-                filters={"domain": [("default_code", "=", default_code)], "fields": self._FIELDS},
+                filters={"domain": [("default_code", "=", default_code)], "fields": await self._read_fields()},
             )
-            return results[0] if results else None
+            return self._to_legacy_type(results[0]) if results else None
         except IntegrationError:
             return None
 
@@ -133,7 +214,7 @@ class OdooProductService:
                 platform="odoo",
             )
         try:
-            result = await self._client.create("product.template", data)
+            result = await self._client.create("product.template", await self._adapt_write(data))
             logger.info("Producto Odoo creado", extra={"id": result.get("id"), "ref": data["default_code"]})
             return result
         except IntegrationError:
@@ -182,7 +263,7 @@ class OdooProductService:
             IntegrationError: si falla.
         """
         try:
-            result = await self._client.update("product.template", product_id, data)
+            result = await self._client.update("product.template", product_id, await self._adapt_write(data))
             logger.info("Producto Odoo actualizado", extra={"id": product_id})
             return result
         except Exception as exc:
@@ -478,7 +559,7 @@ class OdooProductService:
         created = 0
         for i in range(0, len(to_create), batch_size):
             batch = to_create[i : i + batch_size]
-            batch_data = [data for _, data in batch]
+            batch_data = [await self._adapt_write(data) for _, data in batch]
             [idx for idx, _ in batch]
             try:
                 from services.integrations.odoo.client import OdooClient
