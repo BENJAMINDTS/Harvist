@@ -337,3 +337,84 @@ class TestProductTypeCompat:
         await _make_service(client).create_product({"name": "X", "default_code": "R1", "detailed_type": "product"})
 
         assert client.create.call_args[0][1] == {"name": "X", "default_code": "R1", "type": "consu", "is_storable": True}
+
+
+# ---------------------------------------------------------------------------
+# bulk_upsert_products — categorías y lotes
+# ---------------------------------------------------------------------------
+
+
+_CSV_MAPPING = {"ref": "default_code", "nombre": "name", "cat": "categ_id", "sub": "subcateg_id"}
+
+
+def _csv_client() -> MagicMock:
+    from services.integrations.odoo.client import OdooClient
+
+    c = MagicMock(spec=OdooClient)
+    c.get_model_fields = AsyncMock(return_value=None)
+    c.list = AsyncMock(return_value=[])  # ningún producto existe todavía
+    c.bulk_create = AsyncMock(return_value=[])
+    c.create = AsyncMock(return_value={"id": 1})
+    return c
+
+
+class TestBulkUpsertCategories:
+    @pytest.mark.asyncio
+    async def test_rows_with_and_without_subcategory_resolve_to_ids(self):
+        client = _csv_client()
+        rows = [
+            {"ref": "A", "nombre": "Uno", "cat": "Padre", "sub": "Hija"},
+            {"ref": "B", "nombre": "Dos", "cat": "Padre", "sub": ""},
+        ]
+        result = await _make_service(client).bulk_upsert_products(
+            rows, _CSV_MAPPING, categ_name_to_id={"Padre": 5}, subcateg_pair_to_id={"Padre||Hija": 6},
+        )
+
+        sent = client.bulk_create.call_args[0][1]
+        assert [d["categ_id"] for d in sent] == [6, 5]
+        assert all("subcateg_id" not in d for d in sent)
+        assert result["created"] == 2 and result["failed"] == 0
+
+    @pytest.mark.asyncio
+    async def test_unresolved_category_name_is_not_sent_to_odoo(self):
+        client = _csv_client()
+        rows = [{"ref": "A", "nombre": "Uno", "cat": "Desconocida", "sub": ""}]
+        await _make_service(client).bulk_upsert_products(rows, _CSV_MAPPING, categ_name_to_id={"Padre": 5})
+
+        assert "categ_id" not in client.bulk_create.call_args[0][1][0]
+
+    @pytest.mark.asyncio
+    async def test_public_category_without_subcategory_uses_parent(self):
+        client = _csv_client()
+        mapping = {"ref": "default_code", "nombre": "name", "web": "public_categ_id", "websub": "public_subcateg_id"}
+        rows = [
+            {"ref": "A", "nombre": "Uno", "web": "Tienda", "websub": "Perros"},
+            {"ref": "B", "nombre": "Dos", "web": "Tienda", "websub": ""},
+        ]
+        await _make_service(client).bulk_upsert_products(
+            rows, mapping, public_categ_name_to_id={"Tienda": 7}, public_subcateg_pair_to_id={"Tienda||Perros": 8},
+        )
+
+        sent = client.bulk_create.call_args[0][1]
+        assert [d["public_categ_ids"] for d in sent] == [[(4, 8)], [(4, 7)]]
+        assert all("public_categ_id" not in d and "public_subcateg_id" not in d for d in sent)
+
+
+class TestBulkUpsertBatchFallback:
+    @pytest.mark.asyncio
+    async def test_failed_batch_is_retried_row_by_row(self):
+        client = _csv_client()
+        client.bulk_create = AsyncMock(side_effect=IntegrationError("lote rechazado"))
+
+        async def _create(model, data):
+            if data["default_code"] == "MALO":
+                raise IntegrationError("Odoo error en product.template.create: ValueError: dato inválido")
+            return {"id": 1}
+
+        client.create = AsyncMock(side_effect=_create)
+        rows = [{"ref": "BIEN", "nombre": "Uno"}, {"ref": "MALO", "nombre": "Dos"}, {"ref": "BIEN2", "nombre": "Tres"}]
+        result = await _make_service(client).bulk_upsert_products(rows, {"ref": "default_code", "nombre": "name"})
+
+        assert result["created"] == 2
+        assert result["failed"] == 1
+        assert result["errors"] == [{"row": 2, "error": "Odoo error en product.template.create: ValueError: dato inválido"}]

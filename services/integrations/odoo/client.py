@@ -177,8 +177,15 @@ class OdooClient(IntegrationClient):
                 exc_info=exc,
                 extra={"model": model, "method": method, "fault": exc.faultString},
             )
+            # faultString trae el traceback completo del servidor; para el usuario
+            # basta la última línea (ej: "ValueError: Wrong container value 'X'").
+            # El traceback completo queda en el log de arriba.
+            reason = next(
+                (line.strip() for line in reversed(exc.faultString.splitlines()) if line.strip()),
+                exc.faultString,
+            )
             raise IntegrationError(
-                f"Odoo error en {model}.{method}: {exc.faultString}",
+                f"Odoo error en {model}.{method}: {reason}",
                 platform="odoo",
             ) from exc
         except Exception as exc:

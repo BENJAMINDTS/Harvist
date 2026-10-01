@@ -457,39 +457,32 @@ class OdooProductService:
                     public_ids.append(brand_name_to_id[brand_name])
                 del product_data["brand_id"]
 
-            # Subcategoría eCommerce (tiene prioridad sobre categoría eCommerce simple)
-            if "public_subcateg_id" in product_data and public_subcateg_pair_to_id:
-                pub_parent = str(product_data.get("public_categ_id", "")).strip()
-                pub_sub = str(product_data["public_subcateg_id"]).strip()
-                pair_key = f"{pub_parent}||{pub_sub}"
-                if pair_key in public_subcateg_pair_to_id:
-                    public_ids.append(public_subcateg_pair_to_id[pair_key])
-                del product_data["public_subcateg_id"]
-                if "public_categ_id" in product_data:
-                    del product_data["public_categ_id"]
-            elif "public_categ_id" in product_data and public_categ_name_to_id:
-                pub_cat_name = str(product_data["public_categ_id"]).strip()
-                if pub_cat_name in public_categ_name_to_id:
-                    public_ids.append(public_categ_name_to_id[pub_cat_name])
-                del product_data["public_categ_id"]
+            # Categoría eCommerce: la subcategoría tiene prioridad. Una fila puede
+            # traer solo la categoría aunque el CSV tenga columna de subcategoría.
+            pub_sub = str(product_data.pop("public_subcateg_id", "")).strip()
+            if "public_categ_id" in product_data:
+                pub_parent = str(product_data.pop("public_categ_id")).strip()
+                pub_id = (public_subcateg_pair_to_id or {}).get(f"{pub_parent}||{pub_sub}") if pub_sub else None
+                if pub_id is None:
+                    pub_id = (public_categ_name_to_id or {}).get(pub_parent)
+                if pub_id is not None:
+                    public_ids.append(pub_id)
 
             if public_ids:
                 product_data["public_categ_ids"] = [(4, pid) for pid in public_ids]
 
-            # Resolver subcategoría / categoría interna (independiente de marca)
-            if "subcateg_id" in product_data and subcateg_pair_to_id:
-                parent_name = str(product_data.get("categ_id", "")).strip()
-                subcat_name = str(product_data["subcateg_id"]).strip()
-                pair_key = f"{parent_name}||{subcat_name}"
-                if pair_key in subcateg_pair_to_id:
-                    product_data["categ_id"] = subcateg_pair_to_id[pair_key]
-                del product_data["subcateg_id"]
-            elif "categ_id" in product_data and categ_name_to_id:
-                cat_name = str(product_data["categ_id"]).strip()
-                if cat_name in categ_name_to_id:
-                    product_data["categ_id"] = categ_name_to_id[cat_name]
-                else:
+            # Categoría interna (independiente de marca): igual que la eCommerce,
+            # subcategoría si la fila la trae y, si no, la categoría padre.
+            subcat_name = str(product_data.pop("subcateg_id", "")).strip()
+            if "categ_id" in product_data:
+                parent_name = str(product_data["categ_id"]).strip()
+                categ_id = (subcateg_pair_to_id or {}).get(f"{parent_name}||{subcat_name}") if subcat_name else None
+                if categ_id is None:
+                    categ_id = (categ_name_to_id or {}).get(parent_name)
+                if categ_id is None:
                     del product_data["categ_id"]
+                else:
+                    product_data["categ_id"] = categ_id
 
             if not product_data.get("name"):
                 errors.append({"row": idx, "error": "Campo 'name' obligatorio y vacío."})
@@ -552,9 +545,15 @@ class OdooProductService:
                 created += len(batch)
                 logger.info("Lote creado", extra={"lote": i // batch_size + 1, "count": len(batch)})
             except Exception as exc:
-                logger.warning("Fallo en lote de creación", exc_info=exc)
-                for idx, data in batch:
-                    errors.append({"row": idx, "error": str(exc)})
+                # Odoo rechaza el lote entero si una sola fila falla: se reintenta
+                # fila a fila para crear las válidas y señalar solo las erróneas.
+                logger.warning("Fallo en lote de creación; reintentando fila a fila", exc_info=exc)
+                for (idx, _), data in zip(batch, batch_data):
+                    try:
+                        await self._client.create("product.template", data)
+                        created += 1
+                    except Exception as row_exc:
+                        errors.append({"row": idx, "error": str(row_exc)})
 
         # ── Fase 5: actualizaciones concurrentes ──────────────────────────────
         updated = 0

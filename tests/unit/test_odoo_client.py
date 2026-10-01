@@ -428,3 +428,19 @@ class TestVersionCompat:
             result = await client._execute("stock.quant", "action_apply_inventory", [[1]])
 
         assert result is None
+
+
+class TestExecuteErrorMessage:
+    @pytest.mark.asyncio
+    async def test_fault_message_keeps_only_last_traceback_line(self):
+        client = _make_client()
+        client._uid = 1
+        fault = xmlrpc.client.Fault(
+            1, 'Traceback (most recent call last):\n  File "models.py", line 1\nValueError: Wrong container value \'X\'\n'
+        )
+
+        with patch("asyncio.to_thread", new=AsyncMock(side_effect=fault)):
+            with pytest.raises(IntegrationError) as exc_info:
+                await client._execute("product.template", "create", [{}])
+
+        assert str(exc_info.value) == "Odoo error en product.template.create: ValueError: Wrong container value 'X'"
