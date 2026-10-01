@@ -23,7 +23,7 @@ class OdooProductService:
     _FIELDS = [
         "id", "name", "default_code", "description", "description_sale",
         "description_purchase", "list_price", "compare_list_price",
-        "standard_price", "detailed_type", "type", "categ_id",
+        "standard_price", "detailed_type", "type", "is_storable", "categ_id",
         "uom_id", "uom_po_id", "active", "sale_ok", "purchase_ok",
         "qty_available", "volume", "weight", "tracking", "priority",
         "hs_code", "sale_delay", "invoice_policy", "purchase_method",
@@ -41,15 +41,16 @@ class OdooProductService:
     # ------------------------------------------------------------------
     # Compatibilidad entre versiones de Odoo
     # ------------------------------------------------------------------
-    # Odoo 18 eliminó ``detailed_type``: el tipo pasa a ``type``
-    # (consu/service/combo) y "almacenable" es el booleano ``is_storable``.
-    # Además, campos como ``available_in_pos`` solo existen si el módulo
-    # correspondiente está instalado. Pedir un campo inexistente hace que
-    # Odoo rechace toda la llamada, así que se filtran contra fields_get.
+    # El tipo de producto cambia de forma entre versiones:
+    #   Odoo 14     → ``type`` = consu | service | product
+    #   Odoo 15–17  → ``detailed_type`` (y ``type`` derivado)
+    #   Odoo 18+    → ``type`` = consu | service | combo  + booleano ``is_storable``
+    # El frontend trabaja siempre con ``detailed_type``; aquí se traduce.
+    # Los campos inexistentes (por versión o módulos) los filtra OdooClient.
 
     async def _model_fields(self) -> set[str] | None:
         """
-        Campos disponibles en product.template, o None si el cliente no es Odoo real.
+        Campos disponibles en product.template, o None si no se pueden conocer.
 
         Returns:
             Conjunto de nombres de campo, o None (p. ej. clientes simulados en tests).
@@ -59,25 +60,10 @@ class OdooProductService:
             return None
         return await self._client.get_model_fields("product.template")
 
-    async def _read_fields(self) -> list[str]:
-        """
-        Lista de campos a leer, limitada a los que existen en esta instancia Odoo.
-
-        Returns:
-            Subconjunto de ``_FIELDS`` (más ``is_storable`` en Odoo 18+).
-        """
-        available = await self._model_fields()
-        if available is None:
-            return self._FIELDS
-        fields = [f for f in self._FIELDS if f in available]
-        if "detailed_type" not in available and "is_storable" in available:
-            fields.append("is_storable")
-        return fields
-
     @staticmethod
     def _to_legacy_type(record: dict) -> dict:
         """
-        Rellena ``detailed_type`` en registros de Odoo 18+ para el frontend.
+        Rellena ``detailed_type`` en registros de Odoo 14 y 18+ para el frontend.
 
         Args:
             record: producto leído de Odoo.
@@ -91,31 +77,26 @@ class OdooProductService:
 
     async def _adapt_write(self, data: dict) -> dict:
         """
-        Adapta un payload de escritura a los campos de esta instancia Odoo.
-
-        Traduce ``detailed_type`` a ``type`` + ``is_storable`` en Odoo 18+ y
-        descarta campos que no existen en el modelo (registrándolo en el log).
+        Traduce ``detailed_type`` al formato de tipo de producto de esta versión de Odoo.
 
         Args:
             data: campos a escribir.
 
         Returns:
-            Copia del payload aceptable por Odoo.
+            Copia del payload con el tipo en el formato que espera Odoo.
         """
+        if "detailed_type" not in data:
+            return data
         available = await self._model_fields()
-        if available is None:
+        if available is None or "detailed_type" in available:
             return data
         data = dict(data)
-        if "detailed_type" in data and "detailed_type" not in available:
-            detailed = data.pop("detailed_type")
+        detailed = data.pop("detailed_type")
+        if "is_storable" in available:
             data["type"] = "consu" if detailed == "product" else detailed
-            if "is_storable" in available:
-                data["is_storable"] = detailed == "product"
-        dropped = [k for k in data if k not in available]
-        if dropped:
-            logger.warning("Campos no disponibles en Odoo omitidos", extra={"fields": dropped})
-            for k in dropped:
-                del data[k]
+            data["is_storable"] = detailed == "product"
+        else:
+            data["type"] = detailed
         return data
 
     async def list_products(
@@ -149,7 +130,7 @@ class OdooProductService:
                 "product.template",
                 limit=limit,
                 offset=offset,
-                filters={"domain": domain, "fields": await self._read_fields()},
+                filters={"domain": domain, "fields": self._FIELDS},
             )
             return [self._to_legacy_type(r) for r in records]
         except Exception as exc:
@@ -189,7 +170,7 @@ class OdooProductService:
             results = await self._client.list(
                 "product.template",
                 limit=1,
-                filters={"domain": [("default_code", "=", default_code)], "fields": await self._read_fields()},
+                filters={"domain": [("default_code", "=", default_code)], "fields": self._FIELDS},
             )
             return self._to_legacy_type(results[0]) if results else None
         except IntegrationError:
