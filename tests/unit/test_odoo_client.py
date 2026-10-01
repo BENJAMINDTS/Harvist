@@ -185,6 +185,12 @@ class TestOdooClientExecute:
 
 
 class TestOdooClientCRUD:
+    @pytest.fixture(autouse=True)
+    def _no_field_filtering(self):
+        # Estos tests cubren las llamadas CRUD; el filtrado de campos va en TestVersionCompat.
+        with patch.object(OdooClient, "get_model_fields", new=AsyncMock(return_value=None)):
+            yield
+
     @pytest.mark.asyncio
     async def test_list_passes_domain_fields_order(self):
         client = _make_client()
@@ -332,3 +338,83 @@ class TestOdooClientHealthCheck:
             result = await client.health_check()
 
         assert result is False
+
+
+# ---------------------------------------------------------------------------
+# Autodetección de versión y campos
+# ---------------------------------------------------------------------------
+
+
+class TestVersionCompat:
+    @pytest.fixture(autouse=True)
+    def _clear_caches(self):
+        from services.integrations.odoo import client as client_module
+
+        client_module._MODEL_FIELDS_CACHE.clear()
+        client_module._SERVER_VERSION_CACHE.clear()
+        yield
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("info", "expected"),
+        [((14, 0, 0, "final", 0, ""), 14), ((18, 0, 0, "final", 0, ""), 18), (("saas~17", 2, 0, "final", 0, ""), 17)],
+    )
+    async def test_server_version_parsed_and_cached(self, info, expected):
+        client = _make_client()
+
+        with patch("asyncio.to_thread", new=AsyncMock(return_value={"server_version_info": info})) as mock_thread:
+            assert await client.get_server_version() == expected
+            assert await client.get_server_version() == expected
+
+        mock_thread.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_list_drops_fields_missing_in_model(self):
+        client = _make_client()
+
+        async def _mock_execute(model, method, args, kwargs=None):
+            if method == "fields_get":
+                return {"id": {}, "name": {}, "type": {}}
+            return [{"id": 1}]
+
+        with patch.object(client, "_execute", new=AsyncMock(side_effect=_mock_execute)) as mock_exec:
+            await client.list("product.template", filters={"fields": ["id", "name", "detailed_type"]})
+            await client.list("product.template", filters={"fields": ["id"]})
+
+        search_calls = [c for c in mock_exec.call_args_list if c[0][1] == "search_read"]
+        assert search_calls[0][0][3]["fields"] == ["id", "name"]
+        fields_get_calls = [c for c in mock_exec.call_args_list if c[0][1] == "fields_get"]
+        assert len(fields_get_calls) == 1  # cacheado
+
+    @pytest.mark.asyncio
+    async def test_write_drops_values_missing_in_model(self):
+        client = _make_client()
+
+        async def _mock_execute(model, method, args, kwargs=None):
+            if method == "fields_get":
+                return {"id": {}, "name": {}}
+            if method == "read":
+                return [{"id": 7}]
+            return True
+
+        with patch.object(client, "_execute", new=AsyncMock(side_effect=_mock_execute)) as mock_exec:
+            await client.update("product.template", 7, {"name": "X", "available_in_pos": True})
+
+        write_call = next(c for c in mock_exec.call_args_list if c[0][1] == "write")
+        assert write_call[0][2] == [[7], {"name": "X"}]
+
+    @pytest.mark.asyncio
+    async def test_fields_unknown_when_fields_get_fails(self):
+        client = _make_client()
+
+        async def _mock_execute(model, method, args, kwargs=None):
+            if method == "fields_get":
+                raise IntegrationError("access denied", platform="odoo")
+            return [{"id": 1}]
+
+        with patch.object(client, "_execute", new=AsyncMock(side_effect=_mock_execute)) as mock_exec:
+            await client.list("product.template", filters={"fields": ["id", "detailed_type"]})
+
+        search_call = next(c for c in mock_exec.call_args_list if c[0][1] == "search_read")
+        assert search_call[0][3]["fields"] == ["id", "detailed_type"]
+
