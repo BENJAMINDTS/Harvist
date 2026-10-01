@@ -265,3 +265,75 @@ class TestCoerce:
 
     def test_str_passthrough(self):
         assert OdooProductService._coerce("name", "Laptop") == "Laptop"
+
+
+# ---------------------------------------------------------------------------
+# Compatibilidad del tipo de producto entre versiones de Odoo
+# ---------------------------------------------------------------------------
+
+
+_ODOO14_FIELDS = {"id", "name", "default_code", "type"}
+_ODOO17_FIELDS = {"id", "name", "default_code", "type", "detailed_type"}
+_ODOO18_FIELDS = {"id", "name", "default_code", "type", "is_storable"}
+
+
+def _make_odoo_client(fields: set[str], records: list[dict] | None = None) -> MagicMock:
+    from services.integrations.odoo.client import OdooClient
+
+    c = MagicMock(spec=OdooClient)
+    c.get_model_fields = AsyncMock(return_value=fields)
+    c.list = AsyncMock(return_value=records or [])
+    c.create = AsyncMock(return_value={"id": 1})
+    c.update = AsyncMock(return_value={"id": 1})
+    return c
+
+
+class TestProductTypeCompat:
+    @pytest.mark.asyncio
+    async def test_list_fills_detailed_type_on_odoo18(self):
+        client = _make_odoo_client(_ODOO18_FIELDS, [
+            {"id": 1, "type": "consu", "is_storable": True},
+            {"id": 2, "type": "service", "is_storable": False},
+            {"id": 3, "type": "combo", "is_storable": False},
+        ])
+        result = await _make_service(client).list_products()
+
+        assert [r["detailed_type"] for r in result] == ["product", "service", "combo"]
+
+    @pytest.mark.asyncio
+    async def test_list_fills_detailed_type_on_odoo14(self):
+        client = _make_odoo_client(_ODOO14_FIELDS, [{"id": 1, "type": "product"}])
+        result = await _make_service(client).list_products()
+
+        assert result[0]["detailed_type"] == "product"
+
+    @pytest.mark.asyncio
+    async def test_list_requests_is_storable(self):
+        client = _make_odoo_client(_ODOO18_FIELDS)
+        await _make_service(client).list_products()
+
+        assert "is_storable" in client.list.call_args.kwargs["filters"]["fields"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("fields", "detailed", "expected"),
+        [
+            (_ODOO18_FIELDS, "product", {"type": "consu", "is_storable": True}),
+            (_ODOO18_FIELDS, "consu", {"type": "consu", "is_storable": False}),
+            (_ODOO18_FIELDS, "service", {"type": "service", "is_storable": False}),
+            (_ODOO17_FIELDS, "product", {"detailed_type": "product"}),
+            (_ODOO14_FIELDS, "product", {"type": "product"}),
+        ],
+    )
+    async def test_write_translates_type_per_version(self, fields, detailed, expected):
+        client = _make_odoo_client(fields)
+        await _make_service(client).update_product(5, {"detailed_type": detailed})
+
+        assert client.update.call_args[0][2] == expected
+
+    @pytest.mark.asyncio
+    async def test_create_translates_type(self):
+        client = _make_odoo_client(_ODOO18_FIELDS)
+        await _make_service(client).create_product({"name": "X", "default_code": "R1", "detailed_type": "product"})
+
+        assert client.create.call_args[0][1] == {"name": "X", "default_code": "R1", "type": "consu", "is_storable": True}

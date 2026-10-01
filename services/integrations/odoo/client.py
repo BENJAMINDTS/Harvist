@@ -25,6 +25,12 @@ from services.integrations.base import (
     IntegrationNotConfiguredError,
 )
 
+# Cachés a nivel de módulo porque los clientes se crean por petición.
+# Campos por (url, db, modelo) — ver OdooClient.get_model_fields.
+_MODEL_FIELDS_CACHE: dict[tuple[str, str, str], set[str]] = {}
+# Versión mayor por URL — ver OdooClient.get_server_version.
+_SERVER_VERSION_CACHE: dict[str, int] = {}
+
 
 class OdooClient(IntegrationClient):
     """
@@ -160,6 +166,12 @@ class OdooClient(IntegrationClient):
         try:
             return await asyncio.to_thread(_call)
         except xmlrpc.client.Fault as exc:
+            # Métodos que devuelven None (ej: stock.quant.action_apply_inventory)
+            # se ejecutan y confirman en Odoo, pero el servidor no puede
+            # serializar None en la respuesta XML-RPC. Equivale a éxito sin valor.
+            if "cannot marshal None" in exc.faultString:
+                logger.debug("Odoo devolvió None", extra={"model": model, "method": method})
+                return None
             logger.error(
                 "Odoo XML-RPC fault",
                 exc_info=exc,
@@ -212,7 +224,7 @@ class OdooClient(IntegrationClient):
 
         kwargs: dict[str, Any] = {"limit": limit, "offset": offset, "order": order}
         if fields:
-            kwargs["fields"] = fields
+            kwargs["fields"] = await self._supported_fields(resource, fields)
 
         result = await self._execute(resource, "search_read", [domain], kwargs)
         return result or []
@@ -259,6 +271,7 @@ class OdooClient(IntegrationClient):
         Returns:
             Dict con el registro creado incluyendo su ID.
         """
+        data = await self._supported_values(resource, data)
         new_id: int = await self._execute(resource, "create", [data])
         return await self.get(resource, new_id)
 
@@ -279,6 +292,7 @@ class OdooClient(IntegrationClient):
         Returns:
             Dict con el registro actualizado.
         """
+        data = await self._supported_values(resource, data)
         await self._execute(resource, "write", [[int(resource_id)], data])
         return await self.get(resource, resource_id)
 
@@ -297,6 +311,7 @@ class OdooClient(IntegrationClient):
         Returns:
             Lista de dicts con los registros creados (incluyendo ID).
         """
+        data_list = [await self._supported_values(resource, d) for d in data_list]
         new_ids: list[int] = await self._execute(resource, "create", [data_list])
         if not isinstance(new_ids, list):
             new_ids = [new_ids]
@@ -338,6 +353,106 @@ class OdooClient(IntegrationClient):
         """
         count: int = await self._execute(resource, "search_count", [domain or []])
         return count
+
+    # ------------------------------------------------------------------
+    # Autodetección de versión y campos
+    # ------------------------------------------------------------------
+    # Los campos de cada modelo cambian entre versiones de Odoo (14 → 19) y
+    # según los módulos instalados. Odoo rechaza la llamada entera si se pide
+    # o escribe un solo campo inexistente, así que list/create/update filtran
+    # los campos contra fields_get de la instancia real.
+
+    async def get_server_version(self) -> int:
+        """
+        Devuelve la versión mayor del servidor Odoo (ej: 14, 17, 18, 19).
+
+        Admite versiones SaaS (``saas~17.2`` → 17). Se cachea por URL.
+
+        Returns:
+            Número de versión mayor.
+
+        Raises:
+            IntegrationError: si Odoo no responde.
+        """
+        cached = _SERVER_VERSION_CACHE.get(self._url)
+        if cached is not None:
+            return cached
+
+        def _version() -> dict:
+            proxy = xmlrpc.client.ServerProxy(f"{self._url}/xmlrpc/2/common")
+            return proxy.version()
+
+        try:
+            info = await asyncio.to_thread(_version)
+        except Exception as exc:
+            logger.error("No se pudo obtener la versión de Odoo", exc_info=exc, extra={"url": self._url})
+            raise IntegrationError(f"No se pudo obtener la versión de Odoo: {exc}", platform="odoo") from exc
+        major = int(str(info["server_version_info"][0]).split("~")[-1])
+        _SERVER_VERSION_CACHE[self._url] = major
+        logger.info("Versión de Odoo detectada", extra={"url": self._url, "version": major})
+        return major
+
+    async def get_model_fields(self, resource: str) -> set[str] | None:
+        """
+        Devuelve los nombres de campo que existen en un modelo de esta instancia Odoo.
+
+        Se cachea por URL + BD + modelo. Si Odoo no permite consultarlos
+        (p. ej. por permisos), devuelve None y no se filtra nada.
+
+        Args:
+            resource: nombre del modelo (ej: "product.template").
+
+        Returns:
+            Conjunto de nombres de campo disponibles, o None si no se pudo saber.
+        """
+        key = (self._url, self._db, resource)
+        cached = _MODEL_FIELDS_CACHE.get(key)
+        if cached is not None:
+            return cached
+        try:
+            result = await self._execute(resource, "fields_get", [], {"attributes": ["type"]})
+        except IntegrationError as exc:
+            logger.warning("No se pudieron consultar los campos de Odoo", exc_info=exc, extra={"model": resource})
+            return None
+        fields = set(result)
+        _MODEL_FIELDS_CACHE[key] = fields
+        return fields
+
+    async def _supported_fields(self, resource: str, fields: list[str]) -> list[str]:
+        """
+        Filtra una lista de campos a leer, quitando los que no existen en el modelo.
+
+        Args:
+            resource: nombre del modelo.
+            fields:   campos solicitados.
+
+        Returns:
+            Campos solicitados que existen (todos si no se pudo saber).
+        """
+        available = await self.get_model_fields(resource)
+        if available is None:
+            return fields
+        return [f for f in fields if f in available]
+
+    async def _supported_values(self, resource: str, data: dict[str, Any]) -> dict[str, Any]:
+        """
+        Quita de un payload de escritura los campos que no existen en el modelo.
+
+        Args:
+            resource: nombre del modelo.
+            data:     valores a escribir.
+
+        Returns:
+            Copia de ``data`` solo con campos existentes.
+        """
+        available = await self.get_model_fields(resource)
+        if available is None:
+            return data
+        dropped = [k for k in data if k not in available]
+        if not dropped:
+            return data
+        logger.warning("Campos no disponibles en Odoo omitidos", extra={"model": resource, "fields": dropped})
+        return {k: v for k, v in data.items() if k in available}
 
     async def health_check(self) -> bool:
         """
