@@ -14,8 +14,8 @@ export interface OdooProduct {
   list_price: number
   compare_list_price: number
   standard_price: number
-  detailed_type: 'consu' | 'service' | 'product'
-  type: 'consu' | 'service' | 'product'
+  detailed_type: 'consu' | 'service' | 'product' | 'combo'
+  type: 'consu' | 'service' | 'product' | 'combo'
   categ_id: [number, string] | false
   uom_id: [number, string] | false
   uom_po_id: [number, string] | false
