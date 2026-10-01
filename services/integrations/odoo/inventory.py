@@ -126,6 +126,30 @@ class OdooInventoryService:
             logger.error("Error listando ubicaciones Odoo", exc_info=exc)
             raise IntegrationError("Fallo listando ubicaciones Odoo") from exc
 
+    async def _write_and_apply(self, quant_id: int, data: dict) -> None:
+        """
+        Escribe un ajuste de inventario en un stock.quant y lo aplica.
+
+        Odoo 15+ separa contar (``inventory_quantity``) y aplicar
+        (``action_apply_inventory``). En Odoo 14 ese método no existe: el
+        ajuste se aplica al escribir ``inventory_quantity`` en modo inventario.
+
+        Args:
+            quant_id: ID del stock.quant.
+            data:     campos a escribir; incluye ``inventory_quantity``.
+
+        Raises:
+            IntegrationError: si Odoo falla.
+        """
+        if await self._client.get_server_version() >= 15:
+            await self._client.update("stock.quant", quant_id, data)
+            await self._client._execute("stock.quant", "action_apply_inventory", [[quant_id]])
+            return
+        data = await self._client._supported_values("stock.quant", data)
+        await self._client._execute(
+            "stock.quant", "write", [[quant_id], data], {"context": {"inventory_mode": True}}
+        )
+
     async def update_quant(self, quant_id: int, data: dict) -> bool:
         """
         Actualiza campos de un stock.quant. Si incluye inventory_quantity,
@@ -145,9 +169,10 @@ class OdooInventoryService:
         if not isinstance(self._client, OdooClient):
             raise IntegrationError("Cliente Odoo no disponible")
         try:
-            await self._client.update("stock.quant", quant_id, data)
             if "inventory_quantity" in data:
-                await self._client._execute("stock.quant", "action_apply_inventory", [[quant_id]])
+                await self._write_and_apply(quant_id, data)
+            else:
+                await self._client.update("stock.quant", quant_id, data)
             logger.info("stock.quant actualizado", extra={"quant_id": quant_id})
             return True
         except Exception as exc:
@@ -197,8 +222,7 @@ class OdooInventoryService:
         if not isinstance(self._client, OdooClient):
             raise IntegrationError("Cliente Odoo no disponible")
         try:
-            await self._client.update("stock.quant", quant_id, {"inventory_quantity": inventory_quantity})
-            await self._client._execute("stock.quant", "action_apply_inventory", [[quant_id]])
+            await self._write_and_apply(quant_id, {"inventory_quantity": inventory_quantity})
             logger.info("Stock ajustado en Odoo", extra={"quant_id": quant_id, "qty": inventory_quantity})
             return True
         except Exception as exc:
