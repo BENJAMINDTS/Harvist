@@ -166,6 +166,12 @@ class OdooClient(IntegrationClient):
         try:
             return await asyncio.to_thread(_call)
         except xmlrpc.client.Fault as exc:
+            # Métodos que devuelven None (ej: stock.quant.action_apply_inventory)
+            # se ejecutan y confirman en Odoo, pero el servidor no puede
+            # serializar None en la respuesta XML-RPC. Equivale a éxito sin valor.
+            if "cannot marshal None" in exc.faultString:
+                logger.debug("Odoo devolvió None", extra={"model": model, "method": method})
+                return None
             logger.error(
                 "Odoo XML-RPC fault",
                 exc_info=exc,
