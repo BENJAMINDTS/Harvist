@@ -669,6 +669,7 @@ function ProductModal({ product, onClose, onSuccess }: ProductModalProps) {
                   <option value="consu">Consumible</option>
                   <option value="service">Servicio</option>
                   <option value="product">Almacenable</option>
+                  <option value="combo">Combo (Odoo 18+)</option>
                 </select>
               </div>
               <div>

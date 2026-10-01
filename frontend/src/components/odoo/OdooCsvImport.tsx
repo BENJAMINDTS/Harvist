@@ -17,7 +17,7 @@ const FIELD_LABELS: Record<string, string> = {
   // Identificación (obligatorios)
   name: 'Nombre *',
   default_code: 'Referencia interna *',
-  detailed_type: 'Tipo (consu/service/product)',
+  detailed_type: 'Tipo (consu/service/product/combo)',
   active: 'Activo (1/0)',
   // Clasificación
   categ_id: 'Categoría interna (nombre)',
