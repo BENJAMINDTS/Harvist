@@ -25,6 +25,9 @@ from services.integrations.base import (
     IntegrationNotConfiguredError,
 )
 
+# Caché de campos por (url, db, modelo) — ver OdooClient.get_model_fields.
+_MODEL_FIELDS_CACHE: dict[tuple[str, str, str], set[str]] = {}
+
 
 class OdooClient(IntegrationClient):
     """
@@ -338,6 +341,35 @@ class OdooClient(IntegrationClient):
         """
         count: int = await self._execute(resource, "search_count", [domain or []])
         return count
+
+    async def get_model_fields(self, resource: str) -> set[str]:
+        """
+        Devuelve los nombres de campo que existen en un modelo de esta instancia Odoo.
+
+        Los campos varían según la versión de Odoo y los módulos instalados
+        (ej: ``detailed_type`` desaparece en Odoo 18, ``available_in_pos``
+        requiere Punto de Venta). El resultado se cachea por URL + BD + modelo
+        a nivel de módulo, porque los clientes se crean por petición.
+
+        Args:
+            resource: nombre del modelo (ej: "product.template").
+
+        Returns:
+            Conjunto de nombres de campo disponibles.
+
+        Raises:
+            IntegrationError: si Odoo falla.
+        """
+        key = (self._url, self._db, resource)
+        cached = _MODEL_FIELDS_CACHE.get(key)
+        if cached is not None:
+            return cached
+        result: dict[str, Any] = await self._execute(
+            resource, "fields_get", [], {"attributes": ["type"]}
+        )
+        fields = set(result)
+        _MODEL_FIELDS_CACHE[key] = fields
+        return fields
 
     async def health_check(self) -> bool:
         """
